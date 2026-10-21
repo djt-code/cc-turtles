@@ -4,11 +4,12 @@
 -- onto the right side).  Optional: Advanced Peripherals Chunky Turtle
 -- upgrade on the LEFT side so it keeps running unattended.
 --
--- Usage:  mow <width> <length> [repeatMinutes]
+-- Usage:  mow <width> <length> [repeatMinutes] [notorch]
 --
 -- Place the turtle at one corner of the lawn, on the ground at grass level,
 -- facing along the LENGTH axis, with the lawn extending to its RIGHT.
 -- Optional chest/barrel directly below the start position for seeds.
+-- Put torches in the inventory and it lights the lawn as it mows.
 --
 -- How it works:
 --  * The mow plan is a precomputed serpentine list of (x,z) columns.
@@ -16,14 +17,25 @@
 --    to maxClimb, sink onto the ground, refuse crevasses.
 --  * Columns that can't be entered are recorded and routed around (BFS).
 --  * Unreachable columns are retried at the end while progress is made.
+--  * Torches go on a diamond lattice so every tile is within TORCH_RADIUS
+--    (taxicab) of one.  Since 1.18 mobs spawn only at block light 0; a
+--    torch is light 14, so radius 13 is the limit and 12 leaves a margin.
+--    (Pre-1.18 servers spawn at light <= 7: use radius 6.)
 
 local T = require("turtlelib")
 
-local args   = { ... }
+local args = { ... }
+local TORCHES = true
+for i = #args, 1, -1 do
+    if args[i] == "notorch" then TORCHES = false; table.remove(args, i) end
+end
 local WIDTH  = tonumber(args[1]) or 16
 local LENGTH = tonumber(args[2]) or 16
 local REPEAT = tonumber(args[3])          -- minutes between passes; nil = once
 local MIN_FUEL = WIDTH * LENGTH + WIDTH + LENGTH + 150
+
+local TORCH = "minecraft:torch"
+local TORCH_RADIUS = 12
 
 T.cfg.width, T.cfg.length = WIDTH, LENGTH
 T.cfg.maxClimb, T.cfg.maxDrop, T.cfg.maxHeight = 3, 12, 16
@@ -48,12 +60,41 @@ local function goToAndSettle(tx, tz)
     return true
 end
 
+--------------------------------------------------------------------------
+-- Torches
+--------------------------------------------------------------------------
+local torchSet, torchList = {}, {}
+if TORCHES then
+    torchSet, torchList = T.lightLattice(TORCH_RADIUS, WIDTH, LENGTH)
+end
+local torchesPlaced, warnedNoTorch = 0, false
+
+-- Called standing on the ground at a lattice tile.  Rises one block and
+-- places a torch on the ground below; leaves the turtle above the torch.
+local function placeTorch()
+    local ok, below = turtle.inspectDown()
+    if ok and below.name == TORCH then return end     -- placed on an earlier pass
+    if not T.up() then return end
+    if turtle.detectDown() then return end           -- already lit (or solid)
+    if not T.selectItem(TORCH) then
+        if not warnedNoTorch then
+            print("No torches in inventory; skipping lighting.")
+            warnedNoTorch = true
+        end
+        return
+    end
+    if turtle.placeDown() then torchesPlaced = torchesPlaced + 1 end
+    turtle.select(1)
+end
+
 local function mowTiles(tiles)
     local skipped = {}
     for i, t in ipairs(tiles) do
         if not goToAndSettle(t.x, t.z) then
             print(string.format("Can't reach (%d,%d), skipping", t.x, t.z))
             skipped[#skipped + 1] = t
+        elseif torchSet[T.ckey(t.x, t.z)] then
+            placeTorch()
         end
         if i % 50 == 0 then
             print(string.format("%d/%d tiles, y=%d, fuel %s", i, #tiles, T.pos.y,
@@ -67,6 +108,10 @@ end
 local plan = T.serpentine(WIDTH, LENGTH)
 print(string.format("Mowing %dx%d (%d tiles). Fuel: %s", WIDTH, LENGTH, #plan,
     tostring(turtle.getFuelLevel())))
+if TORCHES then
+    print(string.format("Lighting: %d torch sites (radius %d); %d torches on board",
+        #torchList, TORCH_RADIUS, T.countItem(TORCH)))
+end
 
 while true do
     T.requireFuel(MIN_FUEL)
@@ -93,7 +138,8 @@ while true do
     end
     T.face(0)
     T.dumpDown()
-    print("Pass complete. Fuel left: " .. tostring(turtle.getFuelLevel()))
+    print(string.format("Pass complete. Fuel left: %s, torches placed: %d",
+        tostring(turtle.getFuelLevel()), torchesPlaced))
 
     if not REPEAT then break end
     print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")

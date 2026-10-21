@@ -42,7 +42,7 @@ directory and be run from there.
 ## mow
 
 ```
-mow <width> <length> [repeatMinutes]
+mow <width> <length> [repeatMinutes] [notorch]
 ```
 
 Place the turtle on the ground at grass level at one corner of the lawn, facing
@@ -57,6 +57,13 @@ start position collects seeds.
   can get to; anything still unreachable is printed as coordinates.
 - Grass doesn't regrow naturally, so a single pass is usually enough; the repeat
   argument is there if a mod on your server spreads it.
+- **Lighting:** with torches in its inventory it places them as it mows, on a
+  diamond lattice so every tile is within taxicab distance 12 of a torch (mobs need
+  block light 0 to spawn since 1.18; a torch is light 14, so 13 is the limit and 12
+  leaves a margin). That's about one torch per 313 tiles — 18 for a 70×40 lawn. The
+  startup line tells you how many sites there are. Pass `notorch` to disable, or
+  set `TORCH_RADIUS = 6` for a pre-1.18 server. Torches already present are left
+  alone on repeat passes.
 
 ## farm
 
