@@ -1,13 +1,13 @@
 -- install.lua -- fetch the cc-turtles programs onto a turtle
 --
 -- One-liner on the turtle (requires http enabled on the server):
---   wget run https://raw.githubusercontent.com/mepholic/cc-turtles/main/install.lua
+--   wget run https://git.example.com/me/cc-turtles/raw/branch/main/install.lua
 --
 -- Re-run it any time to update.  Pass a branch name to install from a
 -- branch:  install dev
 
 local branch = ({ ... })[1] or "main"
-local BASE = "https://raw.githubusercontent.com/mepholic/cc-turtles/" .. branch .. "/"
+local BASE = "https://git.example.com/me/cc-turtles/raw/branch/" .. branch .. "/"
 local FILES = { "turtlelib.lua", "mow.lua", "farm.lua", "install.lua" }
 
 if not http then

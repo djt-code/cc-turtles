@@ -31,7 +31,7 @@ coal blocks (800) and dried kelp blocks (200) are the renewable alternatives.
 On the turtle, with HTTP enabled on the server:
 
 ```
-wget run https://raw.githubusercontent.com/mepholic/cc-turtles/main/install.lua
+wget run https://git.example.com/me/cc-turtles/raw/branch/main/install.lua
 ```
 
 If HTTP is disabled, drop the files into
