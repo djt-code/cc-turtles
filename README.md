@@ -9,7 +9,7 @@ upgrade in software.
 | `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
 | `farm.lua` | Learns the layout of a wheat farm inside a bounding box (tilling any dirt it finds), then loops: harvest ripe wheat, replant, dump into a chest, sleep. |
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap. |
-| `install.lua` | Fetches everything onto a turtle with `wget run`. |
+| `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
 
 ## Hardware
 
@@ -31,13 +31,34 @@ coal blocks (800) and dried kelp blocks (200) are the renewable alternatives.
 On the turtle, with HTTP enabled on the server:
 
 ```
-wget run https://git.example.com/me/cc-turtles/raw/branch/main/install.lua
+wget https://git.example.com/me/cc-turtles/raw/branch/main/git.lua git
+git clone https://git.example.com/me/cc-turtles
+cd cc-turtles
 ```
+
+Later, `git pull` inside the directory fetches only the files that changed.
+`git status` shows the checked-out commit and whether the remote has moved on.
 
 If HTTP is disabled, drop the files into
 `<world>/computercraft/computer/<id>/` on the server (`id` prints the number).
 The programs `require("turtlelib")`, so all files must live in the same
 directory and be run from there.
+
+## git
+
+```
+git clone <url> [dir] [-b <branch>] [--token <token>]
+git pull   [dir]
+git status [dir]
+```
+
+Not real git: it talks to the host's REST API (branch → commit → recursive
+tree → raw blobs), so there is no packfile decoding and it runs fast on the
+CC VM. It records the commit and per-file blob SHAs in `.gitlite`; `pull`
+downloads only blobs whose SHA changed, deletes tracked files removed
+upstream, and never touches untracked files (so `farm.map` survives).
+Works with Forgejo/Gitea (any host) and GitHub. `--token` is only needed for
+private repos and is saved in `.gitlite` for later pulls.
 
 ## mow
 
