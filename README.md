@@ -121,8 +121,16 @@ and whenever it runs out mid-pass (up to one per crop tile, max 256), so you nev
 need to hand it seeds directly.
 
 - Learning pass classifies every tile: wheat or farmland → crop tile; bare dirt,
-  grass block, path → tilled with the hoe and planted; water or anything else →
-  left alone. Saved to `farm.map` on the turtle.
+  grass block, path → tilled with the hoe and planted; water → lane; a missing
+  ground block → hole; anything else → left alone. Saved to `farm.map`.
+- **Strip repair.** Farms are usually land strips separated by water lanes, and
+  holes get fixed to match the strip they lie in. A hole whose column (or row) is
+  otherwise all land gets dirt, tilling and wheat. A hole in a water lane gets a
+  dirt floor beneath if that's missing, dirt walls on the two cross-lane sides if
+  they're open, and a water block. Water comes from one bucket, refilled at a lane
+  tile with two or more water neighbours so the source regenerates (or from water
+  buckets in the chest). Keep **dirt and a bucket in the chest**; holes it can't
+  fix yet are retried every pass.
 - Farming pass visits crop tiles only, harvests wheat at age 7 and replants it
   immediately, plants any bare farmland, and re-tills farmland that reverted to
   dirt — all from cruise height, since CC:Tweaked lets a hoe till through one
