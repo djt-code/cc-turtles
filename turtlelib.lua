@@ -156,6 +156,37 @@ function T.equipTool(name, side)
     return false   -- not in inventory: assume already equipped
 end
 
+-- Which side ("left"/"right") a tool is equipped on, or nil if not found.
+-- Uses turtle.getEquippedLeft/Right (CC:Tweaked 1.110+).  On older
+-- versions it probes by swapping each side into an empty slot and back.
+function T.toolSide(name)
+    if turtle.getEquippedLeft then
+        local l = turtle.getEquippedLeft()
+        if l and l.name == name then return "left" end
+        local r = turtle.getEquippedRight()
+        if r and r.name == name then return "right" end
+        return nil
+    end
+    local empty
+    for slot = 1, 16 do
+        if turtle.getItemCount(slot) == 0 then empty = slot; break end
+    end
+    if not empty then return nil end
+    local sel = turtle.getSelectedSlot()
+    turtle.select(empty)
+    local found
+    for _, side in ipairs({ "left", "right" }) do
+        local equip = (side == "left") and turtle.equipLeft or turtle.equipRight
+        if equip() then
+            local it = turtle.getItemDetail(empty)
+            equip()                      -- put it straight back
+            if it and it.name == name then found = side; break end
+        end
+    end
+    turtle.select(sel)
+    return found
+end
+
 --------------------------------------------------------------------------
 -- Low-level moves.  Each keeps T.pos in sync, cuts through T.diggable
 -- blocks, attacks mobs, and returns false if blocked by anything else.

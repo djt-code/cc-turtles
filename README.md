@@ -13,14 +13,16 @@ upgrade in software.
 
 ## Hardware
 
-One **basic turtle** (no need for the advanced one) with:
+One **basic turtle** (no need for the advanced one). Two layouts work:
 
-- **Left side:** Advanced Peripherals *Chunk Controller* (chunky turtle), so it keeps
-  working when you're away. Optional.
-- **Right side:** whichever tool the program needs. Both programs call
-  `T.equipTool()` at start, so you can leave the diamond pickaxe and diamond hoe in
-  the inventory and the turtle swaps them in itself. CC:Tweaked only accepts
-  diamond or netherite tools as upgrades.
+- **Hoe + pickaxe**, one on each side. Both programs detect which side their tool
+  is on (`T.toolSide`) and dig with that side explicitly, so the pickaxe never
+  breaks dirt the hoe was meant to till. No chunk loading, so it only runs while
+  the area is loaded.
+- **Chunky + one tool**: Advanced Peripherals *Chunk Controller* on the left so it
+  keeps working when you're away, and whichever tool the program needs on the
+  right. Leave the other tool in the inventory and `T.equipTool()` swaps it in at
+  start. CC:Tweaked only accepts diamond or netherite tools as upgrades.
 
 Fuel burns only on movement (about one per tile per pass). Lava buckets (1,000
 each, bucket returned) are the cheapest fuel if you have a dripstone lava farm;
@@ -31,18 +33,16 @@ coal blocks (800) and dried kelp blocks (200) are the renewable alternatives.
 On the turtle, with HTTP enabled on the server:
 
 ```
-wget https://git.example.com/me/cc-turtles/raw/branch/main/git.lua git
-git clone https://git.example.com/me/cc-turtles
+wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/git.lua git
+git clone https://github.com/djt-code/cc-turtles
 cd cc-turtles
 ```
 
 Later, `git pull` inside the directory fetches only the files that changed.
 `git status` shows the checked-out commit and whether the remote has moved on.
-
-If HTTP is disabled, drop the files into
-`<world>/computercraft/computer/<id>/` on the server (`id` prints the number).
-The programs `require("turtlelib")`, so all files must live in the same
-directory and be run from there.
+The programs `require("turtlelib")`, so run them from inside `cc-turtles`
+(or `cd` there first); if HTTP is disabled on the server, drop the files into
+`<world>/computercraft/computer/<id>/cc-turtles/` by hand.
 
 ## git
 
@@ -52,12 +52,12 @@ git pull   [dir]
 git status [dir]
 ```
 
-Not real git: it talks to the host's REST API (branch → commit → recursive
-tree → raw blobs), so there is no packfile decoding and it runs fast on the
+Not real git: it talks to the host's REST API (branch -> commit -> recursive
+tree -> raw blobs), so there is no packfile decoding and it runs fast on the
 CC VM. It records the commit and per-file blob SHAs in `.gitlite`; `pull`
 downloads only blobs whose SHA changed, deletes tracked files removed
 upstream, and never touches untracked files (so `farm.map` survives).
-Works with Forgejo/Gitea (any host) and GitHub. `--token` is only needed for
+Works with GitHub and Forgejo/Gitea (any host). `--token` is only needed for
 private repos and is saved in `.gitlite` for later pulls.
 
 ## mow

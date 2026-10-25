@@ -60,6 +60,15 @@ T.step = T.stepFlat
 T.diggable = {}            -- never dig while moving; only via workCrop/learnTile
 T.equipTool("minecraft:diamond_hoe")
 
+-- Which side the hoe is on.  With two tools equipped, turtle.digDown()
+-- with no side tries the left tool first, so a pickaxe on the left would
+-- break dirt instead of letting the hoe till it.  Always dig with the hoe.
+local HOE_SIDE = T.toolSide("minecraft:diamond_hoe")
+if not HOE_SIDE then
+    print("Warning: can't tell which side the hoe is on; using default dig.")
+end
+local function hoeDown() return turtle.digDown(HOE_SIDE) end
+
 --------------------------------------------------------------------------
 -- Farm layout map: tiles[key] = "crop" | "water" | "other"
 --------------------------------------------------------------------------
@@ -112,7 +121,7 @@ local function workCrop()
     local ok, data = turtle.inspectDown()
     if ok and data.name == CROP then
         if data.state and data.state.age == 7 then
-            turtle.digDown()
+            hoeDown()
             plantDown()
             return "harvested"
         end
@@ -122,7 +131,7 @@ local function workCrop()
         -- couldn't plant: farmland may have reverted to dirt.  Check.
         if T.down() then
             local ok2, d2 = turtle.inspectDown()
-            if ok2 and TILLABLE[d2.name] then turtle.digDown() end   -- hoe tills
+            if ok2 and TILLABLE[d2.name] then hoeDown() end   -- hoe tills
             T.up()
             if plantDown() then return "planted" end
         end
@@ -145,7 +154,7 @@ local function learnTile()
         if d2.name == "minecraft:farmland" then
             kind = "crop"
         elseif TILLABLE[d2.name] then
-            if turtle.digDown() then kind = "crop" end   -- tilled it
+            if hoeDown() then kind = "crop" end   -- tilled it
         elseif d2.name == "minecraft:water" then
             kind = "water"
         end
