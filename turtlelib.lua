@@ -22,8 +22,8 @@ local T = {}
 -- Configuration (override from the program)
 --------------------------------------------------------------------------
 T.cfg = {
-    width      = 16,    -- grid size in x
-    length     = 16,    -- grid size in z
+    width      = 16,    -- grid size in x; negative = extends to the LEFT
+    length     = 16,    -- grid size in z; negative = extends BEHIND
     margin     = 1,     -- columns outside the grid usable for detours
     maxReplans = 10,    -- BFS re-plans per target before giving up
     lowFuel    = 50,    -- top up from inventory below this
@@ -53,8 +53,60 @@ local DX = { [0] = 0, [1] = 1, [2] = 0, [3] = -1 }
 local DZ = { [0] = 1, [1] = 0, [2] = -1, [3] = 0 }
 T.DX, T.DZ = DX, DZ
 
-function T.turnRight() turtle.turnRight(); T.dir = (T.dir + 1) % 4 end
-function T.turnLeft()  turtle.turnLeft();  T.dir = (T.dir + 3) % 4 end
+--------------------------------------------------------------------------
+-- Position persistence.  Every successful move/turn is written to a small
+-- file next to the program, so after Ctrl+T or a reboot `home` / `reset`
+-- can still find the way back to the start.
+--------------------------------------------------------------------------
+T.mode = "flat"            -- "flat" or "terrain": which stepper to use going home
+
+-- Path for a data file kept next to the running program.
+function T.dataPath(name)
+    local prog = shell and shell.getRunningProgram and shell.getRunningProgram() or ""
+    return fs.combine(fs.getDir(prog), name)
+end
+
+local POS_FILE = ".turtlepos"
+
+function T.savePos()
+    local f = fs.open(T.dataPath(POS_FILE), "w")
+    if not f then return end
+    f.write(string.format("%d %d %d %d %s", T.pos.x, T.pos.y, T.pos.z, T.dir, T.mode))
+    f.close()
+end
+
+-- Returns the saved position table or nil.
+function T.loadPos()
+    local p = T.dataPath(POS_FILE)
+    if not fs.exists(p) then return nil end
+    local f = fs.open(p, "r")
+    local line = f.readAll() or ""
+    f.close()
+    local x, y, z, d, mode = line:match("(-?%d+) (-?%d+) (-?%d+) (%d) (%a+)")
+    if not x then return nil end
+    return { x = tonumber(x), y = tonumber(y), z = tonumber(z), dir = tonumber(d), mode = mode }
+end
+
+function T.clearPos()
+    local p = T.dataPath(POS_FILE)
+    if fs.exists(p) then fs.delete(p) end
+end
+
+-- Call at the start of a job: the turtle is at home, facing forward.
+-- If a saved position says otherwise, returns it instead of resetting so
+-- the program can warn the user.
+function T.startAtHome(force)
+    local saved = T.loadPos()
+    if saved and not force and (saved.x ~= 0 or saved.y ~= 0 or saved.z ~= 0 or saved.dir ~= 0) then
+        return saved
+    end
+    T.pos.x, T.pos.y, T.pos.z, T.dir = 0, 0, 0, 0
+    T.savePos()
+    return nil
+end
+
+function T.turnRight() turtle.turnRight(); T.dir = (T.dir + 1) % 4; T.savePos() end
+function T.turnLeft()  turtle.turnLeft();  T.dir = (T.dir + 3) % 4; T.savePos() end
 
 function T.face(d)
     if T.dir == d then return end
@@ -139,52 +191,124 @@ function T.requireFuel(needed)
 end
 
 --------------------------------------------------------------------------
--- Tool upgrades.  Keep the chunky upgrade on the LEFT; tools go RIGHT.
+-- Tool upgrades
+--
+-- turtle.dig() with no side tries the LEFT tool first and only falls back
+-- to the right if that fails.  With a pickaxe and a hoe both equipped, a
+-- left-hand pickaxe will happily break the dirt the hoe was meant to till.
+-- So rather than guess sides, usePrimaryTool() makes the program's tool
+-- the ONLY tool equipped: any other tool is parked in the inventory for
+-- the duration and restored afterwards.  Non-tool upgrades (chunky,
+-- modem, ...) are never touched.
 --------------------------------------------------------------------------
-function T.equipTool(name, side)
-    side = side or "right"
-    for slot = 1, 16 do
-        local it = turtle.getItemDetail(slot)
-        if it and it.name == name then
-            local sel = turtle.getSelectedSlot()
-            turtle.select(slot)
-            local ok = (side == "left") and turtle.equipLeft() or turtle.equipRight()
-            turtle.select(sel)
-            return ok
-        end
+local TOOL_SUFFIXES = { "_pickaxe$", "_hoe$", "_shovel$", "_axe$", "_sword$" }
+
+function T.isTool(name)
+    if not name then return false end
+    for _, pat in ipairs(TOOL_SUFFIXES) do
+        if name:find(pat) then return true end
     end
-    return false   -- not in inventory: assume already equipped
+    return false
 end
 
--- Which side ("left"/"right") a tool is equipped on, or nil if not found.
--- Uses turtle.getEquippedLeft/Right (CC:Tweaked 1.110+).  On older
--- versions it probes by swapping each side into an empty slot and back.
-function T.toolSide(name)
-    if turtle.getEquippedLeft then
-        local l = turtle.getEquippedLeft()
-        if l and l.name == name then return "left" end
-        local r = turtle.getEquippedRight()
-        if r and r.name == name then return "right" end
-        return nil
-    end
-    local empty
+local function findEmptySlot()
     for slot = 1, 16 do
-        if turtle.getItemCount(slot) == 0 then empty = slot; break end
+        if turtle.getItemCount(slot) == 0 then return slot end
     end
-    if not empty then return nil end
+end
+
+local function findItemSlot(name)
+    for slot = 1, 16 do
+        local it = turtle.getItemDetail(slot)
+        if it and it.name == name then return slot end
+    end
+end
+
+local function equipSide(side)
+    if side == "left" then return turtle.equipLeft() else return turtle.equipRight() end
+end
+
+-- Name of the item equipped on `side`, or nil.  Uses getEquippedLeft/Right
+-- (CC:Tweaked 1.110+); older versions are probed by swapping through an
+-- empty slot, which needs one free slot.
+function T.equipped(side)
+    if turtle.getEquippedLeft then
+        local it = (side == "left") and turtle.getEquippedLeft() or turtle.getEquippedRight()
+        return it and it.name or nil
+    end
+    local empty = findEmptySlot()
+    if not empty then error("Need one empty inventory slot to inspect tool upgrades", 0) end
     local sel = turtle.getSelectedSlot()
     turtle.select(empty)
-    local found
-    for _, side in ipairs({ "left", "right" }) do
-        local equip = (side == "left") and turtle.equipLeft or turtle.equipRight
-        if equip() then
-            local it = turtle.getItemDetail(empty)
-            equip()                      -- put it straight back
-            if it and it.name == name then found = side; break end
-        end
+    local name
+    if equipSide(side) then
+        local it = turtle.getItemDetail(empty)
+        name = it and it.name
+        equipSide(side)                   -- put it straight back
     end
     turtle.select(sel)
-    return found
+    return name
+end
+
+-- Equip `name` from the inventory if it isn't already, unequip any OTHER
+-- tool into the inventory, and return a function that restores the
+-- original arrangement.  Errors if the tool is nowhere on the turtle.
+function T.usePrimaryTool(name)
+    local before = { left = T.equipped("left"), right = T.equipped("right") }
+    local sel = turtle.getSelectedSlot()
+    local freed
+
+    for _, side in ipairs({ "left", "right" }) do
+        local item = before[side]
+        if item and item ~= name and T.isTool(item) then
+            local empty = findEmptySlot()
+            if not empty then error("Need an empty inventory slot to unequip the " .. item, 0) end
+            turtle.select(empty)
+            equipSide(side)
+            freed = freed or side
+        end
+    end
+
+    if before.left ~= name and before.right ~= name then
+        local slot = findItemSlot(name)
+        if not slot then
+            turtle.select(sel)
+            error(name .. " is neither equipped nor in the inventory", 0)
+        end
+        local side = freed
+            or (before.right == nil and "right")
+            or (before.left == nil and "left")
+        if not side then
+            turtle.select(sel)
+            error("Both sides hold non-tool upgrades; no room to equip " .. name, 0)
+        end
+        turtle.select(slot)
+        equipSide(side)
+    end
+    turtle.select(sel)
+
+    return function()
+        local cur = turtle.getSelectedSlot()
+        for _, side in ipairs({ "left", "right" }) do
+            local want = before[side]
+            if T.equipped(side) ~= want then
+                local slot = want and findItemSlot(want) or findEmptySlot()
+                if slot then turtle.select(slot); equipSide(side) end
+            end
+        end
+        turtle.select(cur)
+    end
+end
+
+-- Back-compat: equip `name` onto `side` from the inventory, if present.
+function T.equipTool(name, side)
+    local slot = findItemSlot(name)
+    if not slot then return false end
+    local sel = turtle.getSelectedSlot()
+    turtle.select(slot)
+    local ok = equipSide(side or "right")
+    turtle.select(sel)
+    return ok
 end
 
 --------------------------------------------------------------------------
@@ -203,7 +327,7 @@ function T.up()
     T.ensureFuel()
     for _ = 1, 5 do
         if not clearWay(turtle.inspectUp, turtle.digUp) then return false end
-        if turtle.up() then T.pos.y = T.pos.y + 1; return true end
+        if turtle.up() then T.pos.y = T.pos.y + 1; T.savePos(); return true end
         turtle.attackUp(); sleep(0.3)
     end
     return false
@@ -214,7 +338,7 @@ function T.down()
     T.ensureFuel()
     for _ = 1, 5 do
         if not clearWay(turtle.inspectDown, turtle.digDown) then return false end
-        if turtle.down() then T.pos.y = T.pos.y - 1; return true end
+        if turtle.down() then T.pos.y = T.pos.y - 1; T.savePos(); return true end
         turtle.attackDown(); sleep(0.3)
     end
     return false
@@ -226,6 +350,7 @@ function T.forward()
         if not clearWay(turtle.inspect, turtle.dig) then return false end
         if turtle.forward() then
             T.pos.x = T.pos.x + DX[T.dir]; T.pos.z = T.pos.z + DZ[T.dir]
+            T.savePos()
             return true
         end
         turtle.attack(); sleep(0.3)
@@ -252,10 +377,17 @@ function T.ckey(x, z) return x .. "," .. z end
 function T.markBlocked(x, z) T.blocked[T.ckey(x, z)] = true end
 function T.clearBlocked() T.blocked = {} end
 
+-- Sign and magnitude of a dimension: sgn(-20) -> -1, 20
+local function sgn(n) if n < 0 then return -1, -n else return 1, n end end
+T.sgn = sgn
+
 function T.inBounds(x, z)
     local c = T.cfg
-    return x >= -c.margin and x < c.width + c.margin
-       and z >= -c.margin and z < c.length + c.margin
+    local sx, w = sgn(c.width)
+    local sz, l = sgn(c.length)
+    local u, v = x * sx, z * sz           -- grid coords, always >= 0 inside
+    return u >= -c.margin and u < w + c.margin
+       and v >= -c.margin and v < l + c.margin
 end
 
 local NEIGH = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }
@@ -346,18 +478,49 @@ function T.goTo(tx, tz)
     return false
 end
 
+-- Return to the start from wherever the saved position says we are.
+-- Used by the `reset` subcommands and home.lua.  Returns true if home.
+function T.goHome()
+    local saved = T.loadPos()
+    if not saved then
+        print("No saved position; the turtle has not moved since its last job, or is already home.")
+        return true
+    end
+    T.pos.x, T.pos.y, T.pos.z, T.dir = saved.x, saved.y, saved.z, saved.dir
+    T.mode = saved.mode or "flat"
+    T.step = (T.mode == "terrain") and T.stepTerrain or T.stepFlat
+    T.clearBlocked()
+    print(string.format("Last position %s facing %d (%s). Heading home.", T.posString(), T.dir, T.mode))
+
+    if T.mode == "flat" then T.toStartHeight() end
+    local ok = T.goTo(0, 0)
+    if T.mode == "flat" then T.toStartHeight() else T.settle() end
+    T.face(0)
+    if ok and T.pos.x == 0 and T.pos.z == 0 then
+        print("Home.")
+        T.pos.y = 0
+        T.savePos()
+        return true
+    end
+    print("Couldn't reach home; stopped at " .. T.posString())
+    return false
+end
+
 --------------------------------------------------------------------------
 -- Plans
 --------------------------------------------------------------------------
--- Serpentine over the grid: columns along +x, rows alternating in z.
+-- Serpentine over the grid: columns along x, rows alternating in z.
+-- Negative width/length flip the respective axis.
 function T.serpentine(width, length)
     width, length = width or T.cfg.width, length or T.cfg.length
+    local sx, w = sgn(width)
+    local sz, l = sgn(length)
     local plan = {}
-    for x = 0, width - 1 do
-        if x % 2 == 0 then
-            for z = 0, length - 1 do plan[#plan + 1] = { x = x, z = z } end
+    for i = 0, w - 1 do
+        if i % 2 == 0 then
+            for j = 0, l - 1 do plan[#plan + 1] = { x = i * sx, z = j * sz } end
         else
-            for z = length - 1, 0, -1 do plan[#plan + 1] = { x = x, z = z } end
+            for j = l - 1, 0, -1 do plan[#plan + 1] = { x = i * sx, z = j * sz } end
         end
     end
     return plan
@@ -374,6 +537,9 @@ end
 -- point that would land there is nudged to (1,0).
 function T.lightLattice(radius, width, length)
     width, length = width or T.cfg.width, length or T.cfg.length
+    local sx, sz
+    sx, width = sgn(width)
+    sz, length = sgn(length)
     local r = radius
     local set, list = {}, {}
     local K = math.ceil((width + length) / r) + 2
@@ -388,6 +554,7 @@ function T.lightLattice(radius, width, length)
                 local cx = math.max(0, math.min(width - 1, x))
                 local cz = math.max(0, math.min(length - 1, z))
                 if cx == 0 and cz == 0 then cx = math.min(1, width - 1) end
+                cx, cz = cx * sx, cz * sz
                 local k = T.ckey(cx, cz)
                 if not set[k] then
                     set[k] = true
@@ -445,7 +612,9 @@ function T.dumpDown(keepCount)
         local it = turtle.getItemDetail(slot)
         if it then
             local keep
-            if keepCount then
+            if T.isTool(it.name) then
+                keep = it.count                   -- never dump a parked tool
+            elseif keepCount then
                 keep = keepCount(it, kept[it.name] or 0)
             else
                 keep = T.keep[it.name] and it.count or 0

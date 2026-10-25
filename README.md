@@ -9,24 +9,39 @@ upgrade in software.
 | `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
 | `farm.lua` | Learns the layout of a wheat farm inside a bounding box (tilling any dirt it finds), then loops: harvest ripe wheat, replant, dump into a chest, sleep. |
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap. |
+| `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
 
 ## Hardware
 
 One **basic turtle** (no need for the advanced one). Two layouts work:
 
-- **Hoe + pickaxe**, one on each side. Both programs detect which side their tool
-  is on (`T.toolSide`) and dig with that side explicitly, so the pickaxe never
-  breaks dirt the hoe was meant to till. No chunk loading, so it only runs while
-  the area is loaded.
-- **Chunky + one tool**: Advanced Peripherals *Chunk Controller* on the left so it
-  keeps working when you're away, and whichever tool the program needs on the
-  right. Leave the other tool in the inventory and `T.equipTool()` swaps it in at
-  start. CC:Tweaked only accepts diamond or netherite tools as upgrades.
+- **Hoe + pickaxe**, one on each side. Each program makes its own tool the
+  *only* tool equipped while it runs (`T.usePrimaryTool`): the other tool is
+  parked in the inventory and re-equipped on exit, including after Ctrl+T. This
+  matters because `turtle.dig()` tries the left tool first, so a left-hand pickaxe
+  would otherwise break the dirt the hoe was meant to till. Keep one inventory slot
+  free for the swap. No chunk loading, so it only runs while the area is loaded.
+- **Chunky + one tool**: Advanced Peripherals *Chunk Controller* on one side so it
+  keeps working when you're away, the tool on the other; the second tool can live
+  in the inventory and gets swapped in the same way. CC:Tweaked only accepts
+  diamond or netherite tools as upgrades.
 
 Fuel burns only on movement (about one per tile per pass). Lava buckets (1,000
 each, bucket returned) are the cheapest fuel if you have a dripstone lava farm;
 coal blocks (800) and dried kelp blocks (200) are the renewable alternatives.
+
+## Coordinates, home and reset
+
+Everything is relative to where the turtle starts: that spot is home `(0,0,0)`,
+facing is `+z`. **Width** counts tiles to the turtle's right (`+x`); a negative
+width means the area is on its left. **Length** counts tiles ahead; negative means
+behind. So a lawn to the left and behind is `mow -70 -40`.
+
+Position is saved to `.turtlepos` after every move. If a job is interrupted
+(Ctrl+T, reboot, server restart), `home`, `mow reset` or `farm reset` navigates
+back to the start. Starting a job while the saved position isn't home prints a
+warning and stops; add `--here` to declare the current spot as the new home.
 
 ## Install
 
@@ -63,7 +78,8 @@ private repos and is saved in `.gitlite` for later pulls.
 ## mow
 
 ```
-mow <width> <length> [repeatMinutes] [notorch]
+mow <width> <length> [repeatMinutes] [notorch] [--here]
+mow reset
 ```
 
 Place the turtle on the ground at grass level at one corner of the lawn, facing
@@ -92,19 +108,22 @@ start position collects seeds.
 farm <width> <length> [repeatMinutes]        first run: learn layout, then farm
 farm [repeatMinutes]                         later runs: use saved layout
 farm learn <width> <length> [repeatMinutes]  re-learn after changing the farm
+farm reset                                   go home after an interruption
 ```
 
 Hover the turtle **two blocks above the farmland** (one above the crop tops) at a
 corner of the bounding box, facing along the length axis with the farm to its
-right. Put the output chest directly below the start position. Give it a stack of
-wheat seeds for the first planting.
+right. Put the output chest directly below the start position with some wheat
+seeds in it: the turtle restocks seeds from the chest at the start of every pass
+and whenever it runs out mid-pass (up to one per crop tile, max 256), so you never
+need to hand it seeds directly.
 
 - Learning pass classifies every tile: wheat or farmland → crop tile; bare dirt,
   grass block, path → tilled with the hoe and planted; water or anything else →
   left alone. Saved to `farm.map` on the turtle.
 - Farming pass visits crop tiles only, harvests wheat at age 7 and replants it
   immediately, plants any bare farmland, and re-tills farmland that reverted to
-  dirt. Returns home, keeps 128 seeds, dumps the rest and all wheat, sleeps
+  dirt. Returns home, dumps wheat and surplus seeds, tops seeds back up, sleeps
   (default 20 min; `0` for a single pass).
 
 ## Library

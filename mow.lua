@@ -1,13 +1,18 @@
 -- mow.lua -- lawn-mowing turtle for CC:Tweaked
 --
--- Needs: diamond pickaxe (equipped, or in the inventory to be hot-swapped
--- onto the right side).  Optional: Advanced Peripherals Chunky Turtle
--- upgrade on the LEFT side so it keeps running unattended.
+-- Needs a diamond pickaxe, equipped or in the inventory.  Any other tool
+-- (e.g. a hoe on the other side) is parked in the inventory while the
+-- program runs and put back afterwards.  Optional: Advanced Peripherals
+-- Chunky Turtle upgrade so it keeps running unattended.
 --
--- Usage:  mow <width> <length> [repeatMinutes] [notorch]
+-- Usage:  mow <width> <length> [repeatMinutes] [notorch] [--here]
+--         mow reset                 return to home after a Ctrl+T
+--
+-- width  = tiles to the RIGHT of the turtle (negative = to the LEFT)
+-- length = tiles AHEAD of the turtle (negative = BEHIND)
 --
 -- Place the turtle at one corner of the lawn, on the ground at grass level,
--- facing along the LENGTH axis, with the lawn extending to its RIGHT.
+-- facing along the LENGTH axis.
 -- Optional chest/barrel directly below the start position for seeds.
 -- Put torches in the inventory and it lights the lawn as it mows.
 --
@@ -25,14 +30,19 @@
 local T = require("turtlelib")
 
 local args = { ... }
-local TORCHES = true
+local TORCHES, HERE = true, false
 for i = #args, 1, -1 do
-    if args[i] == "notorch" then TORCHES = false; table.remove(args, i) end
+    if args[i] == "notorch" then TORCHES = false; table.remove(args, i)
+    elseif args[i] == "--here" then HERE = true; table.remove(args, i) end
+end
+if args[1] == "reset" then
+    T.goHome()
+    return
 end
 local WIDTH  = tonumber(args[1]) or 16
 local LENGTH = tonumber(args[2]) or 16
 local REPEAT = tonumber(args[3])          -- minutes between passes; nil = once
-local MIN_FUEL = WIDTH * LENGTH + WIDTH + LENGTH + 150
+local MIN_FUEL = math.abs(WIDTH * LENGTH) + math.abs(WIDTH) + math.abs(LENGTH) + 150
 
 local TORCH = "minecraft:torch"
 local TORCH_RADIUS = 12
@@ -40,6 +50,7 @@ local TORCH_RADIUS = 12
 T.cfg.width, T.cfg.length = WIDTH, LENGTH
 T.cfg.maxClimb, T.cfg.maxDrop, T.cfg.maxHeight = 3, 12, 16
 T.step = T.stepTerrain
+T.mode = "terrain"
 
 -- Blocks we are allowed to cut.  Anything else is terrain / an obstacle.
 T.diggable = {
@@ -51,7 +62,6 @@ T.diggable = {
     ["minecraft:dead_bush"]   = true,
 }
 
-T.equipTool("minecraft:diamond_pickaxe")
 
 --------------------------------------------------------------------------
 local function goToAndSettle(tx, tz)
@@ -105,6 +115,14 @@ local function mowTiles(tiles)
 end
 
 --------------------------------------------------------------------------
+local stale = T.startAtHome(HERE)
+if stale then
+    print(string.format("Turtle may not be at home: last saved position (%d,%d,%d).",
+        stale.x, stale.y, stale.z))
+    print("Run `mow reset` to send it home, or add --here to use this spot as home.")
+    return
+end
+
 local plan = T.serpentine(WIDTH, LENGTH)
 print(string.format("Mowing %dx%d (%d tiles). Fuel: %s", WIDTH, LENGTH, #plan,
     tostring(turtle.getFuelLevel())))
@@ -113,35 +131,42 @@ if TORCHES then
         #torchList, TORCH_RADIUS, T.countItem(TORCH)))
 end
 
-while true do
-    T.requireFuel(MIN_FUEL)
-    T.clearBlocked()
-    T.settle()
+local restoreTools = T.usePrimaryTool("minecraft:diamond_pickaxe")
 
-    local skipped = mowTiles(plan)
-    -- Skipped tiles (e.g. a pocket behind a crevasse) are retried using the
-    -- obstacle map built during the pass, until a round makes no progress.
-    while #skipped > 0 do
-        print("Retrying " .. #skipped .. " skipped tiles")
-        local remaining = mowTiles(skipped)
-        if #remaining >= #skipped then skipped = remaining; break end
-        skipped = remaining
-    end
-    if #skipped > 0 then
-        print("Gave up on " .. #skipped .. " tiles:")
-        for _, t in ipairs(skipped) do io.write(string.format("(%d,%d) ", t.x, t.z)) end
-        print()
-    end
+local ok, err = pcall(function()
+    while true do
+        T.requireFuel(MIN_FUEL)
+        T.clearBlocked()
+        T.settle()
 
-    if not goToAndSettle(0, 0) then
-        print("Couldn't get home; at " .. T.posString())
-    end
-    T.face(0)
-    T.dumpDown()
-    print(string.format("Pass complete. Fuel left: %s, torches placed: %d",
-        tostring(turtle.getFuelLevel()), torchesPlaced))
+        local skipped = mowTiles(plan)
+        -- Skipped tiles (e.g. a pocket behind a crevasse) are retried using the
+        -- obstacle map built during the pass, until a round makes no progress.
+        while #skipped > 0 do
+            print("Retrying " .. #skipped .. " skipped tiles")
+            local remaining = mowTiles(skipped)
+            if #remaining >= #skipped then skipped = remaining; break end
+            skipped = remaining
+        end
+        if #skipped > 0 then
+            print("Gave up on " .. #skipped .. " tiles:")
+            for _, t in ipairs(skipped) do io.write(string.format("(%d,%d) ", t.x, t.z)) end
+            print()
+        end
 
-    if not REPEAT then break end
-    print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")
-    sleep(REPEAT * 60)
-end
+        if not goToAndSettle(0, 0) then
+            print("Couldn't get home; at " .. T.posString())
+        end
+        T.face(0)
+        T.dumpDown()
+        print(string.format("Pass complete. Fuel left: %s, torches placed: %d",
+            tostring(turtle.getFuelLevel()), torchesPlaced))
+
+        if not REPEAT then break end
+        print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")
+        sleep(REPEAT * 60)
+    end
+end)
+
+restoreTools()
+if not ok then error(err, 0) end
