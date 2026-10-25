@@ -111,6 +111,7 @@ collects seeds.
 farm <width> <length> [repeatMinutes]        first run: learn layout, then farm
 farm [repeatMinutes]                         later runs: use saved layout
 farm learn <width> <length> [repeatMinutes]  re-learn after changing the farm
+farm clone [repeatMinutes]                   build the last learned farm HERE
 farm reset                                   go home after an interruption
 ```
 
@@ -136,6 +137,22 @@ need to hand it seeds directly.
   dirt — all from cruise height, since CC:Tweaked lets a hoe till through one
   block of air below the turtle. Returns home, dumps wheat and surplus seeds, tops seeds back up, sleeps
   (default 20 min; `0` for a single pass).
+
+### Cloning a farm
+
+`farm clone` rebuilds the last learned layout wherever the turtle is now, then
+farms it. Park the turtle the same way you would for a new farm (two blocks
+above ground level, diagonally outside the corner, chest below) with a pickaxe
+and a hoe on board, and **dirt, seeds and two water buckets in the chest**. It
+runs two phases: with the pickaxe it clears the crop level, digs the lane
+trenches and removes stone where land is wanted; with the hoe it fills, tills
+and plants the land, then floors and walls each lane and waters it. Lanes are
+walled on every side the map doesn't call lane, including the ends, so nothing
+runs out of the box. Each lane is bootstrapped by pouring the two buckets at
+tiles 1 and 3 — Minecraft turns tile 2 into a source — and the rest is scooped
+from that regenerating tile, so two buckets build any number of lanes. The site
+should be roughly level with the turtle's starting height; it won't terraform
+more than one block.
 
 ## Library
 

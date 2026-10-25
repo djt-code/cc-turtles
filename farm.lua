@@ -1,14 +1,16 @@
 -- farm.lua -- wheat farming turtle for CC:Tweaked
 --
--- Needs a diamond hoe, equipped or in the inventory.  Any other tool
--- (e.g. a pickaxe on the other side) is parked in the inventory while the
--- program runs so the hoe is the only tool and digDown() always tills.
--- Optional: Advanced Peripherals Chunky Turtle upgrade for unattended use.
+-- Needs a diamond hoe (and a diamond pickaxe for `clone`), equipped or in
+-- the inventory.  The program makes the tool it needs the only tool
+-- equipped and parks the other in the inventory, so digDown() with the hoe
+-- always tills.  Optional: Advanced Peripherals Chunky Turtle upgrade.
 --
 -- Usage:
 --   farm <width> <length> [repeatMinutes]         first run: explore + farm
 --   farm [repeatMinutes]                           later runs: saved layout
 --   farm learn <width> <length> [repeatMinutes]    re-explore the farm
+--   farm clone [repeatMinutes]                     build the saved layout HERE,
+--                                                  then farm it
 --   farm reset                                     return to home after a stop
 --   farm ... --here                                accept current spot as home
 --
@@ -21,22 +23,27 @@
 -- Placement: put the turtle diagonally outside one corner of the farm,
 -- hovering TWO blocks above the farmland (one block above the crop tops).
 -- Put the output chest/barrel directly below the start position (up to 3
--- blocks down) and keep wheat seeds in it; the turtle restocks from it.
+-- blocks down).  Keep in the chest: wheat seeds, dirt, and a bucket or two
+-- (water buckets for clone); the turtle restocks from it.
 --
 -- How it works:
 --  * Learning pass: flies over every tile in the box.  Wheat below ->
 --    farm tile.  Air below -> drops down a block to look at the ground:
 --    farmland -> plant; dirt/grass -> till with the hoe, then plant;
---    water/other -> recorded and left alone; missing ground -> "hole".
+--    water -> lane; missing ground -> "hole"; other -> left alone.
 --    Layout saved to farm.map.
 --  * Repair: holes are fixed according to the strip they lie in.  In a
 --    land strip: dirt, till, plant.  In a water lane: dirt floor beneath
---    if missing, dirt walls on the open cross-lane sides, then water from
---    a bucket refilled at a lane tile with 2+ water neighbours.  Keep dirt
---    and a bucket (or water buckets) in the chest.
+--    if missing, dirt walls on every side that isn't lane, then water.
+--  * Clone: builds farm.map at the current position.  Phase 1 (pickaxe)
+--    clears the crop level, digs lane trenches and removes stone where
+--    land is wanted.  Phase 2 (hoe) fills/tills/plants land, then floors,
+--    walls and waters the lanes.  Each lane is bootstrapped with two water
+--    buckets at tiles 1 and 3 (tile 2 becomes a source on its own) and the
+--    rest is scooped from that regenerating tile.
 --  * Farming pass: visits only farm tiles, harvests wheat at age 7 and
---    replants it, plants bare farmland, returns home, drops wheat and
---    surplus seeds into the chest, tops seeds back up, and sleeps.
+--    replants it, plants bare farmland (tilling through the air gap if it
+--    reverted to dirt), returns home, drops produce, restocks, sleeps.
 --  * Navigation is at a fixed cruise height (turtlelib.stepFlat) with a
 --    learned obstacle map and BFS re-routing.  Position is saved to disk
 --    after every move so `farm reset` can bring it home after a Ctrl+T.
@@ -49,16 +56,13 @@ local MAP_FILE = T.dataPath("farm.map")
 -- Arguments
 --------------------------------------------------------------------------
 local args = { ... }
-local forceLearn, forceHere = false, false
+local forceLearn, forceHere, doClone = false, false, false
 for i = #args, 1, -1 do
     if args[i] == "--here" then forceHere = true; table.remove(args, i) end
 end
-if args[1] == "learn" then forceLearn = true; table.remove(args, 1) end
-
-if args[1] == "reset" then
-    T.goHome()
-    return
-end
+if args[1] == "learn" then forceLearn = true; table.remove(args, 1)
+elseif args[1] == "clone" then doClone = true; forceHere = true; table.remove(args, 1)
+elseif args[1] == "reset" then T.goHome(); return end
 
 local WIDTH, LENGTH, REPEAT
 if #args >= 2 then
@@ -73,7 +77,11 @@ local MAX_SEEDS = 256           -- never carry more than this many seeds
 
 local CROP = "minecraft:wheat"
 local SEED = "minecraft:wheat_seeds"
-local DIRT = "minecraft:dirt"           -- used to fill holes in land strips
+local DIRT = "minecraft:dirt"
+local WATER = "minecraft:water"
+local FARMLAND = "minecraft:farmland"
+local BUCKET, WATER_BUCKET = "minecraft:bucket", "minecraft:water_bucket"
+local HOE, PICKAXE = "minecraft:diamond_hoe", "minecraft:diamond_pickaxe"
 local TILLABLE = {
     ["minecraft:dirt"] = true, ["minecraft:grass_block"] = true,
     ["minecraft:coarse_dirt"] = true, ["minecraft:dirt_path"] = true,
@@ -82,12 +90,19 @@ local TILLABLE = {
 
 T.step = T.stepFlat
 T.mode = "flat"
-T.diggable = {}            -- never dig while moving; only via workCrop/learnTile
+T.diggable = {}            -- never dig while moving
 
 --------------------------------------------------------------------------
--- Farm layout map: tiles[key] = "crop" | "water" | "other"
+-- Farm layout map: tiles[key] = "crop" | "water" | "hole" | "other"
 --------------------------------------------------------------------------
 local tiles = {}
+local wet = {}             -- tiles that actually hold water right now
+local pendingFills = {}    -- holes (or clone targets) still to build
+
+local function keyXZ(k)
+    local x, z = k:match("(-?%d+),(-?%d+)")
+    return tonumber(x), tonumber(z)
+end
 
 local function saveMap()
     local f = fs.open(MAP_FILE, "w")
@@ -111,41 +126,50 @@ local function loadMap()
     return true
 end
 
-local function cropTiles()
+local function tilesOfKind(kind)
     local list = {}
     for _, t in ipairs(T.serpentine(WIDTH, LENGTH)) do
-        if tiles[T.ckey(t.x, t.z)] == "crop" then list[#list + 1] = t end
+        if tiles[T.ckey(t.x, t.z)] == kind then list[#list + 1] = t end
     end
     return list
+end
+
+local function countKind(kind)
+    local n = 0
+    for _, k in pairs(tiles) do if k == kind then n = n + 1 end end
+    return n
 end
 
 -- How many seeds we want on board: enough to plant every crop tile (or the
 -- whole box before the layout is known), capped.
 local function seedTarget()
-    local n = 0
-    for _, kind in pairs(tiles) do if kind == "crop" then n = n + 1 end end
+    local n = countKind("crop")
     if n == 0 then n = math.abs(WIDTH * LENGTH) end
     return math.min(MAX_SEEDS, n + 16)
 end
 
 --------------------------------------------------------------------------
--- Tile actions (all called at cruise height)
+-- Tile primitives (all start and end at cruise height)
 --------------------------------------------------------------------------
-local function plantDown()
-    if not T.selectItem(SEED) then return false end
-    return turtle.placeDown()
-end
-
-local function goToCruise(tx, tz)
-    T.toStartHeight()
-    return T.goTo(tx, tz)
-end
-
 -- What is directly below: a block name, or "air".
 local function below()
     local ok, d = turtle.inspectDown()
     if not ok then return "air" end
     return d.name, d
+end
+
+local function plantDown()
+    if not T.selectItem(SEED) then return false end
+    return turtle.placeDown()
+end
+
+local function placeDirtDown()
+    return T.selectItem(DIRT) and turtle.placeDown()
+end
+
+local function goToCruise(tx, tz)
+    T.toStartHeight()
+    return T.goTo(tx, tz)
 end
 
 local warnedLow = false
@@ -174,14 +198,12 @@ local function workCrop()
     elseif name == "air" then
         if plantDown() then return "planted" end
         if T.countItem(SEED) == 0 then return "noseeds" end
-        -- Not farmland under the gap: till it (hoe reaches through the air)
-        turtle.digDown()
+        turtle.digDown()                     -- till through the gap
         if plantDown() then return "planted" end
         return "empty"
-    elseif TILLABLE[name] or name == "minecraft:farmland" then
-        -- Ground is directly below us: we are one block low for this tile.
+    elseif TILLABLE[name] or name == FARMLAND then
         warnLow()
-        if TILLABLE[name] then turtle.digDown() end        -- till it
+        if TILLABLE[name] then turtle.digDown() end
         if not T.up() then return "blocked" end
         local r = plantDown() and "planted" or (T.countItem(SEED) == 0 and "noseeds" or "empty")
         T.down()
@@ -191,26 +213,25 @@ local function workCrop()
 end
 
 -- Classify (and fix up) the tile below during the learning pass.
--- crop | water | other
+-- crop | water | hole | other
 local function learnTile()
     local name = below()
     if name == CROP then return "crop" end
-    if name == "minecraft:water" then return "water" end
-    if TILLABLE[name] or name == "minecraft:farmland" then
+    if name == WATER then return "water" end
+    if TILLABLE[name] or name == FARMLAND then
         warnLow()
         if TILLABLE[name] then turtle.digDown() end
         if T.up() then plantDown(); T.down() end
         return "crop"
     end
     if name ~= "air" then return "other" end
-    -- Air at crop level: step down to see the ground.
     if not T.down() then return "other" end
     local g = below()
     local kind = "other"
-    if g == "minecraft:farmland" then kind = "crop"
+    if g == FARMLAND then kind = "crop"
     elseif TILLABLE[g] then if turtle.digDown() then kind = "crop" end
-    elseif g == "minecraft:water" then kind = "water"
-    elseif g == "air" then kind = "hole"              -- ground block missing
+    elseif g == WATER then kind = "water"
+    elseif g == "air" then kind = "hole"
     end
     T.up()
     if kind == "crop" then plantDown() end
@@ -218,12 +239,13 @@ local function learnTile()
 end
 
 --------------------------------------------------------------------------
--- Home chest: dump produce, restock seeds
+-- Home chest: dump produce, restock seeds / dirt / buckets
 --------------------------------------------------------------------------
--- Holes recorded in the map that still need repairing (see Strips below).
-local pendingFills = {}
-local dirtNeeded                     -- defined with the strip logic
-local BUCKET, WATER_BUCKET = "minecraft:bucket", "minecraft:water_bucket"
+local function dirtNeeded()
+    local n = 0
+    for _, f in ipairs(pendingFills) do n = n + (f.want == "water" and 4 or 1) end
+    return math.min(n, 192)
+end
 
 local function keepPolicy(item, alreadyKept)
     if item.name == SEED then return math.max(0, seedTarget() - alreadyKept) end
@@ -236,7 +258,8 @@ end
 -- Pull `name` out of the chest below until we hold `target` of it.
 -- suckDown() takes from the chest's first occupied slot regardless of what
 -- it is, so anything else that comes out is set aside and dropped back
--- once we're done (fuel and the other restock item are kept).
+-- once we're done (other restock items and fuel are kept).
+local WANTED = { [SEED] = true, [DIRT] = true, [BUCKET] = true, [WATER_BUCKET] = true }
 local warnedEmpty = {}
 local function restockItem(name, target, label)
     if target <= 0 or T.countItem(name) >= target then return end
@@ -257,7 +280,6 @@ local function restockItem(name, target, label)
         warnedEmpty[name] = nil
     end
 
-    local wanted = { [SEED] = true, [DIRT] = true, [BUCKET] = true, [WATER_BUCKET] = true }
     local junk = {}
     for _ = 1, 54 do                              -- a double chest's worth
         if T.countItem(name) >= target then break end
@@ -270,7 +292,7 @@ local function restockItem(name, target, label)
         for s = 1, 16 do
             if turtle.getItemCount(s) > before[s] then
                 local it = turtle.getItemDetail(s)
-                if it and not wanted[it.name] and not T.keep[it.name] then junk[#junk + 1] = s end
+                if it and not WANTED[it.name] and not T.keep[it.name] then junk[#junk + 1] = s end
                 break
             end
         end
@@ -283,6 +305,8 @@ local function restockItem(name, target, label)
     print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
 end
 
+local wantWaterBuckets = 0     -- set by the lane builder before visiting home
+
 local function dumpAtHome()
     goToCruise(0, 0)
     T.face(0)
@@ -294,6 +318,12 @@ local function dumpAtHome()
         T.dumpDown(keepPolicy)
         restockItem(SEED, seedTarget(), "Seeds")
         restockItem(DIRT, dirtNeeded(), "Dirt")
+        if wantWaterBuckets > 0 then
+            restockItem(WATER_BUCKET, wantWaterBuckets, "Water buckets")
+            if T.countItem(WATER_BUCKET) + T.countItem(BUCKET) < wantWaterBuckets then
+                restockItem(BUCKET, wantWaterBuckets - T.countItem(WATER_BUCKET), "Buckets")
+            end
+        end
     else
         print("No chest found below home; keeping items.")
     end
@@ -301,20 +331,12 @@ local function dumpAtHome()
 end
 
 --------------------------------------------------------------------------
--- Strips.  Farms are usually strips of farmland separated by water lanes.
--- A hole (missing ground block) is repaired according to the line it lies
--- in: if the other tiles along its column or row are land (and none are
--- water) it gets dirt + tilling; if they are water (and none are land) it
--- gets a dirt floor beneath, dirt walls on the two cross-lane sides where
--- they are open, and a water block.  Water comes from a bucket, refilled
--- at a lane tile with two or more water neighbours so the source regrows.
+-- Strips and lanes
+--
+-- Farms are strips of farmland separated by water lanes.  A hole (missing
+-- ground block) is repaired to match the line it lies in; a clone builds
+-- every tile of the map.  Lanes are built floor+walls first, then watered.
 --------------------------------------------------------------------------
-local function keyXZ(k)
-    local x, z = k:match("(-?%d+),(-?%d+)")
-    return tonumber(x), tonumber(z)
-end
-
--- Tally kinds along a line (excluding holes).
 local function lineTally(filter)
     local t = { crop = 0, water = 0, other = 0 }
     for k, kind in pairs(tiles) do
@@ -332,8 +354,21 @@ local function classifyLine(t)
     return nil
 end
 
--- Decide what each hole should become.  Columns (same x) are checked
--- first since lanes usually run along the length axis; rows second.
+-- Lane axis of a water tile: "z" if its column is water, else "x".
+local function laneAxis(x, z)
+    local col = lineTally(function(px, pz) return px == x and pz ~= z end)
+    if col.water > 0 and col.crop == 0 then return "z" end
+    return "x"
+end
+
+local function sortFills(list)
+    table.sort(list, function(a, b)
+        if a.x ~= b.x then return math.abs(a.x) < math.abs(b.x) end
+        return math.abs(a.z) < math.abs(b.z)
+    end)
+end
+
+-- Repair planning: decide what each hole should become.
 local function planFills()
     pendingFills = {}
     for k, kind in pairs(tiles) do
@@ -342,137 +377,243 @@ local function planFills()
             local col = classifyLine(lineTally(function(px, pz) return px == x and pz ~= z end))
             local row = classifyLine(lineTally(function(px, pz) return pz == z and px ~= x end))
             local want, axis
-            if col then want, axis = col, "z"            -- line runs along z
-            elseif row then want, axis = row, "x" end
-            if want then
-                pendingFills[#pendingFills + 1] = { x = x, z = z, want = want, axis = axis }
-            end
+            if col then want, axis = col, "z" elseif row then want, axis = row, "x" end
+            if want then pendingFills[#pendingFills + 1] = { x = x, z = z, want = want, axis = axis } end
         end
     end
-    table.sort(pendingFills, function(a, b)
-        if a.x ~= b.x then return math.abs(a.x) < math.abs(b.x) end
-        return math.abs(a.z) < math.abs(b.z)
-    end)
+    sortFills(pendingFills)
     return #pendingFills
 end
 
-function dirtNeeded()
-    local n = 0
-    for _, f in ipairs(pendingFills) do n = n + (f.want == "water" and 3 or 1) end
-    return n
+-- Clone planning: every mapped tile is a target.
+local function planClone()
+    pendingFills = {}
+    for k, kind in pairs(tiles) do
+        if kind == "crop" or kind == "water" then
+            local x, z = keyXZ(k)
+            pendingFills[#pendingFills + 1] = {
+                x = x, z = z, want = (kind == "crop") and "land" or "water",
+                axis = (kind == "water") and laneAxis(x, z) or nil,
+            }
+        end
+    end
+    sortFills(pendingFills)
+    return #pendingFills
 end
 
--- Make sure we hold a water bucket.  Tries the chest first (water buckets
--- or an empty bucket), then refills an empty bucket from a regenerating
--- lane tile.
-local function ensureWater()
-    if T.countItem(WATER_BUCKET) > 0 then return true end
-    if T.countItem(BUCKET) == 0 then
-        dumpAtHome()
-        restockItem(WATER_BUCKET, 1, "Water bucket")
-        if T.countItem(WATER_BUCKET) > 0 then return true end
-        restockItem(BUCKET, 1, "Bucket")
-        if T.countItem(BUCKET) == 0 then return false end
-    end
-    -- find a water tile with >= 2 water neighbours (infinite source)
+-- Does the map say (x,z) is lane?  Used to decide where walls go.
+local function isLane(x, z) return tiles[T.ckey(x, z)] == "water" end
+
+----------------------------------------------------------------- water --
+local function regenTile()
     local best
-    for k, kind in pairs(tiles) do
-        if kind == "water" then
-            local x, z = keyXZ(k)
-            local n = 0
-            for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
-                if tiles[T.ckey(x + d[1], z + d[2])] == "water" then n = n + 1 end
+    for k in pairs(wet) do
+        local x, z = keyXZ(k)
+        local n = 0
+        for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+            if wet[T.ckey(x + d[1], z + d[2])] then n = n + 1 end
+        end
+        if n >= 2 and (not best or math.abs(x) + math.abs(z) < math.abs(best.x) + math.abs(best.z)) then
+            best = { x = x, z = z }
+        end
+    end
+    return best
+end
+
+-- Hold at least n water buckets: scoop from a regenerating lane tile with
+-- empty buckets, else fetch water buckets / buckets from the chest.
+local function ensureWater(n)
+    local function scoop()
+        while T.countItem(WATER_BUCKET) < n and T.countItem(BUCKET) > 0 do
+            local r = regenTile()
+            if not r then return end
+            local before = T.countItem(WATER_BUCKET)
+            if goToCruise(r.x, r.z) and T.down() then
+                if below() == WATER and T.selectItem(BUCKET) then turtle.placeDown() end
+                T.up()
             end
-            if n >= 2 and (not best or math.abs(x) + math.abs(z) < math.abs(best.x) + math.abs(best.z)) then
-                best = { x = x, z = z }
+            if T.countItem(WATER_BUCKET) == before then wet[T.ckey(r.x, r.z)] = nil; return end
+        end
+    end
+    scoop()
+    if T.countItem(WATER_BUCKET) < n then
+        wantWaterBuckets = n
+        dumpAtHome()
+        scoop()
+    end
+    return T.countItem(WATER_BUCKET) >= n
+end
+
+-- Prepare a lane tile: ground level clear, dirt floor beneath, dirt walls on
+-- every side the map doesn't call lane.  Ends at cruise height.
+local function prepLane(t)
+    if not (goToCruise(t.x, t.z) and T.down()) then return false end
+    local g = below()
+    if g == WATER then wet[T.ckey(t.x, t.z)] = true; T.up(); return true end
+    if g ~= "air" then T.up(); return false end          -- needs the pickaxe phase
+    if not T.down() then T.up(); return false end        -- now inside the trench
+    local ok = true
+    if below() == "air" then ok = placeDirtDown() end
+    if ok then
+        for d = 0, 3 do
+            local nx, nz = t.x + T.DX[d], t.z + T.DZ[d]
+            if not isLane(nx, nz) then
+                T.face(d)
+                if not turtle.detect() then
+                    if not (T.selectItem(DIRT) and turtle.place()) then ok = false end
+                end
             end
         end
     end
-    if not best then
-        print("No regenerating water tile to refill the bucket from.")
-        return false
-    end
-    if goToCruise(best.x, best.z) and T.down() then
-        if T.selectItem(BUCKET) then turtle.placeDown() end     -- scoop
-        T.up()
-    end
-    return T.countItem(WATER_BUCKET) > 0
+    T.up(); T.up()
+    return ok
 end
 
-local function placeDirtDown()
-    return T.selectItem(DIRT) and turtle.placeDown()
-end
-
--- Repair one land hole: dirt into the ground position, till, plant.
-local function fillLand(t)
+-- Pour one bucket at a prepared lane tile.
+local function waterLane(t)
     if not (goToCruise(t.x, t.z) and T.down()) then return false end
     local ok = false
-    local g = below()
-    if g == "air" then
-        if T.countItem(DIRT) > 0 and placeDirtDown() then g = DIRT end
-    end
-    if TILLABLE[g] then turtle.digDown(); g = "minecraft:farmland" end
-    if g == "minecraft:farmland" then ok = true end
+    if below() == WATER then ok = true
+    elseif below() == "air" and T.selectItem(WATER_BUCKET) then ok = turtle.placeDown() end
     T.up()
-    if ok then plantDown() end
+    if ok then wet[T.ckey(t.x, t.z)] = true end
     return ok
 end
 
--- Repair one water-lane hole: floor beneath, walls across the lane, water.
-local function fillWater(t)
-    if not ensureWater() then return false end
-    if not (goToCruise(t.x, t.z) and T.down()) then return false end
-    if below() ~= "air" then                 -- something already at ground level
-        T.up(); return false
+-- Group water targets into lanes (same axis + same line), sorted along the lane.
+local function groupLanes(list)
+    local lanes, order = {}, {}
+    for _, t in ipairs(list) do
+        local id = (t.axis == "z") and ("z" .. t.x) or ("x" .. t.z)
+        if not lanes[id] then lanes[id] = {}; order[#order + 1] = id end
+        table.insert(lanes[id], t)
     end
-    if not T.down() then T.up(); return false end       -- now inside the hole
-    local ok = true
-    if below() == "air" then                            -- floor missing
-        if not placeDirtDown() then ok = false end
+    for _, id in ipairs(order) do
+        table.sort(lanes[id], function(a, b)
+            if a.axis == "z" then return math.abs(a.z) < math.abs(b.z) end
+            return math.abs(a.x) < math.abs(b.x)
+        end)
     end
-    if ok then
-        -- walls on the two sides perpendicular to the lane
-        local dirs = (t.axis == "z") and { 1, 3 } or { 0, 2 }
-        for _, d in ipairs(dirs) do
-            T.face(d)
-            if not turtle.detect() and T.countItem(DIRT) > 0 then
-                T.selectItem(DIRT); turtle.place()
+    return lanes, order
+end
+
+-- Build all pending water tiles.  Returns list of the ones not completed.
+local function buildLanes(list)
+    local remaining = {}
+    local lanes, order = groupLanes(list)
+    for _, id in ipairs(order) do
+        local lane = lanes[id]
+        -- 1. floors and walls for the whole lane first
+        local prepped = {}
+        for _, t in ipairs(lane) do
+            if prepLane(t) then prepped[#prepped + 1] = t else remaining[#remaining + 1] = t end
+        end
+        -- 2. water.  Need a regenerating source; bootstrap one if there is none.
+        local todo = {}
+        for _, t in ipairs(prepped) do if not wet[T.ckey(t.x, t.z)] then todo[#todo + 1] = t end end
+        if #todo > 0 and not regenTile() then
+            if #todo >= 3 and ensureWater(2) then
+                if waterLane(todo[1]) and waterLane(todo[3]) then
+                    sleep(1)                                -- let tile 2 become a source
+                    local mid = todo[2]
+                    if goToCruise(mid.x, mid.z) and T.down() then
+                        if below() == WATER then wet[T.ckey(mid.x, mid.z)] = true end
+                        T.up()
+                    end
+                    if not wet[T.ckey(mid.x, mid.z)] then waterLane(mid) end
+                end
+            end
+        end
+        for _, t in ipairs(todo) do
+            if not wet[T.ckey(t.x, t.z)] then
+                if ensureWater(1) and waterLane(t) then
+                    -- done
+                else
+                    remaining[#remaining + 1] = t
+                end
             end
         end
     end
-    T.up()                                              -- back to crop level
-    if ok then
-        T.selectItem(WATER_BUCKET)
-        ok = turtle.placeDown()
-    end
-    T.up()
-    return ok
+    return remaining
 end
 
-local function fillHoles()
+------------------------------------------------------------------ land --
+-- Make (x,z) farmland with wheat on it.  Handles air (needs dirt), water
+-- (dirt replaces it), tillable ground and existing farmland.
+local function buildLand(t)
+    if not (goToCruise(t.x, t.z) and T.down()) then return false end
+    local g = below()
+    if g == "air" or g == WATER then
+        if placeDirtDown() then g = DIRT end
+    end
+    if TILLABLE[g] then turtle.digDown(); g = FARMLAND end
+    T.up()
+    if g ~= FARMLAND then return false end
+    plantDown()
+    return true
+end
+
+-- Work through pendingFills: land first (so lane walls exist), then lanes.
+local function buildPending(label)
     if #pendingFills == 0 then return end
-    if T.countItem(DIRT) < dirtNeeded() then dumpAtHome() end   -- restocks dirt
+    local land, water = {}, {}
+    for _, t in ipairs(pendingFills) do
+        if t.want == "land" then land[#land + 1] = t else water[#water + 1] = t end
+    end
+    wantWaterBuckets = (#water > 0) and 2 or 0
+    if T.countItem(DIRT) < dirtNeeded() or T.countItem(SEED) == 0 then dumpAtHome() end
     if T.countItem(DIRT) == 0 then
-        print(#pendingFills .. " holes to fill but no dirt in chest or inventory.")
+        print(#pendingFills .. " tiles to " .. label .. " but no dirt in chest or inventory.")
         return
     end
-    print(string.format("Repairing %d holes (%d dirt on board)", #pendingFills, T.countItem(DIRT)))
-    local remaining, land, water = {}, 0, 0
-    for _, t in ipairs(pendingFills) do
-        local done
-        if t.want == "land" then
-            done = fillLand(t)
-            if done then land = land + 1 end
-        else
-            done = fillWater(t)
-            if done then water = water + 1 end
-        end
-        if done then tiles[T.ckey(t.x, t.z)] = (t.want == "land") and "crop" or "water"
+    print(string.format("%s: %d land, %d water tiles (%d dirt on board)",
+        label, #land, #water, T.countItem(DIRT)))
+
+    local remaining = {}
+    for _, t in ipairs(land) do
+        if T.countItem(DIRT) == 0 then dumpAtHome() end
+        if buildLand(t) then tiles[T.ckey(t.x, t.z)] = "crop"
         else remaining[#remaining + 1] = t end
     end
+    for _, t in ipairs(buildLanes(water)) do remaining[#remaining + 1] = t end
+    for _, t in ipairs(water) do
+        if wet[T.ckey(t.x, t.z)] then tiles[T.ckey(t.x, t.z)] = "water" end
+    end
     pendingFills = remaining
+    wantWaterBuckets = 0
     saveMap()
-    print(string.format("Filled %d land and %d water holes; %d still open.", land, water, #remaining))
+    print(string.format("%s done: %d tiles still open.", label, #remaining))
+end
+
+--------------------------------------------------------------------------
+-- Clone phase 1 (pickaxe): clear crop level, trench lanes, remove stone.
+--------------------------------------------------------------------------
+local function clonePrepare()
+    local restore = T.usePrimaryTool(PICKAXE)
+    print("Clone phase 1: clearing and trenching with the pickaxe")
+    local plan = T.serpentine(WIDTH, LENGTH)
+    for i, t in ipairs(plan) do
+        local kind = tiles[T.ckey(t.x, t.z)]
+        if (kind == "crop" or kind == "water") and goToCruise(t.x, t.z) then
+            local c = below()
+            if c ~= "air" and c ~= CROP then turtle.digDown() end     -- clear crop level
+            if T.down() then
+                local g = below()
+                if kind == "water" then
+                    if g == WATER then wet[T.ckey(t.x, t.z)] = true
+                    elseif g ~= "air" then turtle.digDown() end        -- trench
+                else
+                    if g ~= "air" and g ~= WATER and g ~= FARMLAND and not TILLABLE[g] then
+                        turtle.digDown()                               -- stone etc.
+                    end
+                end
+                T.up()
+            end
+        end
+        if i % 50 == 0 then print(string.format("%d/%d cleared", i, #plan)) end
+        if T.inventoryFull() then dumpAtHome() end
+    end
+    restore()
 end
 
 --------------------------------------------------------------------------
@@ -480,13 +621,14 @@ end
 --------------------------------------------------------------------------
 local function learnPass()
     print(string.format("Learning layout: %dx%d", WIDTH, LENGTH))
-    tiles = {}
+    tiles, wet = {}, {}
     local counts = { crop = 0, water = 0, other = 0, hole = 0 }
     local plan = T.serpentine(WIDTH, LENGTH)
     for i, t in ipairs(plan) do
         local kind = "other"
         if goToCruise(t.x, t.z) then kind = learnTile() end
         tiles[T.ckey(t.x, t.z)] = kind
+        if kind == "water" then wet[T.ckey(t.x, t.z)] = true end
         counts[kind] = counts[kind] + 1
         if i % 50 == 0 then
             print(string.format("%d/%d scanned, %d crop tiles", i, #plan, counts.crop))
@@ -496,15 +638,14 @@ local function learnPass()
     saveMap()
     print(string.format("Layout saved: %d crop, %d water, %d other, %d holes",
         counts.crop, counts.water, counts.other, counts.hole))
-    local n = planFills()
-    if n > 0 then
-        print(n .. " holes lie in land or water strips and will be repaired.")
-        fillHoles()
+    if planFills() > 0 then
+        print(#pendingFills .. " holes lie in land or water strips and will be repaired.")
+        buildPending("Repair")
     end
 end
 
 local function farmPass()
-    local plan = cropTiles()
+    local plan = tilesOfKind("crop")
     local stats = { harvested = 0, planted = 0, growing = 0, empty = 0,
                     blocked = 0, noseeds = 0 }
     local skipped, triedRestock = 0, false
@@ -512,7 +653,7 @@ local function farmPass()
         if goToCruise(t.x, t.z) then
             local r = workCrop()
             if r == "noseeds" and not triedRestock then
-                dumpAtHome()                      -- restocks seeds
+                dumpAtHome()
                 triedRestock = true
                 if goToCruise(t.x, t.z) then r = workCrop() end
             end
@@ -521,8 +662,7 @@ local function farmPass()
             skipped = skipped + 1
         end
         if i % 50 == 0 then
-            print(string.format("%d/%d tiles, fuel %s", i, #plan,
-                tostring(turtle.getFuelLevel())))
+            print(string.format("%d/%d tiles, fuel %s", i, #plan, tostring(turtle.getFuelLevel())))
         end
         if T.inventoryFull() then dumpAtHome() end
     end
@@ -537,6 +677,10 @@ end
 -- Main
 --------------------------------------------------------------------------
 local haveMap = (not forceLearn) and loadMap()
+if doClone and not haveMap then
+    print("No saved layout to clone. Learn a farm first.")
+    return
+end
 if not haveMap and not (WIDTH and LENGTH) then
     print("No saved layout. Usage: farm <width> <length> [repeatMinutes]")
     return
@@ -555,22 +699,36 @@ if stale then
 end
 
 T.cfg.width, T.cfg.length = WIDTH, LENGTH
-T.requireFuel(math.floor(math.abs(WIDTH * LENGTH) * CRUISE_MOVES_PER_TILE)
+local perTile = doClone and 5 or CRUISE_MOVES_PER_TILE
+T.requireFuel(math.floor(math.abs(WIDTH * LENGTH) * perTile)
               + math.abs(WIDTH) + math.abs(LENGTH) + 150)
 
-local restoreTools = T.usePrimaryTool("minecraft:diamond_hoe")
+if haveMap and not doClone then
+    for k, kind in pairs(tiles) do if kind == "water" then wet[k] = true end end
+end
+
+local restoreTools = T.usePrimaryTool(HOE)
 
 local ok, err = pcall(function()
     T.clearBlocked()
-    dumpAtHome()                      -- stock up on seeds before starting
-    if not haveMap then
-        learnPass()
+    if doClone then
+        print(string.format("Cloning saved %dx%d layout here (%d crop, %d water tiles)",
+            WIDTH, LENGTH, countKind("crop"), countKind("water")))
+        planClone()
         dumpAtHome()
+        clonePrepare()
+        buildPending("Clone")
+    else
+        dumpAtHome()
+        if not haveMap then
+            learnPass()
+            dumpAtHome()
+        end
+        planFills()
     end
-    planFills()
     while true do
         T.clearBlocked()
-        if #pendingFills > 0 then fillHoles() end
+        if #pendingFills > 0 then buildPending(doClone and "Clone" or "Repair") end
         farmPass()
         dumpAtHome()
         print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()) ..
