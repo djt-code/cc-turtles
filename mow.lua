@@ -10,9 +10,11 @@
 --
 -- width  = tiles to the RIGHT of the turtle (negative = to the LEFT)
 -- length = tiles AHEAD of the turtle (negative = BEHIND)
+-- Both are counted OUT from the turtle: its own row and column are not
+-- part of the lawn, so the box is x = 1..width, z = 1..length.
 --
--- Place the turtle at one corner of the lawn, on the ground at grass level,
--- facing along the LENGTH axis.
+-- Place the turtle diagonally outside one corner of the lawn, on the ground
+-- at grass level, facing along the LENGTH axis.
 -- Optional chest/barrel directly below the start position for seeds.
 -- Put torches in the inventory and it lights the lawn as it mows.
 --

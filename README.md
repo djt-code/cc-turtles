@@ -34,9 +34,12 @@ coal blocks (800) and dried kelp blocks (200) are the renewable alternatives.
 ## Coordinates, home and reset
 
 Everything is relative to where the turtle starts: that spot is home `(0,0,0)`,
-facing is `+z`. **Width** counts tiles to the turtle's right (`+x`); a negative
-width means the area is on its left. **Length** counts tiles ahead; negative means
-behind. So a lawn to the left and behind is `mow -70 -40`.
+facing is `+z`. **Width** and **length** are counted *out from the turtle*: stand
+at the turtle, count `width` blocks to its right and `length` blocks ahead, and
+that is the box. The turtle's own row and column are not part of it, so it parks
+diagonally outside one corner (over its chest) and never mows or farms the tile
+it sits on. Negative width means the area is on its left; negative length means
+behind. A lawn to the left and behind is `mow -70 -40`.
 
 Position is saved to `.turtlepos` after every move. If a job is interrupted
 (Ctrl+T, reboot, server restart), `home`, `mow reset` or `farm reset` navigates
@@ -82,9 +85,9 @@ mow <width> <length> [repeatMinutes] [notorch] [--here]
 mow reset
 ```
 
-Place the turtle on the ground at grass level at one corner of the lawn, facing
-along the *length* axis with the lawn to its **right**. An optional chest below the
-start position collects seeds.
+Place the turtle on the ground at grass level diagonally outside one corner of the
+lawn, facing along the *length* axis. An optional chest below the start position
+collects seeds.
 
 - Only cuts blocks in the `T.diggable` list (short/tall grass, ferns, dead bushes).
   Everything else is terrain or an obstacle.
@@ -111,9 +114,8 @@ farm learn <width> <length> [repeatMinutes]  re-learn after changing the farm
 farm reset                                   go home after an interruption
 ```
 
-Hover the turtle **two blocks above the farmland** (one above the crop tops) at a
-corner of the bounding box, facing along the length axis with the farm to its
-right. Put the output chest directly below the start position with some wheat
+Hover the turtle **two blocks above the farmland** (one above the crop tops),
+diagonally outside one corner of the farm, facing along the length axis. Put the output chest directly below the start position with some wheat
 seeds in it: the turtle restocks seeds from the chest at the start of every pass
 and whenever it runs out mid-pass (up to one per crop tile, max 256), so you never
 need to hand it seeds directly.
@@ -123,7 +125,8 @@ need to hand it seeds directly.
   left alone. Saved to `farm.map` on the turtle.
 - Farming pass visits crop tiles only, harvests wheat at age 7 and replants it
   immediately, plants any bare farmland, and re-tills farmland that reverted to
-  dirt. Returns home, dumps wheat and surplus seeds, tops seeds back up, sleeps
+  dirt — all from cruise height, since CC:Tweaked lets a hoe till through one
+  block of air below the turtle. Returns home, dumps wheat and surplus seeds, tops seeds back up, sleeps
   (default 20 min; `0` for a single pass).
 
 ## Library

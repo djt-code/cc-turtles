@@ -22,8 +22,9 @@ local T = {}
 -- Configuration (override from the program)
 --------------------------------------------------------------------------
 T.cfg = {
-    width      = 16,    -- grid size in x; negative = extends to the LEFT
-    length     = 16,    -- grid size in z; negative = extends BEHIND
+    width      = 16,    -- tiles to the RIGHT of the start (negative = LEFT)
+    length     = 16,    -- tiles AHEAD of the start (negative = BEHIND)
+                        -- the start tile itself is outside the grid: x in 1..w, z in 1..l
     margin     = 1,     -- columns outside the grid usable for detours
     maxReplans = 10,    -- BFS re-plans per target before giving up
     lowFuel    = 50,    -- top up from inventory below this
@@ -385,9 +386,9 @@ function T.inBounds(x, z)
     local c = T.cfg
     local sx, w = sgn(c.width)
     local sz, l = sgn(c.length)
-    local u, v = x * sx, z * sz           -- grid coords, always >= 0 inside
-    return u >= -c.margin and u < w + c.margin
-       and v >= -c.margin and v < l + c.margin
+    local u, v = x * sx, z * sz           -- grid coords: 1..w, 1..l inside
+    return u >= 1 - c.margin and u <= w + c.margin
+       and v >= 1 - c.margin and v <= l + c.margin
 end
 
 local NEIGH = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }
@@ -510,17 +511,18 @@ end
 -- Plans
 --------------------------------------------------------------------------
 -- Serpentine over the grid: columns along x, rows alternating in z.
--- Negative width/length flip the respective axis.
+-- Tiles are counted OUT from the start: x = 1..w, z = 1..l (signed), so
+-- the start tile (0,0) is never part of the plan.
 function T.serpentine(width, length)
     width, length = width or T.cfg.width, length or T.cfg.length
     local sx, w = sgn(width)
     local sz, l = sgn(length)
     local plan = {}
-    for i = 0, w - 1 do
-        if i % 2 == 0 then
-            for j = 0, l - 1 do plan[#plan + 1] = { x = i * sx, z = j * sz } end
+    for i = 1, w do
+        if i % 2 == 1 then
+            for j = 1, l do plan[#plan + 1] = { x = i * sx, z = j * sz } end
         else
-            for j = l - 1, 0, -1 do plan[#plan + 1] = { x = i * sx, z = j * sz } end
+            for j = l, 1, -1 do plan[#plan + 1] = { x = i * sx, z = j * sz } end
         end
     end
     return plan
@@ -532,9 +534,8 @@ end
 -- clamps lattice points that fall outside the grid onto its edge (which can
 -- only shorten their distance to tiles inside).  Returns a set keyed by
 -- T.ckey plus an ordered list.
--- The lattice is offset so that no point lands on the start tile (0,0),
--- which is where the turtle parks and the output chest sits; a clamped
--- point that would land there is nudged to (1,0).
+-- Computed on a 0-based grid, then shifted to the 1-based, signed grid
+-- the plan uses; the start tile (0,0) is outside it and never gets a torch.
 function T.lightLattice(radius, width, length)
     width, length = width or T.cfg.width, length or T.cfg.length
     local sx, sz
@@ -553,8 +554,7 @@ function T.lightLattice(radius, width, length)
             if dx + dz <= r then
                 local cx = math.max(0, math.min(width - 1, x))
                 local cz = math.max(0, math.min(length - 1, z))
-                if cx == 0 and cz == 0 then cx = math.min(1, width - 1) end
-                cx, cz = cx * sx, cz * sz
+                cx, cz = (cx + 1) * sx, (cz + 1) * sz
                 local k = T.ckey(cx, cz)
                 if not set[k] then
                     set[k] = true

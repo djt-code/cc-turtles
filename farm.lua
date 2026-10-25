@@ -14,9 +14,11 @@
 --
 -- width  = tiles to the RIGHT of the turtle (negative = to the LEFT)
 -- length = tiles AHEAD of the turtle (negative = BEHIND)
+-- Both are counted OUT from the turtle: its own row and column are not part
+-- of the farm, so the box is x = 1..width, z = 1..length.
 -- repeatMinutes defaults to 20; 0 = single pass.
 --
--- Placement: put the turtle at one corner of the farm's bounding box,
+-- Placement: put the turtle diagonally outside one corner of the farm,
 -- hovering TWO blocks above the farmland (one block above the crop tops).
 -- Put the output chest/barrel directly below the start position (up to 3
 -- blocks down) and keep wheat seeds in it; the turtle restocks from it.
@@ -132,49 +134,75 @@ local function goToCruise(tx, tz)
     return T.goTo(tx, tz)
 end
 
--- Harvest if ripe and replant.
+-- What is directly below: a block name, or "air".
+local function below()
+    local ok, d = turtle.inspectDown()
+    if not ok then return "air" end
+    return d.name, d
+end
+
+local warnedLow = false
+local function warnLow()
+    if not warnedLow then
+        warnedLow = true
+        print("Note: ground is directly below cruise height; the turtle is one block")
+        print("lower than ideal and will bob up to plant. Start it one higher next time.")
+    end
+end
+
+-- The turtle cruises one block above the crop tops, i.e. two above the
+-- farmland.  CC:Tweaked lets a hoe till THROUGH one block of air below the
+-- turtle (TurtleTool.useTool), so bare dirt can be tilled from cruise height
+-- with a plain digDown(); seeds also place through that gap onto farmland.
+-- Returns: harvested | growing | planted | empty | noseeds | blocked
 local function workCrop()
-    local ok, data = turtle.inspectDown()
-    if ok and data.name == CROP then
-        if data.state and data.state.age == 7 then
-            turtle.digDown()
+    local name, d = below()
+    if name == CROP then
+        if d.state and tonumber(d.state.age) == 7 then
+            turtle.digDown()                 -- hoe on wheat: breaks it
             plantDown()
             return "harvested"
         end
         return "growing"
-    elseif not ok then
+    elseif name == "air" then
         if plantDown() then return "planted" end
-        -- couldn't plant: no seeds, or farmland reverted to dirt.  Check.
         if T.countItem(SEED) == 0 then return "noseeds" end
-        if T.down() then
-            local ok2, d2 = turtle.inspectDown()
-            if ok2 and TILLABLE[d2.name] then turtle.digDown() end   -- hoe tills
-            T.up()
-            if plantDown() then return "planted" end
-        end
+        -- Not farmland under the gap: till it (hoe reaches through the air)
+        turtle.digDown()
+        if plantDown() then return "planted" end
         return "empty"
+    elseif TILLABLE[name] or name == "minecraft:farmland" then
+        -- Ground is directly below us: we are one block low for this tile.
+        warnLow()
+        if TILLABLE[name] then turtle.digDown() end        -- till it
+        if not T.up() then return "blocked" end
+        local r = plantDown() and "planted" or (T.countItem(SEED) == 0 and "noseeds" or "empty")
+        T.down()
+        return r
     end
     return "blocked"
 end
 
 -- Classify (and fix up) the tile below during the learning pass.
+-- crop | water | other
 local function learnTile()
-    local ok, data = turtle.inspectDown()
-    if ok then
-        if data.name == CROP then return "crop" end
-        return "other"            -- something solid at crop level
+    local name = below()
+    if name == CROP then return "crop" end
+    if name == "minecraft:water" then return "water" end
+    if TILLABLE[name] or name == "minecraft:farmland" then
+        warnLow()
+        if TILLABLE[name] then turtle.digDown() end
+        if T.up() then plantDown(); T.down() end
+        return "crop"
     end
+    if name ~= "air" then return "other" end
+    -- Air at crop level: step down to see the ground.
     if not T.down() then return "other" end
+    local g = below()
     local kind = "other"
-    local ok2, d2 = turtle.inspectDown()
-    if ok2 then
-        if d2.name == "minecraft:farmland" then
-            kind = "crop"
-        elseif TILLABLE[d2.name] then
-            if turtle.digDown() then kind = "crop" end   -- tilled it
-        elseif d2.name == "minecraft:water" then
-            kind = "water"
-        end
+    if g == "minecraft:farmland" then kind = "crop"
+    elseif TILLABLE[g] then if turtle.digDown() then kind = "crop" end
+    elseif g == "minecraft:water" then kind = "water"
     end
     T.up()
     if kind == "crop" then plantDown() end
