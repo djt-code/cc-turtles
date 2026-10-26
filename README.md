@@ -11,6 +11,7 @@ upgrade in software.
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
+| `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
 
 ## Hardware
 
@@ -182,6 +183,28 @@ tiles 1 and 3 — Minecraft turns tile 2 into a source — and the rest is scoop
 from that regenerating tile, so two buckets build any number of lanes. The site
 should be roughly level with the turtle's starting height; it won't terraform
 more than one block.
+
+## diskclone
+
+```
+diskclone <dir> [count] [--force]
+```
+
+Runs on an ordinary computer (not a turtle) with a **disk drive on its bottom**
+and a **dispenser wired to its back**. Each cycle it sends a short redstone pulse
+out the back, the dispenser drops one floppy into the hopper that feeds the
+drive, and the program copies `<dir>` onto the disk, labels it and ejects it into
+the collecting hopper. It keeps going until no disk arrives (the dispenser is
+empty) or `count` disks have been written.
+
+- `<dir>` must have a file named `LABEL` in its root. Its first line becomes each
+  disk's label; `LABEL` itself is not copied.
+- A disk that already has a label or any files on it is ejected without being
+  written. With `--force` it is wiped and written like a blank one.
+- Anything that isn't a floppy is ejected untouched.
+- Each copy is checked against the source (same files, same sizes) before the disk
+  is labelled. If the directory doesn't fit on a floppy, it stops at the first
+  disk without touching it.
 
 ## Library
 
