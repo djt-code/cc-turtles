@@ -23,11 +23,59 @@ sim/runsim farm_clone              # by name
 sim/runsim --list                  # what there is
 ```
 
-`runsim` runs each simulator in a sandbox (its own globals, its own `os`,
+`runsim` runs each simulator in a sandbox (`lib/sandbox.lua`: its own globals, its own `os`,
 its own `loadfile`/`require`), so the mocks never touch the real computer,
 and yields about once a second so CC doesn't stop it for running too long
 without yielding. Full output goes to `sim/logs/<name>.log`; the screen
 scrolls it past as it runs. Ctrl+T stops it.
+
+## Watching one on a monitor
+
+`sim/watchsim <name>` plays a farm simulator out move by move on an
+attached monitor:
+
+- **top-down view** of the farm (+z up the screen, +x to the right), the
+  turtle as a yellow arrow;
+- **side view**, a slice through the turtle's current x (z across, y up),
+  so you see it dip into lanes, dig and climb;
+- the move count, position, facing and fuel, and the farm's own messages
+  as it prints them. The computer's screen shows the simulator's report.
+
+Keys on the computer: **space** pause/resume (or tap the monitor),
+**right** one move while paused, **up/down** faster/slower (from 1 s down
+to one move per tick), **f** skip to the end of the current farm run,
+**q** quit. `sim/watchsim` on its own lists the simulators it can show
+(the `farm_*` ones; the others have no world to draw).
+
+What to build:
+
+- An **Advanced Computer** (or advanced turtle) with the repo on it
+  (`git clone`, which needs HTTP enabled on the server).
+- An **Advanced Monitor** wall: plain monitors have no colour, and the
+  views rely on it. Monitors join into one screen when placed edge to edge
+  in a flat rectangle. Size it for the largest farm you'll watch (the
+  viewer runs at text scale 0.5):
+
+  | Simulators | Needs (characters) | Smallest monitor |
+  |---|---|---|
+  | `farm_clone`, `farm_clone_lane_fallback`, `farm_fuel` (7x16) | 57x21 | 3 wide x 2 tall |
+  | `farm_pass_moves` (9x8) | 45x15 | 3 wide x 2 tall |
+  | every other `farm_*` (5x6) | 33x15 | 2 wide x 2 tall |
+
+  **3x2 shows all of them; 4x3 (78x38) leaves room for many more of the
+  farm's messages.** A monitor that's too small gets a message naming the
+  size to build.
+- Put the monitor against any side of the computer, or connect it with
+  wired modems (right-click each modem to connect it). With more than one
+  monitor attached, name the one to use: `sim/watchsim farm_clone
+  monitor_0`.
+
+What the colours mean: blue `~~` water source, light blue `~n` flowing
+water, brown `::` farmland, brown dirt, green grass, crops as letter and
+age (`w3` wheat at stage 3) on green, lime once ripe, `||` sugar cane,
+`..` sand, orange `[]` chest, gray `\/` hopper, gray `##` stone, yellow
+the turtle (`^^ >> vv <<` top-down; `>> <<` along z or `+x -x` across, side
+on).
 
 A simulator counts as failing if the program raised an error (`ERROR:` in
 its output), it crashed, or (with `run.py`) it ran past 5 minutes. Everything

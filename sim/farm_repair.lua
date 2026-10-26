@@ -102,6 +102,8 @@ local function regen(x, y, z)
     return n >= 2
 end
 
+-- what watchsim.lua draws: the world, the turtle and the farm's size
+SIM_WORLD = { W = W, P = P, width = WIDTH, length = LENGTH, moves = function() return moves end }
 turtle = {
     forward = function() return move(DX[P.d], 0, DZ[P.d]) end,
     back = function() return move(-DX[P.d], 0, -DZ[P.d]) end,

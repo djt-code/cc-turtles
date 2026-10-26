@@ -5,7 +5,8 @@
     python sim/run.py farm_clone ...     just these (".lua" optional)
     python sim/run.py --check            syntax-check the programs only
 
-On a ComputerCraft computer, use sim/runsim.lua instead.
+On a ComputerCraft computer, use sim/runsim.lua instead (sim/watchsim.lua
+plays one out on a monitor).
 
 Each simulator is a Lua script that mocks the CC:Tweaked APIs it needs
 (turtle, peripheral, fs, sleep, ...) around a small block world, runs the
@@ -57,7 +58,7 @@ def main(args):
         paths = [os.path.join(HERE, a if a.endswith(".lua") else a + ".lua") for a in args]
     else:
         paths = sorted(p for p in glob.glob(os.path.join(HERE, "*.lua"))
-                       if os.path.basename(p) != "runsim.lua")
+                       if os.path.basename(p) not in ("runsim.lua", "watchsim.lua"))
     results = []
     for path in paths:
         name = os.path.basename(path)[:-4]

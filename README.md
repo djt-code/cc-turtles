@@ -343,7 +343,9 @@ python sim/run.py --check          # syntax-check every program
 
 They also run on a ComputerCraft computer or turtle that has the repo, with
 `sim/runsim` (all of them) or `sim/runsim farm_clone`; full output lands in
-`sim/logs/`.
+`sim/logs/`. `sim/watchsim farm_clone` plays one out move by move on an
+attached Advanced Monitor (3x2 blocks or bigger), with a top-down and a
+side view; see [sim/README.md](sim/README.md) for what to build.
 
 See [sim/README.md](sim/README.md) for what each one covers. They're tests
 for the code, not for the game: the mock world only models the vanilla
