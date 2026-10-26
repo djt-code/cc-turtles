@@ -101,6 +101,10 @@ collects seeds.
   crevasse to be routed around rather than entered.
 - Tiles it can't reach are retried at the end of the pass from whatever side it
   can get to; anything still unreachable is printed as coordinates.
+- When it's down to two empty slots it goes home, empties the seeds it collected
+  into the chest and carries on, so cut grass doesn't drop seeds on the ground. A
+  full chest makes it wait at home until there's room. Without a chest it warns
+  once and keeps mowing.
 - Grass doesn't regrow naturally, so a single pass is usually enough; the repeat
   argument is there if a mod on your server spreads it.
 - **Lighting:** with torches in its inventory it places them as it mows, on a
@@ -194,6 +198,12 @@ fixes the lane first and then replants.
   it keeps planting items for one pass, fuel and its tools, plus dirt and buckets only
   while a repair is using them. Keep **seeds, dirt and a bucket or two in the
   chest**.
+- **Full inventory, full chest.** Before working each tile the turtle checks it
+  has room for that tile's drops (three empty slots). If not, it goes home to
+  empty what it doesn't need, then carries on where it was, so harvest never
+  spills onto the ground. Restocking also leaves those slots free. If the chest
+  is full, the turtle stops at home and waits, checking every 30 seconds, until
+  there is room.
 
 ### Cloning a farm
 

@@ -73,6 +73,21 @@ local function goToAndSettle(tx, tz)
     return true
 end
 
+-- Empty slots to have before mowing on: room for the seeds grass drops,
+-- plus one for tool swaps.  With less, go home and empty into the chest
+-- (waiting if it's full) so nothing is left on the ground.
+local ROOM = 2
+local noChest = false
+local function ensureRoom()
+    if noChest or T.freeSlots() >= ROOM or not T.wouldDump() then return end
+    if not goToAndSettle(0, 0) then return end
+    T.face(0)
+    if not T.dumpDownWait() then
+        noChest = true
+        print("Inventory is full and there's no chest below home; drops may spill.")
+    end
+end
+
 --------------------------------------------------------------------------
 -- Torches
 --------------------------------------------------------------------------
@@ -103,6 +118,7 @@ end
 local function mowTiles(tiles)
     local skipped = {}
     for i, t in ipairs(tiles) do
+        ensureRoom()
         if not goToAndSettle(t.x, t.z) then
             print(string.format("Can't reach (%d,%d), skipping", t.x, t.z))
             skipped[#skipped + 1] = t
@@ -161,7 +177,7 @@ local ok, err = pcall(function()
             print("Couldn't get home; at " .. T.posString())
         end
         T.face(0)
-        T.dumpDown()
+        T.dumpDownWait()
         print(string.format("Pass complete. Fuel left: %s, torches placed: %d",
             tostring(turtle.getFuelLevel()), torchesPlaced))
 

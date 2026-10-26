@@ -604,6 +604,14 @@ function T.inventoryFull()
     return true
 end
 
+function T.freeSlots()
+    local n = 0
+    for slot = 1, 16 do
+        if turtle.getItemCount(slot) == 0 then n = n + 1 end
+    end
+    return n
+end
+
 function T.isContainer(name)
     return name:find("chest") ~= nil or name:find("barrel") ~= nil
 end
@@ -613,12 +621,11 @@ function T.containerBelow()
     return ok and T.isContainer(data.name)
 end
 
--- Drop inventory into the container below.  keepCount(item) returns how
--- many of that item to keep (default: all of T.keep items, none of others).
--- Returns false if there is no container below.
-function T.dumpDown(keepCount)
-    if not T.containerBelow() then return false end
-    local kept = {}
+-- What a dump would drop: a list of { slot, n }.  keepCount(item, kept)
+-- returns how many of that item to keep (default: all of T.keep items,
+-- none of others).
+local function dumpPlan(keepCount)
+    local plan, kept = {}, {}
     for slot = 1, 16 do
         local it = turtle.getItemDetail(slot)
         if it then
@@ -631,14 +638,47 @@ function T.dumpDown(keepCount)
                 keep = T.keep[it.name] and it.count or 0
             end
             kept[it.name] = (kept[it.name] or 0) + math.min(keep, it.count)
-            local dropN = it.count - keep
-            if dropN > 0 then
-                turtle.select(slot)
-                turtle.dropDown(dropN)
-            end
+            if it.count > keep then plan[#plan + 1] = { slot = slot, n = it.count - keep } end
         end
     end
+    return plan
+end
+
+-- Would dumpDown(keepCount) get rid of anything?
+function T.wouldDump(keepCount)
+    return #dumpPlan(keepCount) > 0
+end
+
+-- Drop inventory into the container below.  Returns false if there is no
+-- container below; otherwise true and how many items didn't fit (the
+-- container is full).
+function T.dumpDown(keepCount)
+    if not T.containerBelow() then return false end
+    local left = 0
+    for _, d in ipairs(dumpPlan(keepCount)) do
+        local before = turtle.getItemCount(d.slot)
+        turtle.select(d.slot)
+        turtle.dropDown(d.n)
+        left = left + d.n - (before - turtle.getItemCount(d.slot))
+    end
     turtle.select(1)
+    return true, left
+end
+
+-- dumpDown, but while the container is full, stop and wait for room,
+-- checking every `interval` seconds.  Returns false if there is no
+-- container below.
+function T.dumpDownWait(keepCount, interval)
+    local ok, left = T.dumpDown(keepCount)
+    if not ok then return false end
+    if left > 0 then
+        print(string.format("Chest is full (%d items didn't fit); waiting for room.", left))
+        repeat
+            sleep(interval or 30)
+            ok, left = T.dumpDown(keepCount)
+        until not ok or left == 0
+        print("Chest has room again; carrying on.")
+    end
     return true
 end
 

@@ -109,6 +109,8 @@ if REPEAT == nil then REPEAT = 20 end   -- minutes; 0 = single pass
 
 local CRUISE_MOVES_PER_TILE = 1.2
 local MAX_SEEDS = 256           -- never carry more than this many seeds
+local ROOM = 3                  -- empty slots to have before working a tile: its
+                                -- drops (up to two kinds) plus one for tool swaps
 
 -- Crops grown on farmland: block -> item that plants it, age when ripe.
 local CROPS = {
@@ -464,7 +466,7 @@ local function restockItem(name, target, label, quiet)
         for s = 1, 16 do before[s] = turtle.getItemCount(s) end
         local freeSlots = 0
         for s = 1, 16 do if before[s] == 0 then freeSlots = freeSlots + 1 end end
-        if freeSlots <= 1 then break end          -- keep one slot free for tool swaps
+        if freeSlots <= ROOM then break end       -- leave room for drops and tool swaps
         if not turtle.suckDown(64) then break end -- chest empty
         for s = 1, 16 do
             local got = turtle.getItemCount(s) - before[s]
@@ -528,7 +530,7 @@ local function dumpAtHome()
         if turtle.detectDown() or not T.down() then break end
     end
     if T.containerBelow() then
-        T.dumpDown(keepPolicy)
+        T.dumpDownWait(keepPolicy)               -- a full chest: wait for room
         for _, seed in ipairs(SEEDS) do
             restockItem(seed, seedTarget(seed), (seed:gsub("^minecraft:", ""):gsub("_", " ")))
         end
@@ -538,6 +540,21 @@ local function dumpAtHome()
         print("No chest found below home; keeping items.")
     end
     T.toStartHeight()
+end
+
+-- Make sure the next tile's drops will fit, so nothing is left on the
+-- ground: with fewer than `need` empty slots, go home and empty out first.
+-- Only goes if that would free something (not when everything on board is
+-- kept, or there's no chest).
+local warnedCrowded = false
+local function ensureRoom(need)
+    need = need or ROOM
+    if T.freeSlots() >= need then return end
+    if T.wouldDump(keepPolicy) then dumpAtHome() end
+    if T.freeSlots() < need and not warnedCrowded then
+        warnedCrowded = true
+        print("No room for more drops and nothing to empty (or no chest); harvest may spill.")
+    end
 end
 
 --------------------------------------------------------------------------
@@ -801,6 +818,7 @@ local function mineLanes(list)
     local restore = T.usePrimaryTool(PICKAXE)
     local cleared = {}
     for _, t in ipairs(list) do
+        ensureRoom()
         if goToCruise(t.x, t.z) then
             if turtle.detectDown() then turtle.digDown() end      -- crop level
             if T.down() then
@@ -810,7 +828,6 @@ local function mineLanes(list)
                 T.up()
             end
         end
-        if T.inventoryFull() then dumpAtHome() end
     end
     restore()
     return cleared
@@ -984,6 +1001,7 @@ local function clonePrepare()
     local plan = T.serpentine(WIDTH, LENGTH)
     for i, t in ipairs(plan) do
         local kind = tiles[T.ckey(t.x, t.z)]
+        if BUILD[kind] then ensureRoom() end
         if BUILD[kind] and goToCruise(t.x, t.z) then
             local c = below()
             if c ~= "air" and not CROPS[c] and c ~= CANE then turtle.digDown() end  -- crop level
@@ -1005,7 +1023,6 @@ local function clonePrepare()
             end
         end
         if i % 50 == 0 then print(string.format("%d/%d cleared", i, #plan)) end
-        if T.inventoryFull() then dumpAtHome() end
     end
     restore()
 end
@@ -1134,6 +1151,7 @@ local function farmPass(harvest, lanes)
     for i, t in ipairs(plan) do
         local k = T.ckey(t.x, t.z)
         local kind = tiles[k]
+        if kind ~= "water" then ensureRoom() end
         if visit(t, kind) then
             local r
             if kind == "water" then
@@ -1162,7 +1180,6 @@ local function farmPass(harvest, lanes)
         if i % 50 == 0 then
             print(string.format("%d/%d tiles, fuel %s", i, #plan, tostring(turtle.getFuelLevel())))
         end
-        if T.inventoryFull() then dumpAtHome() end
     end
     toY(travelY)
     print(string.format("Harvested %d, planted %d, growing %d, empty %d, unreachable %d",
