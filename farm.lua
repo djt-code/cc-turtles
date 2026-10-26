@@ -614,14 +614,16 @@ local function hopperSlotsFree()
 end
 
 -- At the chest: take out whole stacks of surplus seeds, no more than
--- `room` stacks (what the hopper has space for).  Returns true if the
--- turtle now carries some for the hopper.
+-- `room` stacks (what the hopper has space for).  Returns whether the
+-- turtle now carries some for the hopper, and whether there is surplus
+-- left in the chest after that.
 local function pullSurplusSeeds(room)
-    local any = false
+    local any, more = false, false
     for _, c in pairs(CROPS) do
         local have = c.compost and chestCount(c.seed)
-        local limit = 2 * plantedWith(c.seed)
-        local stacks = have and math.min(room, math.floor((have - limit) / 64)) or 0
+        local surplus = have and math.floor((have - 2 * plantedWith(c.seed)) / 64) or 0
+        local stacks = math.min(room, surplus)
+        if surplus > stacks then more = true end
         if stacks > 0 then
             room = room - stacks
             local before = T.countItem(c.seed)
@@ -629,18 +631,18 @@ local function pullSurplusSeeds(room)
             if T.countItem(c.seed) > before then any = true end
         end
     end
-    return any
+    return any, more
 end
 
 -- At home, cruise height: drop everything over the seed target of
--- compostable seeds into the hopper behind.  What doesn't fit stays on
--- board and goes back to the chest at the next visit.
-local function feedCompost()
+-- compostable seeds into the hopper behind, adding what went in to
+-- `fed[name]`.  What doesn't fit stays on board and goes back to the
+-- chest at the next visit.
+local function feedCompost(fed)
     T.face(2)
     local full = false
     for _, c in pairs(CROPS) do
         local extra = c.compost and (T.countItem(c.seed) - seedTarget(c.seed)) or 0
-        local fed = 0
         for s = 16, 1, -1 do
             if extra <= 0 or full then break end
             local it = turtle.getItemDetail(s)
@@ -649,42 +651,71 @@ local function feedCompost()
                 turtle.select(s)
                 turtle.drop(want)
                 local moved = it.count - turtle.getItemCount(s)
-                extra, fed = extra - moved, fed + moved
+                extra = extra - moved
+                fed[c.name] = (fed[c.name] or 0) + moved
                 full = moved < want
             end
         end
-        if fed > 0 then
-            print(string.format("Composting %d %s seeds (the farm plants %d)",
-                fed, c.name, plantedWith(c.seed)))
-        end
     end
-    if full then print("The compost hopper is full; keeping the rest for later.") end
     turtle.select(1)
     T.face(0)
+end
+
+-- From home at cruise height, sink until the chest is below (up to 3).
+local function toChest()
+    for _ = 1, 3 do
+        if T.containerBelow() then break end
+        if turtle.detectDown() or not T.down() then break end
+    end
+    return T.containerBelow()
 end
 
 local function dumpAtHome()
     goToCruise(0, 0)
     T.face(0)
-    local room = (compostHopper and layoutReady) and hopperSlotsFree() or 0
-    for _ = 1, 3 do
-        if T.containerBelow() then break end
-        if turtle.detectDown() or not T.down() then break end
-    end
-    local toCompost = false
-    if T.containerBelow() then
+    if toChest() then
         T.dumpDownWait(keepPolicy)               -- a full chest: wait for room
         for _, seed in ipairs(SEEDS) do
             restockItem(seed, seedTarget(seed), (seed:gsub("^minecraft:", ""):gsub("_", " ")))
         end
         restockItem(DIRT, dirtNeeded(), "Dirt")
         restockBuckets()
-        if room > 0 then toCompost = pullSurplusSeeds(room) end
     else
         print("No chest found below home; keeping items.")
     end
     T.toStartHeight()
-    if toCompost then feedCompost() end
+end
+
+-- Wait at home until `seconds` have passed, keeping the compost hopper
+-- topped up with surplus seeds from the chest meanwhile: every
+-- COMPOST_CHECK seconds, if the hopper has an empty slot, fill it.  Once
+-- there's no surplus left it just sleeps out the rest.
+local COMPOST_CHECK = 10
+local function waitAndCompost(seconds)
+    local wake = os.clock() + seconds
+    if compostHopper and layoutReady then
+        local fed, more = {}, true
+        while more and os.clock() < wake do
+            local room = hopperSlotsFree()     -- the hopper is behind us up here
+            if room > 0 then
+                local carrying = false
+                if toChest() then carrying, more = pullSurplusSeeds(room) end
+                T.toStartHeight()
+                if carrying then feedCompost(fed) end
+            end
+            if more then sleep(math.min(COMPOST_CHECK, math.max(0, wake - os.clock()))) end
+        end
+        local parts = {}
+        for name, n in pairs(fed) do
+            if n > 0 then parts[#parts + 1] = n .. " " .. name .. " seeds" end
+        end
+        if #parts > 0 then
+            print("Composted " .. table.concat(parts, ", ") ..
+                (more and "; more to go next time." or "; no surplus left."))
+        end
+    end
+    local left = wake - os.clock()
+    if left > 0 then sleep(left) end
 end
 
 -- Make sure the next tile's drops will fit, so nothing is left on the
@@ -1455,7 +1486,7 @@ local ok, err = pcall(function()
         inventoryLine("Kept on board")
         if REPEAT <= 0 then break end
         print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")
-        sleep(REPEAT * 60)
+        waitAndCompost(REPEAT * 60)
     end
 end)
 

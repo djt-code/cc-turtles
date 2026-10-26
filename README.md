@@ -201,10 +201,13 @@ fixes the lane first and then replants.
   chest**.
 - **Compost hopper (optional).** Put a hopper **directly behind the turtle's start
   position**, at the turtle's height, feeding a composter. The turtle looks for it
-  at the start of every run. When the chest holds more than twice as many wheat
-  or beetroot seeds as the farm has tiles of that crop, the turtle takes the
-  surplus out in whole stacks (only as many as the hopper has empty slots for, and
-  never taking the chest below that limit) and drops them into the hopper. Carrots,
+  at the start of every run. Composting happens while the turtle waits for its
+  next pass: every 10 seconds, if the hopper has an empty slot and the chest holds
+  more than twice as many wheat or beetroot seeds as the farm has tiles of that
+  crop, it takes the surplus out in whole stacks (only as many as the hopper has
+  empty slots for, and never taking the chest below that limit) and drops them
+  into the hopper. It stops when there's no surplus left or when the next pass is
+  due, whichever comes first. A single pass (`farm 0`) doesn't compost. Carrots,
   potatoes and sugar cane are never composted, since the seed is the harvest. Route
   the bone meal back however you like, e.g. a hopper under the composter into the
   farm chest.
