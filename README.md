@@ -45,6 +45,9 @@ Position is saved to `.turtlepos` after every move. If a job is interrupted
 (Ctrl+T, reboot, server restart), `home`, `mow reset` or `farm reset` navigates
 back to the start. Starting a job while the saved position isn't home prints a
 warning and stops; add `--here` to declare the current spot as the new home.
+If you carried the turtle back yourself, `farm reset --here` / `mow reset --here`
+just marks where it is as home without moving it or starting a job (the saved
+farm layout is kept).
 
 ## Install
 

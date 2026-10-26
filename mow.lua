@@ -7,6 +7,7 @@
 --
 -- Usage:  mow <width> <length> [repeatMinutes] [notorch] [--here]
 --         mow reset                 return to home after a Ctrl+T
+--         mow reset --here          turtle was put back by hand: reset position
 --
 -- width  = tiles to the RIGHT of the turtle (negative = to the LEFT)
 -- length = tiles AHEAD of the turtle (negative = BEHIND)
@@ -38,7 +39,7 @@ for i = #args, 1, -1 do
     elseif args[i] == "--here" then HERE = true; table.remove(args, i) end
 end
 if args[1] == "reset" then
-    T.goHome()
+    if HERE then T.setHomeHere() else T.goHome() end
     return
 end
 local WIDTH  = tonumber(args[1]) or 16

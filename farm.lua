@@ -12,6 +12,8 @@
 --   farm clone [repeatMinutes]                     build the saved layout HERE,
 --                                                  then farm it
 --   farm reset                                     return to home after a stop
+--   farm reset --here                              turtle is home already (moved
+--                                                  by hand): just reset position
 --   farm ... --here                                accept current spot as home
 --
 -- width  = tiles to the RIGHT of the turtle (negative = to the LEFT)
@@ -62,7 +64,10 @@ for i = #args, 1, -1 do
 end
 if args[1] == "learn" then forceLearn = true; table.remove(args, 1)
 elseif args[1] == "clone" then doClone = true; forceHere = true; table.remove(args, 1)
-elseif args[1] == "reset" then T.goHome(); return end
+elseif args[1] == "reset" then
+    if forceHere then T.setHomeHere() else T.goHome() end
+    return
+end
 
 local WIDTH, LENGTH, REPEAT
 if #args >= 2 then

@@ -507,6 +507,13 @@ function T.goHome()
     return false
 end
 
+-- `reset --here`: the turtle was put back by hand, so accept where it is
+-- (facing forward) as home without moving.
+function T.setHomeHere()
+    T.startAtHome(true)
+    print("Home set to the current position.")
+end
+
 --------------------------------------------------------------------------
 -- Plans
 --------------------------------------------------------------------------
