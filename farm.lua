@@ -572,6 +572,8 @@ local function ensureWater(n, target)
     return T.countItem(WATER_BUCKET) >= n
 end
 
+local newGround = {}       -- crop tiles that got a dirt wall; till and plant them
+
 -- Prepare a lane tile: ground level clear, dirt floor beneath, dirt walls on
 -- every side the map doesn't call lane.  Ends at cruise height.  Returns
 -- true when ready for water, "mine" when a block fills the lane or sits
@@ -594,7 +596,13 @@ local function prepLane(t)
             if not isLane(nx, nz) then
                 T.face(d)
                 if not turtle.detect() then
-                    if not (T.selectItem(DIRT) and turtle.place()) then ok = false end
+                    if T.selectItem(DIRT) and turtle.place() then
+                        if tiles[T.ckey(nx, nz)] == "crop" then
+                            newGround[#newGround + 1] = { x = nx, z = nz }
+                        end
+                    else
+                        ok = false
+                    end
                 end
             end
         end
@@ -754,6 +762,12 @@ local function buildPending(label)
         if not buildLand(t) then remaining[#remaining + 1] = t end
     end
     for _, t in ipairs(buildLanes(water)) do remaining[#remaining + 1] = t end
+    -- a lane wall on a crop tile is new ground: till and plant it now
+    -- (from cruise height, through the air gap) instead of next pass
+    for _, t in ipairs(newGround) do
+        if goToCruise(t.x, t.z) then workCrop(false) end
+    end
+    newGround = {}
     pendingFills = remaining
     wantWaterBuckets = 0
     print(string.format("%s done: %d tiles still open.", label, #remaining))

@@ -152,7 +152,8 @@ need to hand it seeds directly.
     in its inventory.
   - A lane tile then gets a dirt floor beneath if that's missing, dirt walls on
     every side the map doesn't call lane, and a bucket of water, which also turns
-    flowing water back into a source.
+    flowing water back into a source. A wall that lands on a crop tile is tilled
+    and planted on the spot.
   - Water comes from empty buckets refilled at a lane tile with two or more
     source neighbours (it regenerates). If a lane is broken up so that no such
     tile exists, the turtle moves one of the lane's own sources into a gap that
