@@ -139,6 +139,7 @@ local CANE_GROUND = {
     ["minecraft:red_sand"] = true, ["minecraft:suspicious_sand"] = true,
 }
 local CANE_TRAVEL_Y = 2    -- travel height over a farm with cane: above 3-high cane
+local LANE_BUCKETS = 4     -- buckets carried for lane work, if the chest has them
 
 local SEEDS = { CANE }                   -- planting items, sorted
 for _, c in pairs(CROPS) do SEEDS[#SEEDS + 1] = c.seed end
@@ -395,7 +396,8 @@ local function dirtNeeded()
     return math.min(n, 192)
 end
 
-local wantWaterBuckets = 0     -- buckets the lane builder needs on board
+local wantWaterBuckets = 0     -- buckets the lane builder carries
+local needWaterBuckets = 0     -- ...of which it can't do without
 local wantBoneMeal = 0         -- bone meal to carry, during a grow pass
 
 -- What stays on board at every visit home: seeds for a pass, fuel, the
@@ -422,11 +424,12 @@ end
 
 local regenTile                -- defined with the lanes below
 
--- Buckets for lane work: wantWaterBuckets of them.  Empty ones will do
--- when a lane tile can refill them; otherwise full ones are fetched first.
+-- Buckets for lane work: wantWaterBuckets of them if the chest has them,
+-- warning below needWaterBuckets.  Empty ones will do when a lane tile can
+-- refill them; otherwise full ones are fetched first.
 local warnedBuckets = false
 local function restockBuckets()
-    local want = wantWaterBuckets
+    local want, need = wantWaterBuckets, needWaterBuckets
     if want <= 0 then return end
     local canScoop = regenTile() ~= nil
     if not canScoop then restockItem(WATER_BUCKET, want, "Water buckets", true) end
@@ -437,10 +440,10 @@ local function restockBuckets()
         restockItem(WATER_BUCKET, want - T.countItem(BUCKET), "Water buckets", true)
     end
     local full, empty = T.countItem(WATER_BUCKET), T.countItem(BUCKET)
-    if (full + empty < want or (not canScoop and full < want)) and not warnedBuckets then
+    if (full + empty < need or (not canScoop and full < need)) and not warnedBuckets then
         warnedBuckets = true
-        print(string.format("Lane work wants %d %s; on board: %d water, %d empty (none in chest).",
-            want, canScoop and "buckets" or "water buckets", full, empty))
+        print(string.format("Lane work needs %d %s; on board: %d water, %d empty (none in chest).",
+            need, canScoop and "buckets" or "water buckets", full, empty))
     end
 end
 
@@ -730,17 +733,46 @@ end
 local function isLane(x, z) return tiles[T.ckey(x, z)] == "water" end
 
 ----------------------------------------------------------------- water --
-function regenTile()
-    local best
+-- Already down at lane level (y = -1) and (x,z) further along the same
+-- lane?  Then go straight there at that height instead of climbing out and
+-- back in.  The cells above a lane are clear; crops beside it would block
+-- the way, so only a run of lane tiles counts.  True once there.
+local function laneHop(x, z)
+    if T.pos.y ~= -1 then return false end
+    local dx, dz = x - T.pos.x, z - T.pos.z
+    if dx ~= 0 and dz ~= 0 then return false end
+    local n = math.abs(dx) + math.abs(dz)
+    local sx = dx > 0 and 1 or dx < 0 and -1 or 0
+    local sz = dz > 0 and 1 or dz < 0 and -1 or 0
+    for i = 1, n do
+        if not isLane(T.pos.x + sx * i, T.pos.z + sz * i) then return false end
+    end
+    for _ = 1, n do
+        T.faceToward(T.pos.x + sx, T.pos.z + sz)
+        if not T.forward() then return false end
+    end
+    return true
+end
+
+-- Get down over lane tile (x,z), at y = -1: along the lane if already
+-- down in it, else by way of cruise height.
+local function downAtLane(x, z)
+    return laneHop(x, z) or (goToCruise(x, z) and T.down())
+end
+
+-- A lane tile that refills when scooped (two source neighbours), the one
+-- nearest (nx,nz): the turtle when not given.
+function regenTile(nx, nz)
+    nx, nz = nx or T.pos.x, nz or T.pos.z
+    local best, bestD
     for k in pairs(wet) do
         local x, z = keyXZ(k)
         local n = 0
         for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
             if wet[T.ckey(x + d[1], z + d[2])] then n = n + 1 end
         end
-        if n >= 2 and (not best or math.abs(x) + math.abs(z) < math.abs(best.x) + math.abs(best.z)) then
-            best = { x = x, z = z }
-        end
+        local dist = math.abs(x - nx) + math.abs(z - nz)
+        if n >= 2 and (not best or dist < bestD) then best, bestD = { x = x, z = z }, dist end
     end
     return best
 end
@@ -754,29 +786,48 @@ local function regenIf(addK, removeK)
     return ok
 end
 
--- Fill one empty bucket at (x,z).  True if it worked.
-local function scoopAt(x, z)
-    local before = T.countItem(WATER_BUCKET)
-    if goToCruise(x, z) and T.down() then
-        if sourceBelow() and T.selectItem(BUCKET) then turtle.placeDown() end
-        T.up()
+-- Fill up to `want` empty buckets at (x,z) in one stop.  A regenerating
+-- tile is waited on between scoops (the source comes back on the next
+-- water tick); otherwise it's scooped once.  A full bucket needs a slot of
+-- its own unless it replaces the last empty one, so it stops when there's
+-- nowhere to put one.  Stays down at lane level.  Returns how many were
+-- filled.
+local function scoopAt(x, z, want, regen)
+    local got = 0
+    if downAtLane(x, z) then
+        for _ = 1, want * 4 do
+            if got >= want or not T.selectItem(BUCKET) then break end
+            if turtle.getItemCount() > 1 and T.freeSlots() == 0 then break end
+            if sourceBelow() and turtle.placeDown() then
+                got = got + 1
+                if not regen then break end
+            elseif regen then
+                sleep(0.25)
+            else
+                break
+            end
+        end
     end
-    return T.countItem(WATER_BUCKET) > before
+    return got
 end
 
 local borrowed = {}        -- lane sources emptied to start a refilling tile
 
--- Hold at least n water buckets: scoop from a regenerating lane tile with
--- empty buckets, else fetch water buckets / buckets from the chest.  With
--- a target and no regenerating tile, water is moved from one of the
--- farm's own sources to the target when that creates one; the source it
--- came from goes on `borrowed` to be refilled afterwards.
+-- Hold at least n water buckets: fill empties at the regenerating lane
+-- tile nearest `target` (or the turtle), as many as needed in one stop,
+-- else fetch water buckets / buckets from the chest.  With a target and no
+-- regenerating tile, water is moved from one of the farm's own sources to
+-- the target when that creates one; the source it came from goes on
+-- `borrowed` to be refilled afterwards.
 local function ensureWater(n, target)
     local function scoop()
         while T.countItem(WATER_BUCKET) < n and T.countItem(BUCKET) > 0 do
-            local r = regenTile()
+            local r = target and regenTile(target.x, target.z) or regenTile()
             if not r then return end
-            if not scoopAt(r.x, r.z) then wet[T.ckey(r.x, r.z)] = nil; return end
+            if scoopAt(r.x, r.z, n - T.countItem(WATER_BUCKET), true) == 0 then
+                wet[T.ckey(r.x, r.z)] = nil
+                return
+            end
         end
     end
     scoop()
@@ -789,13 +840,14 @@ local function ensureWater(n, target)
                 if not best or d < best.d then best = { x = x, z = z, d = d } end
             end
         end
-        if best and scoopAt(best.x, best.z) then
+        if best and scoopAt(best.x, best.z, 1, false) > 0 then
             wet[T.ckey(best.x, best.z)] = nil
             borrowed[#borrowed + 1] = { x = best.x, z = best.z, want = "water" }
         end
     end
     if T.countItem(WATER_BUCKET) < n then
         wantWaterBuckets = math.max(wantWaterBuckets, n)
+        needWaterBuckets = math.max(needWaterBuckets, n)
         dumpAtHome()
         scoop()
     end
@@ -869,14 +921,14 @@ local function mineLanes(list)
 end
 
 -- Pour one bucket at a prepared lane tile.  Pouring into flowing water
--- turns it into a source.
+-- turns it into a source.  Stays down at lane level, so the next tile
+-- along the lane is one move away.
 local function waterLane(t)
-    if not (goToCruise(t.x, t.z) and T.down()) then return false end
+    if not downAtLane(t.x, t.z) then return false end
     local ok = false
     local g = below()
     if sourceBelow() then ok = true
     elseif (g == "air" or g == WATER) and T.selectItem(WATER_BUCKET) then ok = turtle.placeDown() end
-    T.up()
     if ok then wet[T.ckey(t.x, t.z)] = true end
     return ok
 end
@@ -934,19 +986,30 @@ local function buildLanes(list)
                 end
             end
         end
-        for _, t in ipairs(todo) do
-            if not wet[T.ckey(t.x, t.z)] then
-                if ensureWater(1, t) and waterLane(t) then
-                    -- done
-                else
-                    remaining[#remaining + 1] = t
+        -- Out of water, fill every bucket the rest of the lane can use at the
+        -- source nearest the next tile: as the lane fills outward, that's
+        -- the stretch just poured, so each trip is short.
+        local function pour(list)
+            for i, t in ipairs(list) do
+                if not wet[T.ckey(t.x, t.z)] then
+                    if T.countItem(WATER_BUCKET) == 0 then
+                        local left = 0
+                        for j = i, #list do
+                            if not wet[T.ckey(list[j].x, list[j].z)] then left = left + 1 end
+                        end
+                        local carry = T.countItem(BUCKET) + T.countItem(WATER_BUCKET)
+                        ensureWater(math.max(1, math.min(left, carry)), t)
+                    end
+                    if not (T.countItem(WATER_BUCKET) > 0 and waterLane(t)) then
+                        remaining[#remaining + 1] = t
+                    end
                 end
             end
         end
-        for _, t in ipairs(borrowed) do
-            if not (ensureWater(1) and waterLane(t)) then remaining[#remaining + 1] = t end
-        end
+        pour(todo)
+        local refill = borrowed
         borrowed = {}
+        pour(refill)
     end
     return remaining
 end
@@ -990,8 +1053,10 @@ local function buildPending(label)
         elseif t.want == "cane" then cane[#cane + 1] = t
         else water[#water + 1] = t end
     end
-    -- two buckets to start a lane from scratch, one to top up from a source
-    wantWaterBuckets = (#water == 0 and 0) or (regenTile() and 1 or 2)
+    -- buckets: two to start a lane from scratch, one with a source to
+    -- refill from, and up to LANE_BUCKETS to pour several tiles per trip
+    needWaterBuckets = (#water == 0 and 0) or (regenTile() and 1 or 2)
+    wantWaterBuckets = math.max(needWaterBuckets, math.min(#water, LANE_BUCKETS))
     if T.countItem(DIRT) < dirtNeeded() or lacksSeeds()
        or T.countItem(WATER_BUCKET) + T.countItem(BUCKET) < wantWaterBuckets then
         dumpAtHome()
@@ -1023,7 +1088,7 @@ local function buildPending(label)
     end
     newGround = {}
     pendingFills = remaining
-    wantWaterBuckets = 0
+    wantWaterBuckets, needWaterBuckets = 0, 0
     print(string.format("%s done: %d tiles still open.", label, #remaining))
 end
 

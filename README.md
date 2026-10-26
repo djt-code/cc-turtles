@@ -189,10 +189,14 @@ fixes the lane first and then replants.
     flowing water back into a source. A wall that lands on a crop tile is tilled
     and planted on the spot.
   - Water comes from empty buckets refilled at a lane tile with two or more
-    source neighbours (it regenerates). If a lane is broken up so that no such
-    tile exists, the turtle moves one of the lane's own sources into a gap that
-    creates one, and refills the borrowed tile afterwards. Water buckets in the
-    chest are only needed to start a lane from nothing.
+    source neighbours (it regenerates), always the one nearest the tile being
+    filled. When it runs dry the turtle fills every bucket it carries that the
+    rest of the lane can use in one stop (up to 4, if the chest has that many
+    buckets), and it stays down at lane level while pouring along a lane, so a
+    long lane is filled in a few short trips. If a lane is broken up so that no
+    refilling tile exists, the turtle moves one of the lane's own sources into a
+    gap that creates one, and refills the borrowed tile afterwards. Water buckets
+    in the chest are only needed to start a lane from nothing.
   - Anything it can't fix is listed and found again on the next pass.
 - **Inventory.** At the start of a run and after every pass the turtle prints
   what it carries, then puts everything it doesn't need right now into the chest:
