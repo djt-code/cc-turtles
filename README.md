@@ -151,6 +151,11 @@ need to hand it seeds directly.
   source regenerates (or from water buckets in the chest). Keep **dirt and a
   bucket in the chest**. Anything it can't fix (a solid block in the way needs a
   pickaxe) is listed and found again on the next pass.
+- **Inventory.** At the start of a run and after every pass the turtle prints
+  what it carries, then puts everything it doesn't need right now into the chest:
+  it keeps seeds for one pass, fuel and its tools, plus dirt and buckets only
+  while a repair is using them. Keep **seeds, dirt and a bucket or two in the
+  chest**.
 
 ### Cloning a farm
 

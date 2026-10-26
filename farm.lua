@@ -253,19 +253,43 @@ local function dirtNeeded()
     return math.min(n, 192)
 end
 
+local wantWaterBuckets = 0     -- buckets the lane builder needs on board
+
+-- What stays on board at every visit home: seeds for a pass, fuel, the
+-- tools, and dirt and buckets only while a repair needs them.  Everything
+-- else goes into the chest.
 local function keepPolicy(item, alreadyKept)
     if item.name == SEED then return math.max(0, seedTarget() - alreadyKept) end
     if item.name == DIRT then return math.max(0, dirtNeeded() - alreadyKept) end
-    if item.name == BUCKET or item.name == WATER_BUCKET then return item.count end
-    if T.keep[item.name] then return item.count end
+    if item.name == WATER_BUCKET then return math.max(0, wantWaterBuckets - alreadyKept) end
+    if item.name == BUCKET then
+        local filled = math.min(T.countItem(WATER_BUCKET), wantWaterBuckets)
+        return math.max(0, wantWaterBuckets - filled - alreadyKept)
+    end
+    if T.fuel[item.name] then return item.count end
     return 0
+end
+
+-- One line listing what the turtle is carrying.
+local function inventoryLine(label)
+    local counts, order = {}, {}
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s)
+        if it then
+            local name = it.name:gsub("^minecraft:", "")
+            if not counts[name] then order[#order + 1] = name; counts[name] = 0 end
+            counts[name] = counts[name] + it.count
+        end
+    end
+    local parts = {}
+    for _, name in ipairs(order) do parts[#parts + 1] = counts[name] .. " " .. name end
+    print(label .. ": " .. (#parts > 0 and table.concat(parts, ", ") or "nothing"))
 end
 
 -- Pull `name` out of the chest below until we hold `target` of it.
 -- suckDown() takes from the chest's first occupied slot regardless of what
 -- it is, so anything else that comes out is set aside and dropped back
--- once we're done (other restock items and fuel are kept).
-local WANTED = { [SEED] = true, [DIRT] = true, [BUCKET] = true, [WATER_BUCKET] = true }
+-- once we're done (fuel is kept).
 local warnedEmpty = {}
 local function restockItem(name, target, label)
     if target <= 0 or T.countItem(name) >= target then return end
@@ -296,22 +320,34 @@ local function restockItem(name, target, label)
         if freeSlots <= 1 then break end          -- keep one slot free for tool swaps
         if not turtle.suckDown(64) then break end -- chest empty
         for s = 1, 16 do
-            if turtle.getItemCount(s) > before[s] then
+            local got = turtle.getItemCount(s) - before[s]
+            if got > 0 then
                 local it = turtle.getItemDetail(s)
-                if it and not WANTED[it.name] and not T.keep[it.name] then junk[#junk + 1] = s end
-                break
+                if it and it.name ~= name and not T.fuel[it.name] then
+                    junk[#junk + 1] = { slot = s, n = got }   -- only what came out
+                end
             end
         end
     end
-    for _, s in ipairs(junk) do
-        turtle.select(s)
-        turtle.dropDown()
+    for _, j in ipairs(junk) do
+        turtle.select(j.slot)
+        turtle.dropDown(j.n)
+    end
+    -- whole stacks come out, so hand back anything over the target
+    local extra = T.countItem(name) - target
+    for s = 16, 1, -1 do
+        if extra <= 0 then break end
+        local it = turtle.getItemDetail(s)
+        if it and it.name == name then
+            local n = math.min(extra, it.count)
+            turtle.select(s)
+            turtle.dropDown(n)
+            extra = extra - n
+        end
     end
     turtle.select(1)
     print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
 end
-
-local wantWaterBuckets = 0     -- set by the lane builder before visiting home
 
 local function dumpAtHome()
     goToCruise(0, 0)
@@ -818,6 +854,7 @@ local restoreTools = T.usePrimaryTool(HOE)
 
 local ok, err = pcall(function()
     T.clearBlocked()
+    inventoryLine("On board")
     if doClone then
         print(string.format("Cloning saved %dx%d layout here (%d crop, %d water tiles)",
             WIDTH, LENGTH, countKind("crop"), countKind("water")))
@@ -828,6 +865,7 @@ local ok, err = pcall(function()
         pendingFills = {}                -- the first pass finds what's left
     else
         dumpAtHome()
+        inventoryLine("Kept on board")
         if not haveMap then
             learnPass()
             dumpAtHome()
@@ -838,6 +876,7 @@ local ok, err = pcall(function()
         local damaged = farmPass(false)
         dumpAtHome()
         if #damaged > 0 then repair(damaged) else print("No damage found.") end
+        inventoryLine("Kept on board")
         return
     end
     while true do
@@ -850,6 +889,7 @@ local ok, err = pcall(function()
         end
         print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()) ..
             ", seeds: " .. T.countItem(SEED))
+        inventoryLine("Kept on board")
         if REPEAT <= 0 then break end
         print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")
         sleep(REPEAT * 60)

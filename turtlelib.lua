@@ -37,13 +37,16 @@ T.cfg = {
 -- Block names the move functions are allowed to dig through.
 T.diggable = {}
 
--- Items dumpDown never throws away.
-T.keep = {
+-- Fuel items.
+T.fuel = {
     ["minecraft:coal"] = true, ["minecraft:charcoal"] = true,
     ["minecraft:coal_block"] = true, ["minecraft:lava_bucket"] = true,
     ["minecraft:blaze_rod"] = true, ["minecraft:dried_kelp_block"] = true,
-    ["minecraft:torch"] = true,
 }
+
+-- Items dumpDown never throws away by default: fuel and torches.
+T.keep = { ["minecraft:torch"] = true }
+for name in pairs(T.fuel) do T.keep[name] = true end
 
 --------------------------------------------------------------------------
 -- Position tracking.  dir: 0=+z 1=+x 2=-z 3=-x
