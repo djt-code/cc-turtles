@@ -30,7 +30,8 @@ without yielding. Full output goes to `sim/logs/<name>.log`; the screen
 scrolls it past as it runs. Ctrl+T stops it.
 
 A simulator counts as failing if the program raised an error (`ERROR:` in
-its output), it crashed, or it ran past 5 minutes. Everything else is for
+its output), it crashed, or (with `run.py`) it ran past 5 minutes. Everything
+else is for
 reading: compare the numbers before and after a change (`git stash`, run,
 `git stash pop`, run).
 
