@@ -521,15 +521,18 @@ local function ensureWater(n)
 end
 
 -- Prepare a lane tile: ground level clear, dirt floor beneath, dirt walls on
--- every side the map doesn't call lane.  Ends at cruise height.
+-- every side the map doesn't call lane.  Ends at cruise height.  Returns
+-- true when ready for water, "mine" when a block fills the lane or sits
+-- above it (see mineLanes), or false.
 local function prepLane(t)
-    if not (goToCruise(t.x, t.z) and T.down()) then return false end
+    if not goToCruise(t.x, t.z) then return false end
+    if not T.down() then return "mine" end               -- something above the lane
     local k = T.ckey(t.x, t.z)
     local g = below()
     if sourceBelow() then wet[k] = true; T.up(); return true end
     wet[k] = nil
     if g == WATER then T.up(); return true end           -- flowing: needs a bucket
-    if g ~= "air" then T.up(); return false end          -- needs the pickaxe phase
+    if g ~= "air" then T.up(); return "mine" end         -- dirt etc. in the lane
     if not T.down() then T.up(); return false end        -- now inside the trench
     local ok = true
     if below() == "air" then ok = placeDirtDown() end
@@ -546,6 +549,32 @@ local function prepLane(t)
     end
     T.up(); T.up()
     return ok
+end
+
+-- Dig out whatever fills these lane tiles, and anything sitting above
+-- them, with the pickaxe (the hoe would only till dirt).  Returns the
+-- tiles it cleared.
+local function mineLanes(list)
+    if T.countItem(PICKAXE) == 0 then
+        print(#list .. " lane tiles are filled in; give the turtle a diamond pickaxe to dig them out.")
+        return {}
+    end
+    local restore = T.usePrimaryTool(PICKAXE)
+    local cleared = {}
+    for _, t in ipairs(list) do
+        if goToCruise(t.x, t.z) then
+            if turtle.detectDown() then turtle.digDown() end      -- crop level
+            if T.down() then
+                local g = below()
+                if g ~= "air" and g ~= WATER then turtle.digDown(); g = below() end
+                if g == "air" or g == WATER then cleared[#cleared + 1] = t end
+                T.up()
+            end
+        end
+        if T.inventoryFull() then dumpAtHome() end
+    end
+    restore()
+    return cleared
 end
 
 -- Pour one bucket at a prepared lane tile.  Pouring into flowing water
@@ -584,10 +613,19 @@ local function buildLanes(list)
     local lanes, order = groupLanes(list)
     for _, id in ipairs(order) do
         local lane = lanes[id]
-        -- 1. floors and walls for the whole lane first
+        -- 1. floors and walls for the whole lane first, digging out any
+        --    filled-in tiles with the pickaxe in one go
+        local status, toMine = {}, {}
+        for _, t in ipairs(lane) do
+            status[t] = prepLane(t)
+            if status[t] == "mine" then toMine[#toMine + 1] = t end
+        end
+        if #toMine > 0 then
+            for _, t in ipairs(mineLanes(toMine)) do status[t] = prepLane(t) end
+        end
         local prepped = {}
         for _, t in ipairs(lane) do
-            if prepLane(t) then prepped[#prepped + 1] = t else remaining[#remaining + 1] = t end
+            if status[t] == true then prepped[#prepped + 1] = t else remaining[#remaining + 1] = t end
         end
         -- 2. water.  Need a regenerating source; bootstrap one if there is none.
         local todo = {}
