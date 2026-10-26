@@ -733,6 +733,10 @@ end
 local function isLane(x, z) return tiles[T.ckey(x, z)] == "water" end
 
 ----------------------------------------------------------------- water --
+-- Lane tiles left unpoured between two sources, counted on to turn into
+-- sources themselves; cleared once one is seen to have.
+local expected = {}
+
 -- Already down at lane level (y = -1) and (x,z) further along the same
 -- lane?  Then go straight there at that height instead of climbing out and
 -- back in.  The cells above a lane are clear; crops beside it would block
@@ -750,6 +754,8 @@ local function laneHop(x, z)
     for _ = 1, n do
         T.faceToward(T.pos.x + sx, T.pos.z + sz)
         if not T.forward() then return false end
+        local k = T.ckey(T.pos.x, T.pos.z)
+        if expected[k] and sourceBelow() then expected[k] = nil end
     end
     return true
 end
@@ -786,15 +792,19 @@ local function regenIf(addK, removeK)
     return ok
 end
 
+local borrowed = {}        -- lane sources emptied, to be refilled afterwards
+
 -- Fill up to `want` empty buckets at (x,z) in one stop.  A regenerating
 -- tile is waited on between scoops (the source comes back on the next
 -- water tick); otherwise it's scooped once.  A full bucket needs a slot of
 -- its own unless it replaces the last empty one, so it stops when there's
--- nowhere to put one.  Stays down at lane level.  Returns how many were
+-- nowhere to put one.  A regenerating tile that doesn't come back after
+-- all goes on `borrowed`.  Stays down at lane level.  Returns how many were
 -- filled.
 local function scoopAt(x, z, want, regen)
     local got = 0
     if downAtLane(x, z) then
+        if sourceBelow() then expected[T.ckey(x, z)] = nil end
         for _ = 1, want * 4 do
             if got >= want or not T.selectItem(BUCKET) then break end
             if turtle.getItemCount() > 1 and T.freeSlots() == 0 then break end
@@ -807,11 +817,16 @@ local function scoopAt(x, z, want, regen)
                 break
             end
         end
+        if regen and got > 0 and not sourceBelow() then
+            sleep(0.5)
+            if not sourceBelow() then
+                wet[T.ckey(x, z)], expected[T.ckey(x, z)] = nil, nil
+                borrowed[#borrowed + 1] = { x = x, z = z, want = "water", axis = laneAxis(x, z) }
+            end
+        end
     end
     return got
 end
-
-local borrowed = {}        -- lane sources emptied to start a refilling tile
 
 -- Hold at least n water buckets: fill empties at the regenerating lane
 -- tile nearest `target` (or the turtle), as many as needed in one stop,
@@ -842,7 +857,7 @@ local function ensureWater(n, target)
         end
         if best and scoopAt(best.x, best.z, 1, false) > 0 then
             wet[T.ckey(best.x, best.z)] = nil
-            borrowed[#borrowed + 1] = { x = best.x, z = best.z, want = "water" }
+            borrowed[#borrowed + 1] = { x = best.x, z = best.z, want = "water", axis = laneAxis(best.x, best.z) }
         end
     end
     if T.countItem(WATER_BUCKET) < n then
@@ -970,9 +985,23 @@ local function buildLanes(list)
         for _, t in ipairs(lane) do
             if status[t] == true then prepped[#prepped + 1] = t else remaining[#remaining + 1] = t end
         end
-        -- 2. water.  Need a regenerating source; bootstrap one if there is none.
+        -- 2. water.  A tile already between two sources fills by itself:
+        --    count it as water now (it may be the source to refill from)
+        --    and check it at the end.  Need a regenerating source;
+        --    bootstrap one if there is none.
+        local function sides(t)
+            if t.axis == "z" then return T.ckey(t.x, t.z - 1), T.ckey(t.x, t.z + 1) end
+            return T.ckey(t.x - 1, t.z), T.ckey(t.x + 1, t.z)
+        end
         local todo = {}
-        for _, t in ipairs(prepped) do if not wet[T.ckey(t.x, t.z)] then todo[#todo + 1] = t end end
+        for _, t in ipairs(prepped) do
+            local k = T.ckey(t.x, t.z)
+            if not wet[k] then
+                local a, b = sides(t)
+                if wet[a] and wet[b] then wet[k], expected[k] = true, true end
+                todo[#todo + 1] = t
+            end
+        end
         if #todo > 0 and not regenTile() then
             if #todo >= 3 and ensureWater(2) then
                 if waterLane(todo[1]) and waterLane(todo[3]) then
@@ -986,30 +1015,79 @@ local function buildLanes(list)
                 end
             end
         end
-        -- Out of water, fill every bucket the rest of the lane can use at the
-        -- source nearest the next tile: as the lane fills outward, that's
-        -- the stretch just poured, so each trip is short.
-        local function pour(list)
+        -- Pour every other tile: one between two sources becomes a source
+        -- by itself (vanilla infinite water), so with `alternate` a tile is
+        -- skipped when the tiles on both sides along the lane hold water or
+        -- will be poured.  Out of water, fill every bucket the rest of the
+        -- lane can use at the source nearest the next tile: as the lane
+        -- fills outward, that's the stretch just poured (often a skipped
+        -- tile, which checks it), so each trip is short.
+        local function pour(list, alternate)
+            local inList, skip = {}, {}
+            for _, t in ipairs(list) do inList[T.ckey(t.x, t.z)] = true end
+            local function filled(k) return wet[k] or (inList[k] and not skip[k]) end
+            if alternate then
+                for _, t in ipairs(list) do
+                    local a, b = sides(t)
+                    local k = T.ckey(t.x, t.z)
+                    if not wet[k] and isLane(keyXZ(a)) and isLane(keyXZ(b))
+                       and filled(a) and filled(b) then
+                        skip[k] = true
+                    end
+                end
+            end
+            -- a skipped tile counts as water once both sides are poured
+            local function settle(t)
+                local a, b = sides(t)
+                for _, k in ipairs({ a, b }) do
+                    if skip[k] and not wet[k] then
+                        local x, z = keyXZ(k)
+                        local s1, s2 = sides({ x = x, z = z, axis = t.axis })
+                        if wet[s1] and wet[s2] then wet[k] = true; expected[k] = true end
+                    end
+                end
+            end
             for i, t in ipairs(list) do
-                if not wet[T.ckey(t.x, t.z)] then
+                local k = T.ckey(t.x, t.z)
+                if not wet[k] and not skip[k] then
                     if T.countItem(WATER_BUCKET) == 0 then
                         local left = 0
                         for j = i, #list do
-                            if not wet[T.ckey(list[j].x, list[j].z)] then left = left + 1 end
+                            local kj = T.ckey(list[j].x, list[j].z)
+                            if not wet[kj] and not skip[kj] then left = left + 1 end
                         end
                         local carry = T.countItem(BUCKET) + T.countItem(WATER_BUCKET)
                         ensureWater(math.max(1, math.min(left, carry)), t)
                     end
-                    if not (T.countItem(WATER_BUCKET) > 0 and waterLane(t)) then
+                    if T.countItem(WATER_BUCKET) > 0 and waterLane(t) then
+                        settle(t)
+                    else
                         remaining[#remaining + 1] = t
                     end
                 end
             end
+            -- check the tiles left to fill themselves that nothing has
+            -- looked at yet, nearest (the far end, where the turtle is)
+            -- first; pour any that didn't take
+            local retry = {}
+            for i = #list, 1, -1 do
+                local t = list[i]
+                local k = T.ckey(t.x, t.z)
+                if expected[k] or (skip[k] and not wet[k]) then
+                    if downAtLane(t.x, t.z) and sourceBelow() then
+                        wet[k], expected[k] = true, nil
+                    else
+                        wet[k], expected[k] = nil, nil
+                        retry[#retry + 1] = t
+                    end
+                end
+            end
+            if #retry > 0 then pour(retry, false) end
         end
-        pour(todo)
+        pour(todo, true)
         local refill = borrowed
         borrowed = {}
-        pour(refill)
+        pour(refill, false)
     end
     return remaining
 end

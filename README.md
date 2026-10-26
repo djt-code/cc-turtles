@@ -197,6 +197,11 @@ fixes the lane first and then replants.
     refilling tile exists, the turtle moves one of the lane's own sources into a
     gap that creates one, and refills the borrowed tile afterwards. Water buckets
     in the chest are only needed to start a lane from nothing.
+  - Only every other lane tile is poured: a tile between two sources becomes a
+    source by itself, so an empty lane takes about half the buckets, and a gap
+    between two intact sources takes none. The skipped tiles are checked once
+    the lane is done (or on the way past while refilling), and any that didn't
+    take get a bucket after all.
   - Anything it can't fix is listed and found again on the next pass.
 - **Inventory.** At the start of a run and after every pass the turtle prints
   what it carries, then puts everything it doesn't need right now into the chest:
@@ -247,7 +252,8 @@ and plants the land, then floors and walls each lane and waters it. Lanes are
 walled on every side the map doesn't call lane, including the ends, so nothing
 runs out of the box. Each lane is bootstrapped by pouring the two buckets at
 tiles 1 and 3 — Minecraft turns tile 2 into a source — and the rest is scooped
-from that regenerating tile, so two buckets build any number of lanes. The site
+from that regenerating tile, so two buckets build any number of lanes; only
+every other tile needs pouring. The site
 should be roughly level with the turtle's starting height; it won't terraform
 more than one block.
 
