@@ -199,6 +199,15 @@ fixes the lane first and then replants.
   it keeps planting items for one pass, fuel and its tools, plus dirt and buckets only
   while a repair is using them. Keep **seeds, dirt and a bucket or two in the
   chest**.
+- **Compost hopper (optional).** Put a hopper **directly behind the turtle's start
+  position**, at the turtle's height, feeding a composter. The turtle looks for it
+  at the start of every run. When the chest holds more than twice as many wheat
+  or beetroot seeds as the farm has tiles of that crop, the turtle takes the
+  surplus out in whole stacks (only as many as the hopper has empty slots for, and
+  never taking the chest below that limit) and drops them into the hopper. Carrots,
+  potatoes and sugar cane are never composted, since the seed is the harvest. Route
+  the bone meal back however you like, e.g. a hopper under the composter into the
+  farm chest.
 - **Full inventory, full chest.** Before working each tile the turtle checks it
   has room for that tile's drops (three empty slots). If not, it goes home to
   empty what it doesn't need, then carries on where it was, so harvest never

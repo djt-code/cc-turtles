@@ -113,11 +113,12 @@ local ROOM = 3                  -- empty slots to have before working a tile: it
                                 -- drops (up to two kinds) plus one for tool swaps
 
 -- Crops grown on farmland: block -> item that plants it, age when ripe.
+-- compost: the seed isn't the harvest, so surplus seeds can be composted.
 local CROPS = {
-    ["minecraft:wheat"]     = { seed = "minecraft:wheat_seeds",    ripe = 7, name = "wheat" },
+    ["minecraft:wheat"]     = { seed = "minecraft:wheat_seeds",    ripe = 7, name = "wheat", compost = true },
     ["minecraft:carrots"]   = { seed = "minecraft:carrot",         ripe = 7, name = "carrots" },
     ["minecraft:potatoes"]  = { seed = "minecraft:potato",         ripe = 7, name = "potatoes" },
-    ["minecraft:beetroots"] = { seed = "minecraft:beetroot_seeds", ripe = 3, name = "beetroot" },
+    ["minecraft:beetroots"] = { seed = "minecraft:beetroot_seeds", ripe = 3, name = "beetroot", compost = true },
 }
 local DEFAULT_CROP = "minecraft:wheat"   -- for a farm with nothing growing yet
 
@@ -224,15 +225,18 @@ end
 
 -- How many of planting item `seed` we want on board: one per tile it
 -- grows on plus a margin, capped.  Zero for crops the farm doesn't grow.
-local function seedTarget(seed)
+-- How many tiles planting item `seed` is planted on.
+local function plantedWith(seed)
+    if seed == CANE then return countKind("cane") end
     local n = 0
-    if seed == CANE then
-        n = countKind("cane")
-    else
-        for k, kind in pairs(tiles) do
-            if kind == "crop" and CROPS[cropAt(k)].seed == seed then n = n + 1 end
-        end
+    for k, kind in pairs(tiles) do
+        if kind == "crop" and CROPS[cropAt(k)].seed == seed then n = n + 1 end
     end
+    return n
+end
+
+local function seedTarget(seed)
+    local n = plantedWith(seed)
     return n == 0 and 0 or math.min(MAX_SEEDS, n + 16)
 end
 
@@ -495,7 +499,9 @@ local function restockItem(name, target, label, quiet)
         end
     end
     turtle.select(1)
-    print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
+    if not quiet then
+        print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
+    end
 end
 
 local regenTile                -- defined with the lanes below
@@ -522,13 +528,104 @@ local function restockBuckets()
     end
 end
 
+--------------------------------------------------------------------------
+-- Compost hopper: a hopper directly behind the home position, at cruise
+-- height, feeding a composter.  Whole stacks of seeds the chest holds more
+-- than twice the farm's planting of go into it (only seeds that aren't the
+-- harvest: wheat and beetroot).  Bone meal is up to the hopper chain.
+--------------------------------------------------------------------------
+local compostHopper = false
+local layoutReady = false      -- surplus means nothing until the layout is known
+
+-- Is there a hopper directly behind home?  Called at home, cruise height.
+local function findCompostHopper()
+    T.face(2)
+    local ok, d = turtle.inspect()
+    T.face(0)
+    compostHopper = ok and d.name == "minecraft:hopper"
+    return compostHopper
+end
+
+-- How many `name` the chest below holds, or nil if it can't be read.
+local function chestCount(name)
+    local chest = peripheral and peripheral.wrap("bottom")
+    if not (chest and chest.list) then return nil end
+    local n = 0
+    for _, it in pairs(chest.list()) do
+        if it.name == name then n = n + it.count end
+    end
+    return n
+end
+
+-- Empty slots in the compost hopper: how many whole stacks it can take.
+-- Called at home facing forward, so the hopper is at the turtle's back.
+local function hopperSlotsFree()
+    local h = peripheral and peripheral.wrap("back")
+    if not (h and h.list and h.size) then return 0 end
+    local n = h.size()
+    for _ in pairs(h.list()) do n = n - 1 end
+    return n
+end
+
+-- At the chest: take out whole stacks of surplus seeds, no more than
+-- `room` stacks (what the hopper has space for).  Returns true if the
+-- turtle now carries some for the hopper.
+local function pullSurplusSeeds(room)
+    local any = false
+    for _, c in pairs(CROPS) do
+        local have = c.compost and chestCount(c.seed)
+        local limit = 2 * plantedWith(c.seed)
+        local stacks = have and math.min(room, math.floor((have - limit) / 64)) or 0
+        if stacks > 0 then
+            room = room - stacks
+            local before = T.countItem(c.seed)
+            restockItem(c.seed, before + 64 * stacks, c.name .. " seeds", true)
+            local got = T.countItem(c.seed) - before
+            if got > 0 then
+                print(string.format("Composting %d %s seeds (chest had %d, the farm plants %d)",
+                    got, c.name, have, limit / 2))
+                any = true
+            end
+        end
+    end
+    return any
+end
+
+-- At home, cruise height: drop everything over the seed target of
+-- compostable seeds into the hopper behind.  What doesn't fit stays on
+-- board and goes back to the chest at the next visit.
+local function feedCompost()
+    T.face(2)
+    local full = false
+    for _, c in pairs(CROPS) do
+        local extra = c.compost and (T.countItem(c.seed) - seedTarget(c.seed)) or 0
+        for s = 16, 1, -1 do
+            if extra <= 0 or full then break end
+            local it = turtle.getItemDetail(s)
+            if it and it.name == c.seed then
+                local want = math.min(extra, it.count)
+                turtle.select(s)
+                turtle.drop(want)
+                local moved = it.count - turtle.getItemCount(s)
+                extra = extra - moved
+                full = moved < want
+            end
+        end
+    end
+    if full then print("The compost hopper is full; keeping the rest for later.") end
+    turtle.select(1)
+    T.face(0)
+end
+
 local function dumpAtHome()
     goToCruise(0, 0)
     T.face(0)
+    local room = (compostHopper and layoutReady) and hopperSlotsFree() or 0
     for _ = 1, 3 do
         if T.containerBelow() then break end
         if turtle.detectDown() or not T.down() then break end
     end
+    local toCompost = false
     if T.containerBelow() then
         T.dumpDownWait(keepPolicy)               -- a full chest: wait for room
         for _, seed in ipairs(SEEDS) do
@@ -536,10 +633,12 @@ local function dumpAtHome()
         end
         restockItem(DIRT, dirtNeeded(), "Dirt")
         restockBuckets()
+        if room > 0 then toCompost = pullSurplusSeeds(room) end
     else
         print("No chest found below home; keeping items.")
     end
     T.toStartHeight()
+    if toCompost then feedCompost() end
 end
 
 -- Make sure the next tile's drops will fit, so nothing is left on the
@@ -1054,6 +1153,7 @@ local function learnPass()
     local settled = resolveLayout()
     local guessed = assignCrops()
     saveMap()
+    layoutReady = true
     travelY = countKind("cane") > 0 and CANE_TRAVEL_Y or 0
     print(string.format("Layout saved: %d crop, %d cane, %d water, %d other (%d gaps settled from their strips)",
         countKind("crop"), countKind("cane"), countKind("water"), countKind("other"), settled))
@@ -1224,6 +1324,7 @@ end
 local haveMap = (not forceLearn) and loadMap()
 if haveMap and resolveLayout() + assignCrops() > 0 then saveMap() end   -- older maps
 if haveMap and countKind("cane") > 0 then travelY = CANE_TRAVEL_Y end
+layoutReady = haveMap and true or false
 if (doClone or doRepair) and not haveMap then
     print("No saved layout to " .. (doClone and "clone" or "repair") .. ". Learn a farm first.")
     return
@@ -1261,6 +1362,9 @@ local restoreTools = T.usePrimaryTool(HOE)
 local ok, err = pcall(function()
     T.clearBlocked()
     inventoryLine("On board")
+    if findCompostHopper() then
+        print("Compost hopper behind home: surplus wheat and beetroot seeds go into it.")
+    end
     if haveMap then print("Farm plan: " .. cropSummary()) end
     if doClone then
         print(string.format("Cloning saved %dx%d layout here (%d crop, %d water tiles)",
