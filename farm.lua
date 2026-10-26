@@ -439,10 +439,45 @@ local function inventoryLine(label)
     print(label .. ": " .. (#parts > 0 and table.concat(parts, ", ") or "nothing"))
 end
 
+-- Move a stack of `name` into the chest's first slot, where suckDown()
+-- takes from.  Whatever is in slot 1 goes to an empty slot, or, with the
+-- chest full, into an empty turtle slot that is returned so the caller
+-- can put it back.  Returns found, held.
+local function frontStack(chest, name)
+    local items = chest.list()
+    local from
+    for slot, it in pairs(items) do
+        if it.name == name and (not from or slot < from) then from = slot end
+    end
+    if not from then return false end
+    if from == 1 then return true end
+    local self = peripheral.getName(chest)
+    local held
+    if items[1] then
+        local empty
+        for s = 2, chest.size() do
+            if not items[s] then empty = s; break end
+        end
+        if empty then
+            chest.pushItems(self, 1, 64, empty)
+        else
+            for s = 1, 16 do
+                if turtle.getItemCount(s) == 0 then held = s; break end
+            end
+            if not held then return false end
+            turtle.select(held)
+            turtle.suckDown(64)
+        end
+    end
+    return chest.pushItems(self, from, 64, 1) > 0, held
+end
+
 -- Pull `name` out of the chest below until we hold `target` of it.
 -- suckDown() takes from the chest's first occupied slot regardless of what
--- it is, so anything else that comes out is set aside and dropped back
--- once we're done (fuel is kept).
+-- it is, so with a readable chest the wanted stack is moved to the front
+-- first (frontStack) and exactly what's needed is taken.  Otherwise
+-- anything else that comes out is set aside and dropped back once we're
+-- done (fuel is kept).
 local warnedEmpty = {}
 local function restockItem(name, target, label, quiet)
     if target <= 0 or T.countItem(name) >= target then return end
@@ -463,9 +498,20 @@ local function restockItem(name, target, label, quiet)
         warnedEmpty[name] = nil
     end
 
+    local fronted = chest and chest.pushItems and chest.size and pcall(function()
+        while T.countItem(name) < target and T.freeSlots() > ROOM do
+            local found, held = frontStack(chest, name)
+            if not found then break end
+            turtle.select(1)
+            local got = turtle.suckDown(math.min(64, target - T.countItem(name)))
+            if held then turtle.select(held); turtle.dropDown() end
+            if not got then break end
+        end
+    end)
+
     local junk = {}
     for _ = 1, 54 do                              -- a double chest's worth
-        if T.countItem(name) >= target then break end
+        if fronted or T.countItem(name) >= target then break end
         local before = {}
         for s = 1, 16 do before[s] = turtle.getItemCount(s) end
         local freeSlots = 0
@@ -580,12 +626,7 @@ local function pullSurplusSeeds(room)
             room = room - stacks
             local before = T.countItem(c.seed)
             restockItem(c.seed, before + 64 * stacks, c.name .. " seeds", true)
-            local got = T.countItem(c.seed) - before
-            if got > 0 then
-                print(string.format("Composting %d %s seeds (chest had %d, the farm plants %d)",
-                    got, c.name, have, limit / 2))
-                any = true
-            end
+            if T.countItem(c.seed) > before then any = true end
         end
     end
     return any
@@ -599,6 +640,7 @@ local function feedCompost()
     local full = false
     for _, c in pairs(CROPS) do
         local extra = c.compost and (T.countItem(c.seed) - seedTarget(c.seed)) or 0
+        local fed = 0
         for s = 16, 1, -1 do
             if extra <= 0 or full then break end
             local it = turtle.getItemDetail(s)
@@ -607,9 +649,13 @@ local function feedCompost()
                 turtle.select(s)
                 turtle.drop(want)
                 local moved = it.count - turtle.getItemCount(s)
-                extra = extra - moved
+                extra, fed = extra - moved, fed + moved
                 full = moved < want
             end
+        end
+        if fed > 0 then
+            print(string.format("Composting %d %s seeds (the farm plants %d)",
+                fed, c.name, plantedWith(c.seed)))
         end
     end
     if full then print("The compost hopper is full; keeping the rest for later.") end
