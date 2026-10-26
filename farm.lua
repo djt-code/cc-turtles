@@ -38,15 +38,16 @@
 --    could be either, so they take the kind of the strip they lie in
 --    (bare dirt outside any strip is farmed).  Saved to farm.map, which
 --    from then on is the farm as it SHOULD be.
---  * Farming pass: walks the layout line by line along the lanes, each
---    line from the end nearest the last, harvesting and planting crop
---    tiles and dipping to crop level over lane tiles to check the water.
---    Ground missing under a crop tile, a dry lane tile, or a block in
---    the way is damage: after the pass the turtle goes home and runs
---    repair mode before sleeping.
---  * Repair mode: rebuilds damaged tiles to match the layout.  Land: dirt,
---    till, plant.  Lane: dirt floor beneath if missing, dirt walls on
---    every side that isn't lane, then water.
+--  * Farming pass: serpentines over the crop tiles only, line by line
+--    along the lanes, each line from the end nearest the last, lanes
+--    skipped.  Untilled dirt is tilled and planted on the way.  Ground
+--    missing under a crop tile, or a block in the way, is damage: after
+--    the pass the turtle goes home and runs a full repair pass.
+--  * Full repair pass (also `farm repair`, and once after learn/clone):
+--    inspects every crop tile and dips to crop level over every lane
+--    tile to check its water, then rebuilds damaged tiles to match the
+--    layout.  Land: dirt, till, plant.  Lane: dirt floor beneath if
+--    missing, dirt walls on every side that isn't lane, then water.
 --  * Clone: builds farm.map at the current position.  Phase 1 (pickaxe)
 --    clears the crop level, digs lane trenches and removes stone where
 --    land is wanted.  Phase 2 (hoe) fills/tills/plants land, then floors,
@@ -829,10 +830,11 @@ local function learnPass()
         countKind("crop"), countKind("water"), countKind("other"), settled))
 end
 
--- Visiting order for a farming pass: every crop and lane tile, one line
--- at a time along the lanes, each line entered from the end nearest the
--- previous line's last tile, so no line is flown back over empty.
-local function passOrder()
+-- Visiting order for a pass: every crop tile (and lane tile, with lanes),
+-- one line at a time along the lanes, each line entered from the end
+-- nearest the previous line's last tile, so no line is flown back over
+-- empty and lines with nothing to visit are skipped.
+local function passOrder(lanes)
     local alongX = farmAxis() == "x"
     local sx, w = T.sgn(WIDTH)
     local sz, l = T.sgn(LENGTH)
@@ -844,7 +846,9 @@ local function passOrder()
             local x, z
             if alongX then x, z = j * sx, i * sz else x, z = i * sx, j * sz end
             local kind = tiles[T.ckey(x, z)]
-            if kind == "crop" or kind == "water" then line[#line + 1] = { x = x, z = z, j = j } end
+            if kind == "crop" or (lanes and kind == "water") then
+                line[#line + 1] = { x = x, z = z, j = j }
+            end
         end
         if #line > 0 then
             local a, b, step = 1, #line, 1
@@ -880,11 +884,13 @@ local function checkLane(t)
     return "dry"
 end
 
--- One sweep over the farm.  harvest = false is repair mode's inspection:
--- nothing is harvested, but bare farmland is still planted.  Returns the
--- damaged tiles (ground or water missing, or something in the way).
-local function farmPass(harvest)
-    local plan = passOrder()
+-- One sweep over the farm.  The farming pass (harvest, no lanes) visits
+-- crop tiles only; the repair inspection (no harvest, lanes) also checks
+-- every lane tile.  Bare farmland and untilled dirt are planted either
+-- way; that isn't damage.  Returns the damaged tiles (ground or water
+-- missing, or something in the way).
+local function farmPass(harvest, lanes)
+    local plan = passOrder(lanes)
     local stats = { harvested = 0, planted = 0, growing = 0, empty = 0, lane = 0,
                     damaged = 0, dry = 0, blocked = 0, noseeds = 0 }
     local damaged, skipped, triedRestock = {}, 0, false
@@ -937,6 +943,15 @@ local function repair(damaged)
     end
     pendingFills = {}                    -- the next pass finds them again
     dumpAtHome()
+end
+
+-- Full repair pass: inspect every crop and lane tile (nothing harvested),
+-- then rebuild whatever is damaged.  Starts and ends at home.
+local function fullRepair()
+    print("Full repair pass: inspecting every tile")
+    local damaged = farmPass(false, true)
+    dumpAtHome()
+    if #damaged > 0 then repair(damaged) else print("No damage found.") end
 end
 
 --------------------------------------------------------------------------
@@ -996,21 +1011,23 @@ local ok, err = pcall(function()
             dumpAtHome()
         end
     end
+    -- a new layout (learned or cloned) gets checked lanes and all once
+    if doRepair or doClone or not haveMap then
+        T.clearBlocked()
+        fullRepair()
+    end
     if doRepair then
-        print("Repair mode: inspecting every tile")
-        local damaged = farmPass(false)
-        dumpAtHome()
-        if #damaged > 0 then repair(damaged) else print("No damage found.") end
         inventoryLine("Kept on board")
         return
     end
     while true do
         T.clearBlocked()
-        local damaged = farmPass(true)
+        local damaged = farmPass(true, false)
         dumpAtHome()
         if #damaged > 0 then
+            -- missing ground: check the whole farm, lanes included
             T.clearBlocked()
-            repair(damaged)
+            fullRepair()
         end
         print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()) ..
             ", seeds: " .. T.countItem(SEED))

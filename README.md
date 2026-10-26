@@ -133,19 +133,20 @@ need to hand it seeds directly.
   lies in (a column or row that is otherwise all land, or all water); bare dirt
   outside any strip is farmed. Saved to `farm.map`, which from then on is the farm
   as it *should* be. Re-learn only when you change the farm on purpose.
-- **Farming pass** works the layout one line at a time along the lanes, entering
-  each line from the end nearest the last, so it never flies back across the
-  farm. It harvests wheat at age 7 and replants it immediately, plants any bare
+- **Farming pass** serpentines over the crop tiles only, one line at a time
+  along the lanes, entering each line from the end nearest the last; lanes are
+  skipped. It harvests wheat at age 7 and replants it immediately, plants any bare
   farmland, and re-tills farmland that reverted to dirt, all from cruise height
-  (CC:Tweaked lets a hoe till through one block of air below the turtle). Over a
-  lane it drops to crop level to check the water and stays down along the lane.
-  Then it goes home, dumps wheat and surplus seeds, tops seeds back up, and sleeps
+  (CC:Tweaked lets a hoe till through one block of air below the turtle). Then it
+  goes home, dumps wheat and surplus seeds, tops seeds back up, and sleeps
   (default 20 min; `0` for a single pass).
-- **Repair mode.** Ground missing under a crop tile, a lane tile that isn't a
-  water *source* (dry, flowing, or filled in), or a block in the way counts as
-  damage. After a pass that found any, the turtle goes home, restocks and repairs
-  before sleeping. `farm repair` does the same on demand: one inspection sweep
-  (no harvesting), then the fixes.
+- **Full repair pass.** Ground missing under a crop tile, or a block in the way,
+  makes the turtle go home after the farming pass and run a full repair pass
+  before sleeping (untilled dirt doesn't: the farming pass fixes that itself). The
+  full pass inspects every crop tile and drops to crop level over every lane tile
+  to check its water, then fixes everything it found. Lane damage counts there: a
+  lane tile that isn't a water *source* (dry, flowing, or filled in). It also runs
+  once after `learn` or `clone`, and `farm repair` runs it on demand and stops.
   - Land gets dirt, tilling and wheat right away.
   - A filled-in lane tile (dirt or anything else in it or on top of it) is dug
     out with a **diamond pickaxe**, which the turtle swaps in for the hoe; keep one
