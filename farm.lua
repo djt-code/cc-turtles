@@ -34,8 +34,8 @@
 --
 -- How it works:
 --  * Learning pass: only records the layout; it changes nothing.  Flies
---    over every tile in the box.  Wheat below -> farm tile.  Air below ->
---    drops down a block to look at the ground: farmland -> farm tile;
+--    over every tile in the box.  A crop below -> crop tile.  Air below ->
+--    drops down a block to look at the ground: farmland -> crop tile;
 --    water -> lane; other -> left alone.  Missing ground and bare dirt
 --    could be either, so they take the kind of the strip they lie in
 --    (bare dirt outside any strip is farmed).  Saved to farm.map, which
@@ -63,9 +63,10 @@
 --    gets the crop most of its strip grows.  The farming pass harvests
 --    each crop when ripe (age 7; beetroot 3) and replants the crop the
 --    plan wants there (a different crop found growing is harvested when
---    ripe and replaced), plants
---    bare farmland (tilling through the air gap if it reverted to dirt),
---    returns home, drops produce, restocks, repairs if needed, sleeps.
+--    ripe and replaced), and plants bare farmland (tilling through the
+--    air gap if it reverted to dirt).  Back home it drops produce,
+--    restocks, repairs if needed, composts surplus seeds, runs grow
+--    passes when the chest has bone meal to spare, and sleeps.
 --  * Sugar cane: grows on dirt, sand, moss, mud and the like, beside a
 --    water source, up to 3 high from cruise height upwards, so on a farm
 --    with cane the turtle travels at CANE_TRAVEL_Y (learning always does).
@@ -87,10 +88,8 @@ local MAP_FILE = T.dataPath("farm.map")
 -- Arguments
 --------------------------------------------------------------------------
 local args = { ... }
-local forceLearn, forceHere, doClone, doRepair = false, false, false, false
-for i = #args, 1, -1 do
-    if args[i] == "--here" then forceHere = true; table.remove(args, i) end
-end
+local forceLearn, doClone, doRepair = false, false, false
+local forceHere = T.popFlag(args, "--here")
 if args[1] == "learn" then forceLearn = true; table.remove(args, 1)
 elseif args[1] == "repair" then doRepair = true; table.remove(args, 1)
 elseif args[1] == "clone" then doClone = true; forceHere = true; table.remove(args, 1)
@@ -169,10 +168,7 @@ local crops = {}
 local wet = {}             -- tiles that actually hold water right now
 local pendingFills = {}    -- holes (or clone targets) still to build
 
-local function keyXZ(k)
-    local x, z = k:match("(-?%d+),(-?%d+)")
-    return tonumber(x), tonumber(z)
-end
+local keyXZ = T.keyXZ
 
 -- The crop planned for a tile (maps saved before crops were tracked: wheat).
 local function cropAt(k) return crops[k] or DEFAULT_CROP end
@@ -228,8 +224,6 @@ local function cropSummary()
     return #parts > 0 and table.concat(parts, ", ") or "no crops"
 end
 
--- How many of planting item `seed` we want on board: one per tile it
--- grows on plus a margin, capped.  Zero for crops the farm doesn't grow.
 -- How many tiles planting item `seed` is planted on.
 local function plantedWith(seed)
     if seed == CANE then return countKind("cane") end
@@ -240,6 +234,8 @@ local function plantedWith(seed)
     return n
 end
 
+-- How many of planting item `seed` to carry: one per tile it grows on
+-- plus a margin, capped.  Zero for crops the farm doesn't grow.
 local function seedTarget(seed)
     local n = plantedWith(seed)
     return n == 0 and 0 or math.min(MAX_SEEDS, n + 16)
@@ -256,12 +252,7 @@ end
 --------------------------------------------------------------------------
 -- Tile primitives (all start and end at cruise height)
 --------------------------------------------------------------------------
--- What is directly below: a block name, or "air".
-local function below()
-    local ok, d = turtle.inspectDown()
-    if not ok then return "air" end
-    return d.name, d
-end
+local below = T.below
 
 -- Is the block below a water SOURCE?  Lanes are all sources; flowing
 -- water (level > 0) counts as damage and gets a bucket poured into it.
@@ -283,17 +274,10 @@ end
 -- with sugar cane, which grows into cruise height.
 local travelY = 0
 
--- Climb or sink to height y in the current column.
-local function toY(y)
-    while T.pos.y < y and T.up() do end
-    while T.pos.y > y and T.down() do end
-    return T.pos.y == y
-end
-
 -- Travel to (tx,tz) at travel height, then sink to cruise height.
 local function goToCruise(tx, tz)
-    toY(travelY)
-    return T.goTo(tx, tz) and toY(0)
+    T.toY(travelY)
+    return T.goTo(tx, tz) and T.toY(0)
 end
 
 local warnedLow = false
@@ -430,169 +414,9 @@ local function keepPolicy(item, alreadyKept)
     return 0
 end
 
--- One line listing what the turtle is carrying.
-local function inventoryLine(label)
-    local counts, order = {}, {}
-    for s = 1, 16 do
-        local it = turtle.getItemDetail(s)
-        if it then
-            local name = it.name:gsub("^minecraft:", "")
-            if not counts[name] then order[#order + 1] = name; counts[name] = 0 end
-            counts[name] = counts[name] + it.count
-        end
-    end
-    local parts = {}
-    for _, name in ipairs(order) do parts[#parts + 1] = counts[name] .. " " .. name end
-    print(label .. ": " .. (#parts > 0 and table.concat(parts, ", ") or "nothing"))
-end
-
--- Merge part stacks of the same item in the chest below, so everything
--- sits in as few slots as it can.  Hoppers and the turtle's own partial
--- takes leave small stacks scattered about; this runs at every chest
--- visit before anything is taken or moved.  Uses the chest's pushItems,
--- filling the earliest part stack from the latest.
-local function compactChest()
-    local chest = peripheral and peripheral.wrap("bottom")
-    if not (chest and chest.list and chest.pushItems and chest.getItemDetail) then return end
-    local self = peripheral.getName(chest)
-    pcall(function()
-        local groups = {}
-        for slot, it in pairs(chest.list()) do
-            local key = it.name .. "|" .. (it.nbt or "")
-            groups[key] = groups[key] or {}
-            table.insert(groups[key], { slot = slot, count = it.count })
-        end
-        for _, g in pairs(groups) do
-            if #g > 1 then
-                local max = (chest.getItemDetail(g[1].slot) or {}).maxCount or 64
-                local part = {}
-                for _, s in ipairs(g) do
-                    if s.count < max then part[#part + 1] = s end
-                end
-                table.sort(part, function(a, b) return a.slot < b.slot end)
-                local i, j = 1, #part
-                while i < j do
-                    local n = chest.pushItems(self, part[j].slot,
-                        math.min(max - part[i].count, part[j].count), part[i].slot)
-                    if n == 0 then break end
-                    part[i].count, part[j].count = part[i].count + n, part[j].count - n
-                    if part[j].count == 0 then j = j - 1 end
-                    if part[i].count >= max then i = i + 1 end
-                end
-            end
-        end
-    end)
-end
-
--- Move a stack of `name` into the chest's first slot, where suckDown()
--- takes from.  Whatever is in slot 1 goes to an empty slot, or, with the
--- chest full, into an empty turtle slot that is returned so the caller
--- can put it back.  Returns found, held.
-local function frontStack(chest, name)
-    local items = chest.list()
-    local from
-    for slot, it in pairs(items) do
-        if it.name == name and (not from or slot < from) then from = slot end
-    end
-    if not from then return false end
-    if from == 1 then return true end
-    local self = peripheral.getName(chest)
-    local held
-    if items[1] then
-        local empty
-        for s = 2, chest.size() do
-            if not items[s] then empty = s; break end
-        end
-        if empty then
-            chest.pushItems(self, 1, 64, empty)
-        else
-            for s = 1, 16 do
-                if turtle.getItemCount(s) == 0 then held = s; break end
-            end
-            if not held then return false end
-            turtle.select(held)
-            turtle.suckDown(64)
-        end
-    end
-    return chest.pushItems(self, from, 64, 1) > 0, held
-end
-
--- Pull `name` out of the chest below until we hold `target` of it.
--- suckDown() takes from the chest's first occupied slot regardless of what
--- it is, so with a readable chest the wanted stack is moved to the front
--- first (frontStack) and exactly what's needed is taken.  Otherwise
--- anything else that comes out is set aside and dropped back once we're
--- done (fuel is kept).
-local warnedEmpty = {}
+-- Restock from the chest below, leaving ROOM slots free for drops.
 local function restockItem(name, target, label, quiet)
-    if target <= 0 or T.countItem(name) >= target then return end
-
-    local chest = peripheral and peripheral.wrap("bottom")
-    if chest and chest.list then
-        local any = false
-        for _, it in pairs(chest.list()) do
-            if it.name == name then any = true; break end
-        end
-        if not any then
-            if not quiet and not warnedEmpty[name] then
-                warnedEmpty[name] = true
-                print("Chest has no " .. label:lower() .. " to restock from.")
-            end
-            return
-        end
-        warnedEmpty[name] = nil
-    end
-
-    local fronted = chest and chest.pushItems and chest.size and pcall(function()
-        while T.countItem(name) < target and T.freeSlots() > ROOM do
-            local found, held = frontStack(chest, name)
-            if not found then break end
-            turtle.select(1)
-            local got = turtle.suckDown(math.min(64, target - T.countItem(name)))
-            if held then turtle.select(held); turtle.dropDown() end
-            if not got then break end
-        end
-    end)
-
-    local junk = {}
-    for _ = 1, 54 do                              -- a double chest's worth
-        if fronted or T.countItem(name) >= target then break end
-        local before = {}
-        for s = 1, 16 do before[s] = turtle.getItemCount(s) end
-        local freeSlots = 0
-        for s = 1, 16 do if before[s] == 0 then freeSlots = freeSlots + 1 end end
-        if freeSlots <= ROOM then break end       -- leave room for drops and tool swaps
-        if not turtle.suckDown(64) then break end -- chest empty
-        for s = 1, 16 do
-            local got = turtle.getItemCount(s) - before[s]
-            if got > 0 then
-                local it = turtle.getItemDetail(s)
-                if it and it.name ~= name and not T.fuel[it.name] then
-                    junk[#junk + 1] = { slot = s, n = got }   -- only what came out
-                end
-            end
-        end
-    end
-    for _, j in ipairs(junk) do
-        turtle.select(j.slot)
-        turtle.dropDown(j.n)
-    end
-    -- whole stacks come out, so hand back anything over the target
-    local extra = T.countItem(name) - target
-    for s = 16, 1, -1 do
-        if extra <= 0 then break end
-        local it = turtle.getItemDetail(s)
-        if it and it.name == name then
-            local n = math.min(extra, it.count)
-            turtle.select(s)
-            turtle.dropDown(n)
-            extra = extra - n
-        end
-    end
-    turtle.select(1)
-    if not quiet then
-        print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
-    end
+    T.restockBelow(name, target, { label = label, quiet = quiet, room = ROOM })
 end
 
 local regenTile                -- defined with the lanes below
@@ -637,17 +461,6 @@ local function findCompostHopper()
     return compostHopper
 end
 
--- How many `name` the chest below holds, or nil if it can't be read.
-local function chestCount(name)
-    local chest = peripheral and peripheral.wrap("bottom")
-    if not (chest and chest.list) then return nil end
-    local n = 0
-    for _, it in pairs(chest.list()) do
-        if it.name == name then n = n + it.count end
-    end
-    return n
-end
-
 -- Empty slots in the compost hopper: how many whole stacks it can take.
 -- Called at home facing forward, so the hopper is at the turtle's back.
 local function hopperSlotsFree()
@@ -665,7 +478,7 @@ end
 local function pullSurplusSeeds(room)
     local any, more = false, false
     for _, c in pairs(CROPS) do
-        local have = c.compost and chestCount(c.seed)
+        local have = c.compost and T.countBelow(c.seed)
         local surplus = have and math.floor((have - 2 * plantedWith(c.seed)) / 64) or 0
         local stacks = math.min(room, surplus)
         if surplus > stacks then more = true end
@@ -714,7 +527,7 @@ local function toChest()
         if turtle.detectDown() or not T.down() then break end
     end
     if not T.containerBelow() then return false end
-    compactChest()
+    T.compactBelow()
     return true
 end
 
@@ -729,7 +542,7 @@ local function dumpAtHome()
         restockItem(DIRT, dirtNeeded(), "Dirt")
         restockBuckets()
         restockItem(BONE_MEAL, wantBoneMeal, "Bone meal")
-        compactChest()                           -- leave it tidy too
+        T.compactBelow()                         -- leave it tidy too
     else
         print("No chest found below home; keeping items.")
     end
@@ -751,7 +564,7 @@ local function waitAndCompost(seconds)
                 local carrying = false
                 if toChest() then
                     carrying, more = pullSurplusSeeds(room)
-                    compactChest()
+                    T.compactBelow()
                 end
                 T.toStartHeight()
                 if carrying then feedCompost(fed) end
@@ -773,17 +586,9 @@ end
 
 -- Make sure the next tile's drops will fit, so nothing is left on the
 -- ground: with fewer than `need` empty slots, go home and empty out first.
--- Only goes if that would free something (not when everything on board is
--- kept, or there's no chest).
-local warnedCrowded = false
 local function ensureRoom(need)
-    need = need or ROOM
-    if T.freeSlots() >= need then return end
-    if T.wouldDump(keepPolicy) then dumpAtHome() end
-    if T.freeSlots() < need and not warnedCrowded then
-        warnedCrowded = true
-        print("No room for more drops and nothing to empty (or no chest); harvest may spill.")
-    end
+    T.ensureRoom(need or ROOM, keepPolicy, dumpAtHome,
+        "No room for more drops and nothing to empty (or no chest); harvest may spill.")
 end
 
 --------------------------------------------------------------------------
@@ -887,10 +692,10 @@ local function assignCrops()
     return count
 end
 
--- Repair planning: rebuild each damaged tile as the layout says.
 -- What each kind of tile is rebuilt as.
 local BUILD = { crop = "land", cane = "cane", water = "water" }
 
+-- Repair planning: rebuild each damaged tile as the layout says.
 local function planRepair(damaged)
     pendingFills = {}
     for _, t in ipairs(damaged) do
@@ -1044,21 +849,21 @@ local function mineLanes(list)
         print(#list .. " lane tiles are filled in; give the turtle a diamond pickaxe to dig them out.")
         return {}
     end
-    local restore = T.usePrimaryTool(PICKAXE)
     local cleared = {}
-    for _, t in ipairs(list) do
-        ensureRoom()
-        if goToCruise(t.x, t.z) then
-            if turtle.detectDown() then turtle.digDown() end      -- crop level
-            if T.down() then
-                local g = below()
-                if g ~= "air" and g ~= WATER then turtle.digDown(); g = below() end
-                if g == "air" or g == WATER then cleared[#cleared + 1] = t end
-                T.up()
+    T.withTool(PICKAXE, function()
+        for _, t in ipairs(list) do
+            ensureRoom()
+            if goToCruise(t.x, t.z) then
+                if turtle.detectDown() then turtle.digDown() end  -- crop level
+                if T.down() then
+                    local g = below()
+                    if g ~= "air" and g ~= WATER then turtle.digDown(); g = below() end
+                    if g == "air" or g == WATER then cleared[#cleared + 1] = t end
+                    T.up()
+                end
             end
         end
-    end
-    restore()
+    end)
     return cleared
 end
 
@@ -1225,35 +1030,37 @@ end
 -- Clone phase 1 (pickaxe): clear crop level, trench lanes, remove stone.
 --------------------------------------------------------------------------
 local function clonePrepare()
-    local restore = T.usePrimaryTool(PICKAXE)
     print("Clone phase 1: clearing and trenching with the pickaxe")
     local plan = T.serpentine(WIDTH, LENGTH)
-    for i, t in ipairs(plan) do
-        local kind = tiles[T.ckey(t.x, t.z)]
-        if BUILD[kind] then ensureRoom() end
-        if BUILD[kind] and goToCruise(t.x, t.z) then
-            local c = below()
-            if c ~= "air" and not CROPS[c] and c ~= CANE then turtle.digDown() end  -- crop level
-            if T.down() then
-                local g = below()
-                if kind == "water" then
-                    if sourceBelow() then wet[T.ckey(t.x, t.z)] = true
-                    elseif g ~= "air" and g ~= WATER then turtle.digDown() end  -- trench
-                elseif kind == "cane" then
-                    if g ~= "air" and g ~= WATER and not CANE_GROUND[g] then
-                        turtle.digDown()                               -- stone etc.
-                    end
-                else
-                    if g ~= "air" and g ~= WATER and g ~= FARMLAND and not TILLABLE[g] then
-                        turtle.digDown()                               -- stone etc.
+    T.withTool(PICKAXE, function()
+        for i, t in ipairs(plan) do
+            local kind = tiles[T.ckey(t.x, t.z)]
+            if BUILD[kind] then
+                ensureRoom()
+                if goToCruise(t.x, t.z) then
+                    local c = below()
+                    if c ~= "air" and not CROPS[c] and c ~= CANE then turtle.digDown() end  -- crop level
+                    if T.down() then
+                        local g = below()
+                        if kind == "water" then
+                            if sourceBelow() then wet[T.ckey(t.x, t.z)] = true
+                            elseif g ~= "air" and g ~= WATER then turtle.digDown() end  -- trench
+                        elseif kind == "cane" then
+                            if g ~= "air" and g ~= WATER and not CANE_GROUND[g] then
+                                turtle.digDown()                       -- stone etc.
+                            end
+                        else
+                            if g ~= "air" and g ~= WATER and g ~= FARMLAND and not TILLABLE[g] then
+                                turtle.digDown()                       -- stone etc.
+                            end
+                        end
+                        T.up()
                     end
                 end
-                T.up()
             end
+            if i % 50 == 0 then print(string.format("%d/%d cleared", i, #plan)) end
         end
-        if i % 50 == 0 then print(string.format("%d/%d cleared", i, #plan)) end
-    end
-    restore()
+    end)
 end
 
 --------------------------------------------------------------------------
@@ -1268,7 +1075,7 @@ local function learnPass()
     local gaps = {}
     for i, t in ipairs(plan) do
         local kind, crop, gap = "other", nil, false
-        toY(travelY)
+        T.toY(travelY)
         if T.goTo(t.x, t.z) then kind, crop, gap = learnTile() end
         local k = T.ckey(t.x, t.z)
         tiles[k], crops[k] = kind, crop
@@ -1348,7 +1155,7 @@ local function visit(t, kind)
         if T.forward() then return true end
     end
     if kind ~= "cane" then return goToCruise(t.x, t.z) end
-    toY(travelY)
+    T.toY(travelY)
     if not T.goTo(t.x, t.z) then return false end
     while T.pos.y > y do
         if below() == CANE then turtle.digDown() end
@@ -1444,7 +1251,7 @@ local function farmPass(harvest, lanes, grow)
             print(string.format("%d/%d tiles, fuel %s", i, #plan, tostring(turtle.getFuelLevel())))
         end
     end
-    toY(travelY)
+    T.toY(travelY)
     print(string.format("Harvested %d, planted %d, growing %d, empty %d, unreachable %d",
         stats.harvested, stats.planted, stats.growing, stats.empty, skipped))
     if #damaged > 0 then
@@ -1474,7 +1281,7 @@ end
 
 -- Bone meal the chest holds, counted from home; nil if it can't be read.
 local function chestBoneMeal()
-    local n = toChest() and chestCount(BONE_MEAL)
+    local n = toChest() and T.countBelow(BONE_MEAL)
     T.toStartHeight()
     return n
 end
@@ -1545,13 +1352,7 @@ if forceLearn and not (WIDTH and LENGTH) then
     return
 end
 
-local stale = T.startAtHome(forceHere)
-if stale then
-    print(string.format("Turtle may not be at home: last saved position (%d,%d,%d).",
-        stale.x, stale.y, stale.z))
-    print("Run `farm reset` to send it home, or add --here to use this spot as home.")
-    return
-end
+if not T.requireHome(forceHere, "farm") then return end
 
 T.cfg.width, T.cfg.length = WIDTH, LENGTH
 local perTile = doClone and 5 or CRUISE_MOVES_PER_TILE
@@ -1564,11 +1365,9 @@ if haveMap and not doClone then
     for k, kind in pairs(tiles) do if kind == "water" then wet[k] = true end end
 end
 
-local restoreTools = T.usePrimaryTool(HOE)
-
-local ok, err = pcall(function()
+T.withTool(HOE, function()
     T.clearBlocked()
-    inventoryLine("On board")
+    T.inventoryLine("On board")
     if findCompostHopper() then
         print("Compost hopper behind home: surplus wheat and beetroot seeds go into it.")
     end
@@ -1583,7 +1382,7 @@ local ok, err = pcall(function()
         pendingFills = {}                -- the first pass finds what's left
     else
         dumpAtHome()
-        inventoryLine("Kept on board")
+        T.inventoryLine("Kept on board")
         if not haveMap then
             local gaps = learnPass()
             dumpAtHome()
@@ -1600,7 +1399,7 @@ local ok, err = pcall(function()
         fullRepair()
     end
     if doRepair then
-        inventoryLine("Kept on board")
+        T.inventoryLine("Kept on board")
         return
     end
     while true do
@@ -1614,12 +1413,9 @@ local ok, err = pcall(function()
         end
         growPasses()
         print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()))
-        inventoryLine("Kept on board")
+        T.inventoryLine("Kept on board")
         if REPEAT <= 0 then break end
         print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")
         waitAndCompost(REPEAT * 60)
     end
 end)
-
-restoreTools()
-if not ok then error(err, 0) end

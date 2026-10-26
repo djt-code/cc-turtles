@@ -33,11 +33,8 @@
 local T = require("turtlelib")
 
 local args = { ... }
-local TORCHES, HERE = true, false
-for i = #args, 1, -1 do
-    if args[i] == "notorch" then TORCHES = false; table.remove(args, i)
-    elseif args[i] == "--here" then HERE = true; table.remove(args, i) end
-end
+local TORCHES = not T.popFlag(args, "notorch")
+local HERE = T.popFlag(args, "--here")
 if args[1] == "reset" then
     if HERE then T.setHomeHere() else T.goHome() end
     return
@@ -65,7 +62,6 @@ T.diggable = {
     ["minecraft:dead_bush"]   = true,
 }
 
-
 --------------------------------------------------------------------------
 local function goToAndSettle(tx, tz)
     if not T.goTo(tx, tz) then return false end
@@ -77,15 +73,13 @@ end
 -- plus one for tool swaps.  With less, go home and empty into the chest
 -- (waiting if it's full) so nothing is left on the ground.
 local ROOM = 2
-local noChest = false
 local function ensureRoom()
-    if noChest or T.freeSlots() >= ROOM or not T.wouldDump() then return end
-    if not goToAndSettle(0, 0) then return end
-    T.face(0)
-    if not T.dumpDownWait() then
-        noChest = true
-        print("Inventory is full and there's no chest below home; drops may spill.")
-    end
+    T.ensureRoom(ROOM, nil, function()
+        if goToAndSettle(0, 0) then
+            T.face(0)
+            T.dumpDownWait()
+        end
+    end, "No room for drops and nothing to empty (or no chest below home); drops may spill.")
 end
 
 --------------------------------------------------------------------------
@@ -134,13 +128,7 @@ local function mowTiles(tiles)
 end
 
 --------------------------------------------------------------------------
-local stale = T.startAtHome(HERE)
-if stale then
-    print(string.format("Turtle may not be at home: last saved position (%d,%d,%d).",
-        stale.x, stale.y, stale.z))
-    print("Run `mow reset` to send it home, or add --here to use this spot as home.")
-    return
-end
+if not T.requireHome(HERE, "mow") then return end
 
 local plan = T.serpentine(WIDTH, LENGTH)
 print(string.format("Mowing %dx%d (%d tiles). Fuel: %s", WIDTH, LENGTH, #plan,
@@ -150,9 +138,7 @@ if TORCHES then
         #torchList, TORCH_RADIUS, T.countItem(TORCH)))
 end
 
-local restoreTools = T.usePrimaryTool("minecraft:diamond_pickaxe")
-
-local ok, err = pcall(function()
+T.withTool("minecraft:diamond_pickaxe", function()
     while true do
         T.requireFuel(MIN_FUEL)
         T.clearBlocked()
@@ -186,6 +172,3 @@ local ok, err = pcall(function()
         sleep(REPEAT * 60)
     end
 end)
-
-restoreTools()
-if not ok then error(err, 0) end

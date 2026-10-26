@@ -11,6 +11,8 @@
 --   * two column-stepping strategies: flat (fixed height) and terrain
 --     (climb steps, follow the ground, refuse crevasses)
 --   * inventory helpers, tool hot-swapping, serpentine plan generation
+--   * chest-below helpers: dump with a keep policy, count, restock,
+--     merge part stacks
 --
 -- Programs configure it by setting fields on T.cfg and T.diggable before
 -- moving.  Everything is relative to where the turtle starts: (0,0,0)
@@ -305,6 +307,15 @@ function T.usePrimaryTool(name)
     end
 end
 
+-- Run fn with `name` as the only equipped tool, restoring the original
+-- tools afterwards even if fn errors (the error is re-thrown).
+function T.withTool(name, fn)
+    local restore = T.usePrimaryTool(name)
+    local ok, err = pcall(fn)
+    restore()
+    if not ok then error(err, 0) end
+end
+
 -- Back-compat: equip `name` onto `side` from the inventory, if present.
 function T.equipTool(name, side)
     local slot = findItemSlot(name)
@@ -368,10 +379,23 @@ function T.settle()
     while T.down() do end
 end
 
+-- Climb or sink to height y in the current column.
+function T.toY(y)
+    while T.pos.y < y and T.up() do end
+    while T.pos.y > y and T.down() do end
+    return T.pos.y == y
+end
+
 -- Return to y = 0.
 function T.toStartHeight()
-    while T.pos.y < 0 and T.up() do end
-    while T.pos.y > 0 and T.down() do end
+    T.toY(0)
+end
+
+-- What is directly below: a block name (or "air"), plus inspect details.
+function T.below()
+    local ok, d = turtle.inspectDown()
+    if not ok then return "air" end
+    return d.name, d
 end
 
 --------------------------------------------------------------------------
@@ -379,6 +403,12 @@ end
 --------------------------------------------------------------------------
 T.blocked = {}
 function T.ckey(x, z) return x .. "," .. z end
+
+-- Inverse of ckey: the x, z a key was made from.
+function T.keyXZ(k)
+    local x, z = k:match("(-?%d+),(-?%d+)")
+    return tonumber(x), tonumber(z)
+end
 function T.markBlocked(x, z) T.blocked[T.ckey(x, z)] = true end
 function T.clearBlocked() T.blocked = {} end
 
@@ -516,6 +546,27 @@ end
 function T.setHomeHere()
     T.startAtHome(true)
     print("Home set to the current position.")
+end
+
+-- Start a job: startAtHome, but when the saved position says the turtle
+-- is elsewhere, print the standard warning (naming the program's reset
+-- command) and return false so the program can stop.
+function T.requireHome(force, prog)
+    local stale = T.startAtHome(force)
+    if not stale then return true end
+    print(string.format("Turtle may not be at home: last saved position (%d,%d,%d).",
+        stale.x, stale.y, stale.z))
+    print("Run `" .. prog .. " reset` to send it home, or add --here to use this spot as home.")
+    return false
+end
+
+-- Remove every occurrence of `flag` from an argument list; true if found.
+function T.popFlag(args, flag)
+    local found = false
+    for i = #args, 1, -1 do
+        if args[i] == flag then found = true; table.remove(args, i) end
+    end
+    return found
 end
 
 --------------------------------------------------------------------------
@@ -680,6 +731,208 @@ function T.dumpDownWait(keepCount, interval)
         print("Chest has room again; carrying on.")
     end
     return true
+end
+
+-- Print one line listing what the turtle is carrying.
+function T.inventoryLine(label)
+    local counts, order = {}, {}
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s)
+        if it then
+            local name = it.name:gsub("^minecraft:", "")
+            if not counts[name] then order[#order + 1] = name; counts[name] = 0 end
+            counts[name] = counts[name] + it.count
+        end
+    end
+    local parts = {}
+    for _, name in ipairs(order) do parts[#parts + 1] = counts[name] .. " " .. name end
+    print(label .. ": " .. (#parts > 0 and table.concat(parts, ", ") or "nothing"))
+end
+
+-- Make sure at least `need` slots are free before working a tile whose
+-- drops must not spill: if short, and dumping with keepCount would free
+-- something, call goDump() (the program's trip to its chest).  Prints
+-- `warning` once if still short, and stops making trips that free
+-- nothing (no chest) until slots open up again.
+local warnedRoom, dumpFreesNothing = false, false
+function T.ensureRoom(need, keepCount, goDump, warning)
+    if T.freeSlots() >= need then dumpFreesNothing = false; return true end
+    if not dumpFreesNothing and T.wouldDump(keepCount) then
+        local before = T.freeSlots()
+        goDump()
+        if T.freeSlots() >= need then return true end
+        if T.freeSlots() <= before then dumpFreesNothing = true end
+    end
+    if warning and not warnedRoom then
+        warnedRoom = true
+        print(warning)
+    end
+    return false
+end
+
+--------------------------------------------------------------------------
+-- The container below as a peripheral: counting, tidying, restocking.
+-- Everything degrades gracefully when it can't be wrapped (restocking
+-- falls back to blind suckDown).
+--------------------------------------------------------------------------
+
+-- How many `name` the container below holds, or nil if it can't be read.
+function T.countBelow(name)
+    local chest = peripheral and peripheral.wrap("bottom")
+    if not (chest and chest.list) then return nil end
+    local n = 0
+    for _, it in pairs(chest.list()) do
+        if it.name == name then n = n + it.count end
+    end
+    return n
+end
+
+-- Merge part stacks of the same item in the container below, so
+-- everything sits in as few slots as it can.  Hoppers and the turtle's
+-- own partial takes leave small stacks scattered about.  Uses the
+-- container's pushItems, filling the earliest part stack from the latest.
+function T.compactBelow()
+    local chest = peripheral and peripheral.wrap("bottom")
+    if not (chest and chest.list and chest.pushItems and chest.getItemDetail) then return end
+    local self = peripheral.getName(chest)
+    pcall(function()
+        local groups = {}
+        for slot, it in pairs(chest.list()) do
+            local key = it.name .. "|" .. (it.nbt or "")
+            groups[key] = groups[key] or {}
+            table.insert(groups[key], { slot = slot, count = it.count })
+        end
+        for _, g in pairs(groups) do
+            if #g > 1 then
+                local max = (chest.getItemDetail(g[1].slot) or {}).maxCount or 64
+                local part = {}
+                for _, s in ipairs(g) do
+                    if s.count < max then part[#part + 1] = s end
+                end
+                table.sort(part, function(a, b) return a.slot < b.slot end)
+                local i, j = 1, #part
+                while i < j do
+                    local n = chest.pushItems(self, part[j].slot,
+                        math.min(max - part[i].count, part[j].count), part[i].slot)
+                    if n == 0 then break end
+                    part[i].count, part[j].count = part[i].count + n, part[j].count - n
+                    if part[j].count == 0 then j = j - 1 end
+                    if part[i].count >= max then i = i + 1 end
+                end
+            end
+        end
+    end)
+end
+
+-- Move a stack of `name` into the container's first slot, where
+-- suckDown() takes from.  Whatever is in slot 1 goes to an empty slot,
+-- or, with the container full, into an empty turtle slot that is
+-- returned so the caller can put it back.  Returns found, held.
+local function frontStack(chest, name)
+    local items = chest.list()
+    local from
+    for slot, it in pairs(items) do
+        if it.name == name and (not from or slot < from) then from = slot end
+    end
+    if not from then return false end
+    if from == 1 then return true end
+    local self = peripheral.getName(chest)
+    local held
+    if items[1] then
+        local empty
+        for s = 2, chest.size() do
+            if not items[s] then empty = s; break end
+        end
+        if empty then
+            chest.pushItems(self, 1, 64, empty)
+        else
+            held = findEmptySlot()
+            if not held then return false end
+            turtle.select(held)
+            turtle.suckDown(64)
+        end
+    end
+    return chest.pushItems(self, from, 64, 1) > 0, held
+end
+
+-- Pull `name` out of the container below until we hold `target` of it.
+-- suckDown() takes from the container's first occupied slot regardless
+-- of what it is, so with a readable container the wanted stack is moved
+-- to the front first (frontStack) and exactly what's needed is taken.
+-- Otherwise anything else that comes out is set aside and dropped back
+-- once we're done (fuel is kept).  opts: label (for messages), quiet
+-- (report nothing), room (free slots to leave untouched, default 1).
+local restockWarned = {}
+function T.restockBelow(name, target, opts)
+    opts = opts or {}
+    local room = opts.room or 1
+    local label = opts.label or name
+    if target <= 0 or T.countItem(name) >= target then return end
+
+    local chest = peripheral and peripheral.wrap("bottom")
+    if chest and chest.list then
+        local any = false
+        for _, it in pairs(chest.list()) do
+            if it.name == name then any = true; break end
+        end
+        if not any then
+            if not opts.quiet and not restockWarned[name] then
+                restockWarned[name] = true
+                print("Chest has no " .. label:lower() .. " to restock from.")
+            end
+            return
+        end
+        restockWarned[name] = nil
+    end
+
+    local fronted = chest and chest.pushItems and chest.size and pcall(function()
+        while T.countItem(name) < target and T.freeSlots() > room do
+            local found, held = frontStack(chest, name)
+            if not found then break end
+            turtle.select(1)
+            local got = turtle.suckDown(math.min(64, target - T.countItem(name)))
+            if held then turtle.select(held); turtle.dropDown() end
+            if not got then break end
+        end
+    end)
+
+    local junk = {}
+    for _ = 1, 54 do                              -- a double chest's worth
+        if fronted or T.countItem(name) >= target then break end
+        local before = {}
+        for s = 1, 16 do before[s] = turtle.getItemCount(s) end
+        if T.freeSlots() <= room then break end   -- leave room for drops and tool swaps
+        if not turtle.suckDown(64) then break end -- chest empty
+        for s = 1, 16 do
+            local got = turtle.getItemCount(s) - before[s]
+            if got > 0 then
+                local it = turtle.getItemDetail(s)
+                if it and it.name ~= name and not T.fuel[it.name] then
+                    junk[#junk + 1] = { slot = s, n = got }   -- only what came out
+                end
+            end
+        end
+    end
+    for _, j in ipairs(junk) do
+        turtle.select(j.slot)
+        turtle.dropDown(j.n)
+    end
+    -- whole stacks come out, so hand back anything over the target
+    local extra = T.countItem(name) - target
+    for s = 16, 1, -1 do
+        if extra <= 0 then break end
+        local it = turtle.getItemDetail(s)
+        if it and it.name == name then
+            local n = math.min(extra, it.count)
+            turtle.select(s)
+            turtle.dropDown(n)
+            extra = extra - n
+        end
+    end
+    turtle.select(1)
+    if not opts.quiet then
+        print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
+    end
 end
 
 return T
