@@ -11,6 +11,7 @@ upgrade in software.
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
+| `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
 
 ## Hardware
@@ -220,6 +221,26 @@ tiles 1 and 3 — Minecraft turns tile 2 into a source — and the rest is scoop
 from that regenerating tile, so two buckets build any number of lanes. The site
 should be roughly level with the turtle's starting height; it won't terraform
 more than one block.
+
+## autocompost
+
+```
+autocompost
+```
+
+Put the turtle directly **on top of a composter**, with a **hopper under the
+composter** to take the bone meal out. Fill the turtle with anything; it never
+moves. It drops compostable items in one at a time (a composter only takes one
+per drop), waits while the composter is full and turning to bone meal, and when
+it has nothing left to compost it sleeps until you give it more.
+
+- What's compostable is learned, not listed, so modded items work too: an item
+  the composter refuses while it isn't full isn't compostable. Those go into a
+  chest **in front of the turtle** if there is one, otherwise they stay in the
+  turtle.
+- If the composter stays full for 10 seconds it asks whether the hopper below is
+  full or missing, and keeps waiting.
+- To start it at boot: `echo shell.run("autocompost") > startup.lua`.
 
 ## diskclone
 
