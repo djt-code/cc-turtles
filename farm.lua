@@ -298,7 +298,7 @@ end
 -- it is, so anything else that comes out is set aside and dropped back
 -- once we're done (fuel is kept).
 local warnedEmpty = {}
-local function restockItem(name, target, label)
+local function restockItem(name, target, label, quiet)
     if target <= 0 or T.countItem(name) >= target then return end
 
     local chest = peripheral and peripheral.wrap("bottom")
@@ -308,7 +308,7 @@ local function restockItem(name, target, label)
             if it.name == name then any = true; break end
         end
         if not any then
-            if not warnedEmpty[name] then
+            if not quiet and not warnedEmpty[name] then
                 warnedEmpty[name] = true
                 print("Chest has no " .. label:lower() .. " to restock from.")
             end
@@ -356,6 +356,30 @@ local function restockItem(name, target, label)
     print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
 end
 
+local regenTile                -- defined with the lanes below
+
+-- Buckets for lane work: wantWaterBuckets of them.  Empty ones will do
+-- when a lane tile can refill them; otherwise full ones are fetched first.
+local warnedBuckets = false
+local function restockBuckets()
+    local want = wantWaterBuckets
+    if want <= 0 then return end
+    local canScoop = regenTile() ~= nil
+    if not canScoop then restockItem(WATER_BUCKET, want, "Water buckets", true) end
+    if T.countItem(WATER_BUCKET) + T.countItem(BUCKET) < want then
+        restockItem(BUCKET, want - T.countItem(WATER_BUCKET), "Buckets", true)
+    end
+    if T.countItem(WATER_BUCKET) + T.countItem(BUCKET) < want then
+        restockItem(WATER_BUCKET, want - T.countItem(BUCKET), "Water buckets", true)
+    end
+    local full, empty = T.countItem(WATER_BUCKET), T.countItem(BUCKET)
+    if (full + empty < want or (not canScoop and full < want)) and not warnedBuckets then
+        warnedBuckets = true
+        print(string.format("Lane work wants %d %s; on board: %d water, %d empty (none in chest).",
+            want, canScoop and "buckets" or "water buckets", full, empty))
+    end
+end
+
 local function dumpAtHome()
     goToCruise(0, 0)
     T.face(0)
@@ -367,12 +391,7 @@ local function dumpAtHome()
         T.dumpDown(keepPolicy)
         restockItem(SEED, seedTarget(), "Seeds")
         restockItem(DIRT, dirtNeeded(), "Dirt")
-        if wantWaterBuckets > 0 then
-            restockItem(WATER_BUCKET, wantWaterBuckets, "Water buckets")
-            if T.countItem(WATER_BUCKET) + T.countItem(BUCKET) < wantWaterBuckets then
-                restockItem(BUCKET, wantWaterBuckets - T.countItem(WATER_BUCKET), "Buckets")
-            end
-        end
+        restockBuckets()
     else
         print("No chest found below home; keeping items.")
     end
@@ -481,7 +500,7 @@ end
 local function isLane(x, z) return tiles[T.ckey(x, z)] == "water" end
 
 ----------------------------------------------------------------- water --
-local function regenTile()
+function regenTile()
     local best
     for k in pairs(wet) do
         local x, z = keyXZ(k)
@@ -513,7 +532,7 @@ local function ensureWater(n)
     end
     scoop()
     if T.countItem(WATER_BUCKET) < n then
-        wantWaterBuckets = n
+        wantWaterBuckets = math.max(wantWaterBuckets, n)
         dumpAtHome()
         scoop()
     end
@@ -679,8 +698,12 @@ local function buildPending(label)
     for _, t in ipairs(pendingFills) do
         if t.want == "land" then land[#land + 1] = t else water[#water + 1] = t end
     end
-    wantWaterBuckets = (#water > 0) and 2 or 0
-    if T.countItem(DIRT) < dirtNeeded() or T.countItem(SEED) == 0 then dumpAtHome() end
+    -- two buckets to start a lane from scratch, one to top up from a source
+    wantWaterBuckets = (#water == 0 and 0) or (regenTile() and 1 or 2)
+    if T.countItem(DIRT) < dirtNeeded() or T.countItem(SEED) == 0
+       or T.countItem(WATER_BUCKET) + T.countItem(BUCKET) < wantWaterBuckets then
+        dumpAtHome()
+    end
     if T.countItem(DIRT) == 0 then
         print(#pendingFills .. " tiles to " .. label .. " but no dirt in chest or inventory.")
         return

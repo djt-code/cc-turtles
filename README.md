@@ -153,8 +153,9 @@ need to hand it seeds directly.
   - A lane tile then gets a dirt floor beneath if that's missing, dirt walls on
     every side the map doesn't call lane, and a bucket of water, which also turns
     flowing water back into a source.
-  - Water comes from one bucket, refilled at a lane tile with two or more
-    source neighbours so it regenerates (or from water buckets in the chest).
+  - Water comes from empty buckets refilled at a lane tile with two or more
+    source neighbours (it regenerates). Full water buckets come from the chest
+    only when no lane tile can refill one.
   - Anything it can't fix is listed and found again on the next pass.
 - **Inventory.** At the start of a run and after every pass the turtle prints
   what it carries, then puts everything it doesn't need right now into the chest:
