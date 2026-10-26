@@ -515,22 +515,55 @@ function regenTile()
     return best
 end
 
+-- Would there be a regenerating tile with addK filled and removeK emptied?
+local function regenIf(addK, removeK)
+    local a, r = wet[addK], wet[removeK]
+    wet[addK], wet[removeK] = true, nil
+    local ok = regenTile() ~= nil
+    wet[addK], wet[removeK] = a, r
+    return ok
+end
+
+-- Fill one empty bucket at (x,z).  True if it worked.
+local function scoopAt(x, z)
+    local before = T.countItem(WATER_BUCKET)
+    if goToCruise(x, z) and T.down() then
+        if sourceBelow() and T.selectItem(BUCKET) then turtle.placeDown() end
+        T.up()
+    end
+    return T.countItem(WATER_BUCKET) > before
+end
+
+local borrowed = {}        -- lane sources emptied to start a refilling tile
+
 -- Hold at least n water buckets: scoop from a regenerating lane tile with
--- empty buckets, else fetch water buckets / buckets from the chest.
-local function ensureWater(n)
+-- empty buckets, else fetch water buckets / buckets from the chest.  With
+-- a target and no regenerating tile, water is moved from one of the
+-- farm's own sources to the target when that creates one; the source it
+-- came from goes on `borrowed` to be refilled afterwards.
+local function ensureWater(n, target)
     local function scoop()
         while T.countItem(WATER_BUCKET) < n and T.countItem(BUCKET) > 0 do
             local r = regenTile()
             if not r then return end
-            local before = T.countItem(WATER_BUCKET)
-            if goToCruise(r.x, r.z) and T.down() then
-                if sourceBelow() and T.selectItem(BUCKET) then turtle.placeDown() end
-                T.up()
-            end
-            if T.countItem(WATER_BUCKET) == before then wet[T.ckey(r.x, r.z)] = nil; return end
+            if not scoopAt(r.x, r.z) then wet[T.ckey(r.x, r.z)] = nil; return end
         end
     end
     scoop()
+    if T.countItem(WATER_BUCKET) < n and target and T.countItem(BUCKET) > 0 and not regenTile() then
+        local tk, best = T.ckey(target.x, target.z), nil
+        for k in pairs(wet) do
+            if k ~= tk and regenIf(tk, k) then
+                local x, z = keyXZ(k)
+                local d = math.abs(x - target.x) + math.abs(z - target.z)
+                if not best or d < best.d then best = { x = x, z = z, d = d } end
+            end
+        end
+        if best and scoopAt(best.x, best.z) then
+            wet[T.ckey(best.x, best.z)] = nil
+            borrowed[#borrowed + 1] = { x = best.x, z = best.z, want = "water" }
+        end
+    end
     if T.countItem(WATER_BUCKET) < n then
         wantWaterBuckets = math.max(wantWaterBuckets, n)
         dumpAtHome()
@@ -664,13 +697,17 @@ local function buildLanes(list)
         end
         for _, t in ipairs(todo) do
             if not wet[T.ckey(t.x, t.z)] then
-                if ensureWater(1) and waterLane(t) then
+                if ensureWater(1, t) and waterLane(t) then
                     -- done
                 else
                     remaining[#remaining + 1] = t
                 end
             end
         end
+        for _, t in ipairs(borrowed) do
+            if not (ensureWater(1) and waterLane(t)) then remaining[#remaining + 1] = t end
+        end
+        borrowed = {}
     end
     return remaining
 end
