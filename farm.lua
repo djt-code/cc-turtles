@@ -45,11 +45,14 @@
 --    skipped.  Untilled dirt is tilled and planted on the way.  Ground
 --    missing under a crop tile, or a block in the way, is damage: after
 --    the pass the turtle goes home and runs a full repair pass.
---  * Full repair pass (also `farm repair`, and once after learn/clone):
+--  * Full repair pass (also `farm repair`, and once after clone):
 --    inspects every crop tile and dips to crop level over every lane
 --    tile to check its water, then rebuilds damaged tiles to match the
 --    layout.  Land: dirt, till, plant.  Lane: dirt floor beneath if
 --    missing, dirt walls on every side that isn't lane, then water.
+--    After learning there's no inspection: learning saw every tile, so
+--    just the gaps it found (missing ground, lane water that isn't a
+--    source) are rebuilt, and only if there are any.
 --  * Clone: builds farm.map at the current position.  Phase 1 (pickaxe)
 --    clears the crop level, digs lane trenches and removes stone where
 --    land is wanted.  Phase 2 (hoe) fills/tills/plants land, then floors,
@@ -357,7 +360,9 @@ end
 -- Classify the tile below during the learning pass, without changing it.
 -- Starts at travel height and comes down, since cane may stand up to it.
 -- crop | cane | water | dirt | hole | other  (dirt and hole: see
--- resolveLayout), plus the crop block for a tile with a crop growing on it.
+-- resolveLayout), plus the crop block for a tile with a crop growing on it,
+-- plus true for a gap the farming pass won't fix by itself: missing
+-- ground, or lane water that isn't a source.
 local function learnTile()
     while T.pos.y > 0 do
         local name = below()
@@ -380,8 +385,9 @@ local function learnTile()
     elseif CANE_GROUND[g] then kind = "cane"      -- sand, mud...: only cane grows there
     elseif g == "air" then kind = "hole"
     end
+    local gap = kind == "hole" or (kind == "water" and not sourceBelow())
     T.up()
-    return kind
+    return kind, nil, gap
 end
 
 --------------------------------------------------------------------------
@@ -1013,13 +1019,15 @@ local function learnPass()
     travelY = CANE_TRAVEL_Y              -- cane could be anywhere until we know
     local counts = { crop = 0, cane = 0, water = 0, other = 0, hole = 0, dirt = 0 }
     local plan = T.serpentine(WIDTH, LENGTH)
+    local gaps = {}
     for i, t in ipairs(plan) do
-        local kind, crop = "other", nil
+        local kind, crop, gap = "other", nil, false
         toY(travelY)
-        if T.goTo(t.x, t.z) then kind, crop = learnTile() end
+        if T.goTo(t.x, t.z) then kind, crop, gap = learnTile() end
         local k = T.ckey(t.x, t.z)
         tiles[k], crops[k] = kind, crop
-        if kind == "water" then wet[k] = true end
+        if kind == "water" and not gap then wet[k] = true end
+        if gap then gaps[#gaps + 1] = { x = t.x, z = t.z } end
         counts[kind] = counts[kind] + 1
         if i % 50 == 0 then
             print(string.format("%d/%d scanned, %d crop tiles", i, #plan, counts.crop))
@@ -1033,6 +1041,12 @@ local function learnPass()
     print(string.format("Layout saved: %d crop, %d cane, %d water, %d other (%d gaps settled from their strips)",
         countKind("crop"), countKind("cane"), countKind("water"), countKind("other"), settled))
     print(string.format("Crops: %s (%d bare tiles given their strip's crop)", cropSummary(), guessed))
+    -- gaps that settled into the farm (a hole outside any strip stays "other")
+    local toFix = {}
+    for _, t in ipairs(gaps) do
+        if BUILD[tiles[T.ckey(t.x, t.z)]] then toFix[#toFix + 1] = t end
+    end
+    return toFix
 end
 
 -- Visiting order for a pass: every crop and cane tile (and lane tile, with lanes),
@@ -1243,12 +1257,17 @@ local ok, err = pcall(function()
         dumpAtHome()
         inventoryLine("Kept on board")
         if not haveMap then
-            learnPass()
+            local gaps = learnPass()
             dumpAtHome()
+            -- learning saw every tile, so only its gaps need fixing
+            if #gaps > 0 then
+                T.clearBlocked()
+                repair(gaps)
+            end
         end
     end
-    -- a new layout (learned or cloned) gets checked lanes and all once
-    if doRepair or doClone or not haveMap then
+    -- a cloned layout gets checked lanes and all once
+    if doRepair or doClone then
         T.clearBlocked()
         fullRepair()
     end

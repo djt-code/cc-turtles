@@ -171,7 +171,10 @@ fixes the lane first and then replants.
   full pass inspects every crop tile and drops to crop level over every lane tile
   to check its water, then fixes everything it found. Lane damage counts there: a
   lane tile that isn't a water *source* (dry, flowing, or filled in). It also runs
-  once after `learn` or `clone`, and `farm repair` runs it on demand and stops.
+  once after `clone`, and `farm repair` runs it on demand and stops. After `learn`
+  there's no extra pass: learning has just looked at every tile, so the turtle
+  only rebuilds the gaps it found (missing ground, lane water that isn't a source),
+  and goes straight to farming when there are none.
   - Land gets dirt, tilling and its planned crop right away.
   - A filled-in lane tile (dirt or anything else in it or on top of it) is dug
     out with a **diamond pickaxe**, which the turtle swaps in for the hoe; keep one
