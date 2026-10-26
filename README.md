@@ -7,7 +7,7 @@ upgrade in software.
 | Program | What it does |
 |---|---|
 | `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
-| `farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
+| `farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot, sugar cane) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
@@ -125,16 +125,29 @@ farm reset                                   go home after an interruption
 Hover the turtle **two blocks above the farmland** (one above the crop tops),
 diagonally outside one corner of the farm, facing along the length axis. Put the
 output chest directly below the start position with what each crop is planted
-with in it (wheat seeds, carrots, potatoes, beetroot seeds): the turtle restocks
+with in it (wheat seeds, carrots, potatoes, beetroot seeds, sugar cane): the turtle restocks
 them from the chest at the start of every pass and whenever it runs out mid-pass
 (up to one per tile of that crop, max 256), so you never need to hand them to it
 directly.
 
-Farms can grow **wheat, carrots, potatoes and beetroot**, in any mix: strips of
-different crops, or crops mixed within a strip.
+Farms can grow **wheat, carrots, potatoes, beetroot and sugar cane**, in any mix:
+strips of different crops, or crops mixed within a strip.
+
+**Sugar cane** grows on dirt, grass, sand, moss, mud and similar ground (same level
+as the farmland), and only next to a water source, so plant it along the lanes. It
+stands up to three blocks tall, reaching past the turtle's cruise height, so on a
+farm with cane the turtle gets around two blocks higher than usual (and the
+learning pass always scans from there). It works cane from one block above cruise
+height, cutting a third block on the way in and the second from above, so every
+cut block goes straight into its inventory and nothing falls to the ground. The
+bottom block is never cut, because that's what regrows. A missing bottom block is
+replanted with cane from the chest; if it won't take, there's no ground or no water
+beside it, which counts as damage and sends the turtle into a full repair pass that
+fixes the lane first and then replants.
 
 - **Learning** only records the layout; it doesn't touch the farm. A crop or
   farmland → crop tile, and the crop growing there becomes that tile's crop;
+  sugar cane, or bare sand/mud/moss → cane tile;
   water → lane; anything else → left alone. Bare farmland, and gaps settled as
   land, get the crop most of their strip grows (else the farm's most common crop,
   else wheat). A missing

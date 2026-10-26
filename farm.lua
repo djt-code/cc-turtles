@@ -1,5 +1,5 @@
 -- farm.lua -- crop farming turtle for CC:Tweaked (wheat, carrots,
--- potatoes, beetroot; any mix of them on one farm)
+-- potatoes, beetroot and sugar cane; any mix of them on one farm)
 --
 -- Needs a diamond hoe (and a diamond pickaxe for `clone`), equipped or in
 -- the inventory.  The program makes the tool it needs the only tool
@@ -29,8 +29,8 @@
 -- hovering TWO blocks above the farmland (one block above the crop tops).
 -- Put the output chest/barrel directly below the start position (up to 3
 -- blocks down).  Keep in the chest: what each crop is planted with (wheat
--- or beetroot seeds, carrots, potatoes), dirt, and a bucket or two (water
--- buckets for clone); the turtle restocks from it.
+-- or beetroot seeds, carrots, potatoes, sugar cane), dirt, and a bucket or
+-- two (water buckets for clone); the turtle restocks from it.
 --
 -- How it works:
 --  * Learning pass: only records the layout; it changes nothing.  Flies
@@ -63,6 +63,15 @@
 --    ripe and replaced), plants
 --    bare farmland (tilling through the air gap if it reverted to dirt),
 --    returns home, drops produce, restocks, repairs if needed, sleeps.
+--  * Sugar cane: grows on dirt, sand, moss, mud and the like, beside a
+--    water source, up to 3 high from cruise height upwards, so on a farm
+--    with cane the turtle travels at CANE_TRAVEL_Y (learning always does).
+--    Cane is worked from one above cruise height: a third block is cut on
+--    the way in and the second from above, so every cut block lands in
+--    the inventory; the bottom block is never cut, since that is what
+--    regrows.  A missing bottom block is replanted with cane; if it won't
+--    take (no ground, or no water beside it) that's damage, and the full
+--    repair pass rebuilds the lane first, then the cane.
 --  * Navigation is at a fixed cruise height (turtlelib.stepFlat) with a
 --    learned obstacle map and BFS re-routing.  Position is saved to disk
 --    after every move so `farm reset` can bring it home after a Ctrl+T.
@@ -106,7 +115,22 @@ local CROPS = {
     ["minecraft:beetroots"] = { seed = "minecraft:beetroot_seeds", ripe = 3, name = "beetroot" },
 }
 local DEFAULT_CROP = "minecraft:wheat"   -- for a farm with nothing growing yet
-local SEEDS = {}                         -- planting items, sorted
+
+-- Sugar cane is planted with the item itself, on any of these grounds, and
+-- only takes with a water source beside the ground block.  Its bottom block
+-- is never cut: that is the part that regrows.
+local CANE = "minecraft:sugar_cane"      -- the block and the item
+local CANE_GROUND = {
+    ["minecraft:dirt"] = true, ["minecraft:grass_block"] = true,
+    ["minecraft:coarse_dirt"] = true, ["minecraft:podzol"] = true,
+    ["minecraft:rooted_dirt"] = true, ["minecraft:mycelium"] = true,
+    ["minecraft:moss_block"] = true, ["minecraft:mud"] = true,
+    ["minecraft:muddy_mangrove_roots"] = true, ["minecraft:sand"] = true,
+    ["minecraft:red_sand"] = true, ["minecraft:suspicious_sand"] = true,
+}
+local CANE_TRAVEL_Y = 2    -- travel height over a farm with cane: above 3-high cane
+
+local SEEDS = { CANE }                   -- planting items, sorted
 for _, c in pairs(CROPS) do SEEDS[#SEEDS + 1] = c.seed end
 table.sort(SEEDS)
 local DIRT = "minecraft:dirt"
@@ -125,8 +149,8 @@ T.mode = "flat"
 T.diggable = {}            -- never dig while moving
 
 --------------------------------------------------------------------------
--- Farm layout map: tiles[key] = "crop" | "water" | "other", and for crop
--- tiles crops[key] = the crop block planned there.
+-- Farm layout map: tiles[key] = "crop" | "cane" | "water" | "other", and
+-- for crop tiles crops[key] = the crop block planned there.
 -- (the learning pass also uses "hole" and "dirt" until resolveLayout)
 --------------------------------------------------------------------------
 local tiles = {}
@@ -188,6 +212,8 @@ local function cropSummary()
     table.sort(order)
     local parts = {}
     for _, c in ipairs(order) do parts[#parts + 1] = n[c] .. " " .. CROPS[c].name end
+    local cane = countKind("cane")
+    if cane > 0 then parts[#parts + 1] = cane .. " sugar cane" end
     return #parts > 0 and table.concat(parts, ", ") or "no crops"
 end
 
@@ -195,8 +221,12 @@ end
 -- grows on plus a margin, capped.  Zero for crops the farm doesn't grow.
 local function seedTarget(seed)
     local n = 0
-    for k, kind in pairs(tiles) do
-        if kind == "crop" and CROPS[cropAt(k)].seed == seed then n = n + 1 end
+    if seed == CANE then
+        n = countKind("cane")
+    else
+        for k, kind in pairs(tiles) do
+            if kind == "crop" and CROPS[cropAt(k)].seed == seed then n = n + 1 end
+        end
     end
     return n == 0 and 0 or math.min(MAX_SEEDS, n + 16)
 end
@@ -235,9 +265,21 @@ local function placeDirtDown()
     return T.selectItem(DIRT) and turtle.placeDown()
 end
 
+-- Height for getting around: cruise height, or CANE_TRAVEL_Y over a farm
+-- with sugar cane, which grows into cruise height.
+local travelY = 0
+
+-- Climb or sink to height y in the current column.
+local function toY(y)
+    while T.pos.y < y and T.up() do end
+    while T.pos.y > y and T.down() do end
+    return T.pos.y == y
+end
+
+-- Travel to (tx,tz) at travel height, then sink to cruise height.
 local function goToCruise(tx, tz)
-    T.toStartHeight()
-    return T.goTo(tx, tz)
+    toY(travelY)
+    return T.goTo(tx, tz) and toY(0)
 end
 
 local warnedLow = false
@@ -287,12 +329,44 @@ local function workCrop(harvest, crop)
     return "blocked"
 end
 
+-- Work a cane tile from one above cruise height (see visit).  The block
+-- below is the cane's second block: cut it, never the bottom one, which
+-- regrows.  With no second block, drop down to look at the bottom one and
+-- plant it if it's missing.  A planting that fails with cane on board
+-- means no ground, or no water next to it: damage.
+-- Returns: harvested | growing | planted | noseeds | damaged | blocked
+local function workCane(harvest)
+    local name = below()
+    if name == CANE then
+        if harvest then turtle.digDown(); return "harvested" end
+        return "growing"
+    end
+    if name ~= "air" or not T.down() then return "blocked" end
+    name = below()
+    local r = "blocked"
+    if name == CANE then r = "growing"
+    elseif name == "air" then
+        if plantDown(CANE) then r = "planted"
+        elseif T.countItem(CANE) == 0 then r = "noseeds"
+        else r = "damaged" end
+    end
+    T.up()
+    return r
+end
+
 -- Classify the tile below during the learning pass, without changing it.
--- crop | water | dirt | hole | other  (dirt and hole: see resolveLayout),
--- plus the crop block for a tile with a known crop growing on it.
+-- Starts at travel height and comes down, since cane may stand up to it.
+-- crop | cane | water | dirt | hole | other  (dirt and hole: see
+-- resolveLayout), plus the crop block for a tile with a crop growing on it.
 local function learnTile()
+    while T.pos.y > 0 do
+        local name = below()
+        if name == CANE then return "cane" end
+        if name ~= "air" or not T.down() then return "other" end
+    end
     local name = below()
     if CROPS[name] then return "crop", name end
+    if name == CANE then return "cane" end
     if name == WATER then return "water" end
     if name == FARMLAND then warnLow(); return "crop" end
     if TILLABLE[name] then warnLow(); return "dirt" end
@@ -303,6 +377,7 @@ local function learnTile()
     if g == FARMLAND then kind = "crop"
     elseif TILLABLE[g] then kind = "dirt"
     elseif g == WATER then kind = "water"
+    elseif CANE_GROUND[g] then kind = "cane"      -- sand, mud...: only cane grows there
     elseif g == "air" then kind = "hole"
     end
     T.up()
@@ -462,13 +537,13 @@ end
 --------------------------------------------------------------------------
 -- Strips and lanes
 --
--- Farms are strips of farmland separated by water lanes.  A learned gap
+-- Farms are strips of farmland or cane separated by water lanes.  A learned gap
 -- (missing ground, bare dirt) takes the kind of the line it lies in;
 -- repair and clone rebuild tiles to match the map.  Lanes are built
 -- floor+walls first, then watered.
 --------------------------------------------------------------------------
 local function lineTally(filter)
-    local t = { crop = 0, water = 0, other = 0 }
+    local t = { crop = 0, cane = 0, water = 0, other = 0 }
     for k, kind in pairs(tiles) do
         if t[kind] then                      -- gaps don't count
             local x, z = keyXZ(k)
@@ -478,16 +553,20 @@ local function lineTally(filter)
     return t
 end
 
+-- The kind a line of tiles is a strip of: crop, cane or water (or nil).
 local function classifyLine(t)
-    if t.water == 0 and t.crop > 0 and t.crop >= t.other then return "land" end
-    if t.crop == 0 and t.water > 0 and t.water >= t.other then return "water" end
+    local land = t.crop + t.cane
+    if t.water == 0 and land > 0 and land >= t.other then
+        return t.cane > t.crop and "cane" or "crop"
+    end
+    if land == 0 and t.water > 0 and t.water >= t.other then return "water" end
     return nil
 end
 
 -- Lane axis of a water tile: "z" if its column is water, else "x".
 local function laneAxis(x, z)
     local col = lineTally(function(px, pz) return px == x and pz ~= z end)
-    if col.water > 0 and col.crop == 0 then return "z" end
+    if col.water > 0 and col.crop + col.cane == 0 then return "z" end
     return "x"
 end
 
@@ -509,9 +588,7 @@ local function resolveLayout()
             local x, z = keyXZ(k)
             local want = classifyLine(lineTally(function(px, pz) return px == x and pz ~= z end))
                       or classifyLine(lineTally(function(px, pz) return pz == z and px ~= x end))
-            if want == "land" then settled[k] = "crop"
-            elseif want == "water" then settled[k] = "water"
-            else settled[k] = (kind == "dirt") and "crop" or "other" end
+            settled[k] = want or ((kind == "dirt") and "crop" or "other")
         end
     end
     local n = 0
@@ -559,13 +636,16 @@ local function assignCrops()
 end
 
 -- Repair planning: rebuild each damaged tile as the layout says.
+-- What each kind of tile is rebuilt as.
+local BUILD = { crop = "land", cane = "cane", water = "water" }
+
 local function planRepair(damaged)
     pendingFills = {}
     for _, t in ipairs(damaged) do
-        local lane = tiles[T.ckey(t.x, t.z)] == "water"
+        local kind = tiles[T.ckey(t.x, t.z)]
         pendingFills[#pendingFills + 1] = {
-            x = t.x, z = t.z, want = lane and "water" or "land",
-            axis = lane and laneAxis(t.x, t.z) or nil,
+            x = t.x, z = t.z, want = BUILD[kind],
+            axis = (kind == "water") and laneAxis(t.x, t.z) or nil,
         }
     end
     sortFills(pendingFills)
@@ -576,10 +656,10 @@ end
 local function planClone()
     pendingFills = {}
     for k, kind in pairs(tiles) do
-        if kind == "crop" or kind == "water" then
+        if BUILD[kind] then
             local x, z = keyXZ(k)
             pendingFills[#pendingFills + 1] = {
-                x = x, z = z, want = (kind == "crop") and "land" or "water",
+                x = x, z = z, want = BUILD[kind],
                 axis = (kind == "water") and laneAxis(x, z) or nil,
             }
         end
@@ -664,7 +744,7 @@ local function ensureWater(n, target)
     return T.countItem(WATER_BUCKET) >= n
 end
 
-local newGround = {}       -- crop tiles that got a dirt wall; till and plant them
+local newGround = {}       -- crop/cane tiles that got a dirt wall; plant them
 
 -- Prepare a lane tile: ground level clear, dirt floor beneath, dirt walls on
 -- every side the map doesn't call lane.  Ends at cruise height.  Returns
@@ -689,8 +769,9 @@ local function prepLane(t)
                 T.face(d)
                 if not turtle.detect() then
                     if T.selectItem(DIRT) and turtle.place() then
-                        if tiles[T.ckey(nx, nz)] == "crop" then
-                            newGround[#newGround + 1] = { x = nx, z = nz }
+                        local nkind = tiles[T.ckey(nx, nz)]
+                        if nkind == "crop" or nkind == "cane" then
+                            newGround[#newGround + 1] = { x = nx, z = nz, kind = nkind }
                         end
                     else
                         ok = false
@@ -828,12 +909,28 @@ local function buildLand(t)
     return true
 end
 
--- Work through pendingFills: land first (so lane walls exist), then lanes.
+-- Make (x,z) cane ground with sugar cane planted on it.  Runs after the
+-- lanes are rebuilt, since cane only takes with water beside it.
+local function buildCane(t)
+    if not (goToCruise(t.x, t.z) and T.down()) then return false end
+    local g = below()
+    if g == "air" or g == WATER then
+        if placeDirtDown() then g = DIRT end
+    end
+    T.up()
+    if not CANE_GROUND[g] then return false end
+    return plantDown(CANE) or below() == CANE
+end
+
+-- Work through pendingFills: land first (so lane walls exist), then lanes,
+-- then cane (which needs the water).
 local function buildPending(label)
     if #pendingFills == 0 then return end
-    local land, water = {}, {}
+    local land, water, cane = {}, {}, {}
     for _, t in ipairs(pendingFills) do
-        if t.want == "land" then land[#land + 1] = t else water[#water + 1] = t end
+        if t.want == "land" then land[#land + 1] = t
+        elseif t.want == "cane" then cane[#cane + 1] = t
+        else water[#water + 1] = t end
     end
     -- two buckets to start a lane from scratch, one to top up from a source
     wantWaterBuckets = (#water == 0 and 0) or (regenTile() and 1 or 2)
@@ -845,8 +942,8 @@ local function buildPending(label)
         print(#pendingFills .. " tiles to " .. label .. " but no dirt in chest or inventory.")
         return
     end
-    print(string.format("%s: %d land, %d water tiles (%d dirt on board)",
-        label, #land, #water, T.countItem(DIRT)))
+    print(string.format("%s: %d land, %d water, %d cane tiles (%d dirt on board)",
+        label, #land, #water, #cane, T.countItem(DIRT)))
 
     local remaining = {}
     for _, t in ipairs(land) do
@@ -854,10 +951,17 @@ local function buildPending(label)
         if not buildLand(t) then remaining[#remaining + 1] = t end
     end
     for _, t in ipairs(buildLanes(water)) do remaining[#remaining + 1] = t end
-    -- a lane wall on a crop tile is new ground: till and plant it now
-    -- (from cruise height, through the air gap) instead of next pass
+    for _, t in ipairs(cane) do
+        if T.countItem(DIRT) == 0 then dumpAtHome() end
+        if not buildCane(t) then remaining[#remaining + 1] = t end
+    end
+    -- a lane wall on a crop or cane tile is new ground: plant it now (from
+    -- cruise height, through the air gap) instead of next pass
     for _, t in ipairs(newGround) do
-        if goToCruise(t.x, t.z) then workCrop(false, cropAt(T.ckey(t.x, t.z))) end
+        if goToCruise(t.x, t.z) then
+            if t.kind == "cane" then plantDown(CANE)
+            else workCrop(false, cropAt(T.ckey(t.x, t.z))) end
+        end
     end
     newGround = {}
     pendingFills = remaining
@@ -874,14 +978,18 @@ local function clonePrepare()
     local plan = T.serpentine(WIDTH, LENGTH)
     for i, t in ipairs(plan) do
         local kind = tiles[T.ckey(t.x, t.z)]
-        if (kind == "crop" or kind == "water") and goToCruise(t.x, t.z) then
+        if BUILD[kind] and goToCruise(t.x, t.z) then
             local c = below()
-            if c ~= "air" and not CROPS[c] then turtle.digDown() end  -- clear crop level
+            if c ~= "air" and not CROPS[c] and c ~= CANE then turtle.digDown() end  -- crop level
             if T.down() then
                 local g = below()
                 if kind == "water" then
                     if sourceBelow() then wet[T.ckey(t.x, t.z)] = true
                     elseif g ~= "air" and g ~= WATER then turtle.digDown() end  -- trench
+                elseif kind == "cane" then
+                    if g ~= "air" and g ~= WATER and not CANE_GROUND[g] then
+                        turtle.digDown()                               -- stone etc.
+                    end
                 else
                     if g ~= "air" and g ~= WATER and g ~= FARMLAND and not TILLABLE[g] then
                         turtle.digDown()                               -- stone etc.
@@ -902,11 +1010,13 @@ end
 local function learnPass()
     print(string.format("Learning layout: %dx%d", WIDTH, LENGTH))
     tiles, crops, wet = {}, {}, {}
-    local counts = { crop = 0, water = 0, other = 0, hole = 0, dirt = 0 }
+    travelY = CANE_TRAVEL_Y              -- cane could be anywhere until we know
+    local counts = { crop = 0, cane = 0, water = 0, other = 0, hole = 0, dirt = 0 }
     local plan = T.serpentine(WIDTH, LENGTH)
     for i, t in ipairs(plan) do
         local kind, crop = "other", nil
-        if goToCruise(t.x, t.z) then kind, crop = learnTile() end
+        toY(travelY)
+        if T.goTo(t.x, t.z) then kind, crop = learnTile() end
         local k = T.ckey(t.x, t.z)
         tiles[k], crops[k] = kind, crop
         if kind == "water" then wet[k] = true end
@@ -919,12 +1029,13 @@ local function learnPass()
     local settled = resolveLayout()
     local guessed = assignCrops()
     saveMap()
-    print(string.format("Layout saved: %d crop, %d water, %d other (%d gaps settled from their strips)",
-        countKind("crop"), countKind("water"), countKind("other"), settled))
+    travelY = countKind("cane") > 0 and CANE_TRAVEL_Y or 0
+    print(string.format("Layout saved: %d crop, %d cane, %d water, %d other (%d gaps settled from their strips)",
+        countKind("crop"), countKind("cane"), countKind("water"), countKind("other"), settled))
     print(string.format("Crops: %s (%d bare tiles given their strip's crop)", cropSummary(), guessed))
 end
 
--- Visiting order for a pass: every crop tile (and lane tile, with lanes),
+-- Visiting order for a pass: every crop and cane tile (and lane tile, with lanes),
 -- one line at a time along the lanes, each line entered from the end
 -- nearest the previous line's last tile, so no line is flown back over
 -- empty and lines with nothing to visit are skipped.
@@ -940,7 +1051,7 @@ local function passOrder(lanes)
             local x, z
             if alongX then x, z = j * sx, i * sz else x, z = i * sx, j * sz end
             local kind = tiles[T.ckey(x, z)]
-            if kind == "crop" or (lanes and kind == "water") then
+            if kind == "crop" or kind == "cane" or (lanes and kind == "water") then
                 line[#line + 1] = { x = x, z = z, j = j }
             end
         end
@@ -956,15 +1067,33 @@ local function passOrder(lanes)
     return order
 end
 
--- Get over tile t.  Lane tiles are inspected from crop level (one down),
--- and the turtle stays down from one lane tile to the next.
+-- Height each kind of tile is worked from: crops from cruise height, lanes
+-- from crop level (to see the water), cane from one above cruise height
+-- (above its bottom two blocks).
+local WORK_Y = { crop = 0, water = -1, cane = 1 }
+
+-- Get to tile t at its working height.  Between neighbouring tiles worked
+-- from the same height the turtle moves straight across; otherwise it
+-- goes by travel height.  A third block of cane in the way is cut (that's
+-- harvest, and it lands in the inventory).
 local function visit(t, kind)
-    if kind == "water" and T.pos.y == -1
-       and math.abs(t.x - T.pos.x) + math.abs(t.z - T.pos.z) == 1 then
+    local y = WORK_Y[kind]
+    if T.pos.y == y and math.abs(t.x - T.pos.x) + math.abs(t.z - T.pos.z) == 1 then
         T.faceToward(t.x, t.z)
+        if kind == "cane" then
+            local ok, d = turtle.inspect()
+            if ok and d.name == CANE then turtle.dig() end
+        end
         if T.forward() then return true end
     end
-    return goToCruise(t.x, t.z)
+    if kind ~= "cane" then return goToCruise(t.x, t.z) end
+    toY(travelY)
+    if not T.goTo(t.x, t.z) then return false end
+    while T.pos.y > y do
+        if below() == CANE then turtle.digDown() end
+        if not T.down() then return false end
+    end
+    return true
 end
 
 -- Is the water still there?  Called over a lane tile at cruise height or
@@ -996,14 +1125,20 @@ local function farmPass(harvest, lanes)
             if kind == "water" then
                 r = checkLane(t)
             else
-                local crop = cropAt(k)
-                r = workCrop(harvest, crop)
-                if r == "noseeds" and not triedRestock[crop] then
-                    dumpAtHome()
-                    triedRestock[crop] = true
-                    if goToCruise(t.x, t.z) then r = workCrop(harvest, crop) end
+                local work, seed
+                if kind == "cane" then
+                    work, seed = function() return workCane(harvest) end, CANE
+                else
+                    local crop = cropAt(k)
+                    work, seed = function() return workCrop(harvest, crop) end, CROPS[crop].seed
                 end
-                if r == "noseeds" then bare[crop] = (bare[crop] or 0) + 1 end
+                r = work()
+                if r == "noseeds" and not triedRestock[seed] then
+                    dumpAtHome()
+                    triedRestock[seed] = true
+                    if visit(t, kind) then r = work() end
+                end
+                if r == "noseeds" then bare[seed] = (bare[seed] or 0) + 1 end
             end
             stats[r] = stats[r] + 1
             if r == "damaged" or r == "dry" or r == "blocked" then damaged[#damaged + 1] = t end
@@ -1015,16 +1150,16 @@ local function farmPass(harvest, lanes)
         end
         if T.inventoryFull() then dumpAtHome() end
     end
-    T.toStartHeight()
+    toY(travelY)
     print(string.format("Harvested %d, planted %d, growing %d, empty %d, unreachable %d",
         stats.harvested, stats.planted, stats.growing, stats.empty, skipped))
     if #damaged > 0 then
-        print(string.format("Damage: %d crop tiles without ground, %d lane tiles not a source, %d blocked",
+        print(string.format("Damage: %d crop/cane tiles won't plant, %d lane tiles not a source, %d blocked",
             stats.damaged, stats.dry, stats.blocked))
     end
-    for crop, n in pairs(bare) do
-        print(string.format("Out of %s: %d %s tiles left bare. Put some in the chest.",
-            CROPS[crop].seed:gsub("^minecraft:", ""):gsub("_", " "), n, CROPS[crop].name))
+    for seed, n in pairs(bare) do
+        print(string.format("Out of %s: %d tiles left bare. Put some in the chest.",
+            (seed:gsub("^minecraft:", ""):gsub("_", " ")), n))
     end
     return damaged
 end
@@ -1057,6 +1192,7 @@ end
 --------------------------------------------------------------------------
 local haveMap = (not forceLearn) and loadMap()
 if haveMap and resolveLayout() + assignCrops() > 0 then saveMap() end   -- older maps
+if haveMap and countKind("cane") > 0 then travelY = CANE_TRAVEL_Y end
 if (doClone or doRepair) and not haveMap then
     print("No saved layout to " .. (doClone and "clone" or "repair") .. ". Learn a farm first.")
     return
@@ -1082,6 +1218,7 @@ T.cfg.width, T.cfg.length = WIDTH, LENGTH
 local perTile = doClone and 5 or CRUISE_MOVES_PER_TILE
 T.requireFuel(math.floor(math.abs(WIDTH * LENGTH) * perTile)
               + 2 * countKind("water")                -- worst case: a dip per lane tile
+              + 2 * countKind("cane")                 -- dropping down to check cane
               + math.abs(WIDTH) + math.abs(LENGTH) + 150)
 
 if haveMap and not doClone then
