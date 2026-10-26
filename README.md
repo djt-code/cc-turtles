@@ -141,16 +141,19 @@ need to hand it seeds directly.
   lane it drops to crop level to check the water and stays down along the lane.
   Then it goes home, dumps wheat and surplus seeds, tops seeds back up, and sleeps
   (default 20 min; `0` for a single pass).
-- **Repair mode.** Ground missing under a crop tile, a lane tile without water,
-  or a block in the way counts as damage. After a pass that found any, the turtle
-  goes home, restocks and repairs before sleeping. `farm repair` does the same on
-  demand: one inspection sweep (no harvesting), then the fixes. Land gets dirt,
-  tilling and wheat. A lane tile gets a dirt floor beneath if that's missing,
-  dirt walls on every side the map doesn't call lane, and water. Water comes from
-  one bucket, refilled at a lane tile with two or more water neighbours so the
-  source regenerates (or from water buckets in the chest). Keep **dirt and a
-  bucket in the chest**. Anything it can't fix (a solid block in the way needs a
-  pickaxe) is listed and found again on the next pass.
+- **Repair mode.** Ground missing under a crop tile, a lane tile that isn't a
+  water *source* (dry or flowing), or a block in the way counts as damage. After
+  a pass that found any, the turtle goes home, restocks and repairs before
+  sleeping. `farm repair` does the same on demand: one inspection sweep (no
+  harvesting), then the fixes.
+  - Land gets dirt, tilling and wheat right away.
+  - A lane tile gets a dirt floor beneath if that's missing, dirt walls on
+    every side the map doesn't call lane, and a bucket of water, which also turns
+    flowing water back into a source.
+  - Water comes from one bucket, refilled at a lane tile with two or more
+    source neighbours so it regenerates (or from water buckets in the chest).
+  - Anything it can't fix (a solid block in the way needs a pickaxe) is listed
+    and found again on the next pass.
 - **Inventory.** At the start of a run and after every pass the turtle prints
   what it carries, then puts everything it doesn't need right now into the chest:
   it keeps seeds for one pass, fuel and its tools, plus dirt and buckets only

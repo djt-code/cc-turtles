@@ -167,6 +167,13 @@ local function below()
     return d.name, d
 end
 
+-- Is the block below a water SOURCE?  Lanes are all sources; flowing
+-- water (level > 0) counts as damage and gets a bucket poured into it.
+local function sourceBelow()
+    local name, d = below()
+    return name == WATER and not (d.state and (tonumber(d.state.level) or 0) > 0)
+end
+
 local function plantDown()
     if not T.selectItem(SEED) then return false end
     return turtle.placeDown()
@@ -498,7 +505,7 @@ local function ensureWater(n)
             if not r then return end
             local before = T.countItem(WATER_BUCKET)
             if goToCruise(r.x, r.z) and T.down() then
-                if below() == WATER and T.selectItem(BUCKET) then turtle.placeDown() end
+                if sourceBelow() and T.selectItem(BUCKET) then turtle.placeDown() end
                 T.up()
             end
             if T.countItem(WATER_BUCKET) == before then wet[T.ckey(r.x, r.z)] = nil; return end
@@ -517,8 +524,11 @@ end
 -- every side the map doesn't call lane.  Ends at cruise height.
 local function prepLane(t)
     if not (goToCruise(t.x, t.z) and T.down()) then return false end
+    local k = T.ckey(t.x, t.z)
     local g = below()
-    if g == WATER then wet[T.ckey(t.x, t.z)] = true; T.up(); return true end
+    if sourceBelow() then wet[k] = true; T.up(); return true end
+    wet[k] = nil
+    if g == WATER then T.up(); return true end           -- flowing: needs a bucket
     if g ~= "air" then T.up(); return false end          -- needs the pickaxe phase
     if not T.down() then T.up(); return false end        -- now inside the trench
     local ok = true
@@ -538,12 +548,14 @@ local function prepLane(t)
     return ok
 end
 
--- Pour one bucket at a prepared lane tile.
+-- Pour one bucket at a prepared lane tile.  Pouring into flowing water
+-- turns it into a source.
 local function waterLane(t)
     if not (goToCruise(t.x, t.z) and T.down()) then return false end
     local ok = false
-    if below() == WATER then ok = true
-    elseif below() == "air" and T.selectItem(WATER_BUCKET) then ok = turtle.placeDown() end
+    local g = below()
+    if sourceBelow() then ok = true
+    elseif (g == "air" or g == WATER) and T.selectItem(WATER_BUCKET) then ok = turtle.placeDown() end
     T.up()
     if ok then wet[T.ckey(t.x, t.z)] = true end
     return ok
@@ -586,7 +598,7 @@ local function buildLanes(list)
                     sleep(1)                                -- let tile 2 become a source
                     local mid = todo[2]
                     if goToCruise(mid.x, mid.z) and T.down() then
-                        if below() == WATER then wet[T.ckey(mid.x, mid.z)] = true end
+                        if sourceBelow() then wet[T.ckey(mid.x, mid.z)] = true end
                         T.up()
                     end
                     if not wet[T.ckey(mid.x, mid.z)] then waterLane(mid) end
@@ -664,8 +676,8 @@ local function clonePrepare()
             if T.down() then
                 local g = below()
                 if kind == "water" then
-                    if g == WATER then wet[T.ckey(t.x, t.z)] = true
-                    elseif g ~= "air" then turtle.digDown() end        -- trench
+                    if sourceBelow() then wet[T.ckey(t.x, t.z)] = true
+                    elseif g ~= "air" and g ~= WATER then turtle.digDown() end  -- trench
                 else
                     if g ~= "air" and g ~= WATER and g ~= FARMLAND and not TILLABLE[g] then
                         turtle.digDown()                               -- stone etc.
@@ -746,11 +758,12 @@ local function visit(t, kind)
 end
 
 -- Is the water still there?  Called over a lane tile at cruise height or
--- already down at crop level.  Returns lane | dry | blocked.
+-- already down at crop level.  Returns lane | dry | blocked; dry covers
+-- no water, flowing water and a block filling the lane.
 local function checkLane(t)
     local k = T.ckey(t.x, t.z)
     if T.pos.y == 0 and not T.down() then wet[k] = nil; return "blocked" end
-    if below() == WATER then wet[k] = true; return "lane" end
+    if sourceBelow() then wet[k] = true; return "lane" end
     wet[k] = nil
     return "dry"
 end
@@ -791,7 +804,7 @@ local function farmPass(harvest)
     print(string.format("Harvested %d, planted %d, growing %d, empty %d, unreachable %d",
         stats.harvested, stats.planted, stats.growing, stats.empty, skipped))
     if #damaged > 0 then
-        print(string.format("Damage: %d crop tiles without ground, %d dry lane tiles, %d blocked",
+        print(string.format("Damage: %d crop tiles without ground, %d lane tiles not a source, %d blocked",
             stats.damaged, stats.dry, stats.blocked))
     end
     if stats.noseeds > 0 then
