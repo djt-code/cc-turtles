@@ -439,6 +439,44 @@ local function inventoryLine(label)
     print(label .. ": " .. (#parts > 0 and table.concat(parts, ", ") or "nothing"))
 end
 
+-- Merge part stacks of the same item in the chest below, so everything
+-- sits in as few slots as it can.  Hoppers and the turtle's own partial
+-- takes leave small stacks scattered about; this runs at every chest
+-- visit before anything is taken or moved.  Uses the chest's pushItems,
+-- filling the earliest part stack from the latest.
+local function compactChest()
+    local chest = peripheral and peripheral.wrap("bottom")
+    if not (chest and chest.list and chest.pushItems and chest.getItemDetail) then return end
+    local self = peripheral.getName(chest)
+    pcall(function()
+        local groups = {}
+        for slot, it in pairs(chest.list()) do
+            local key = it.name .. "|" .. (it.nbt or "")
+            groups[key] = groups[key] or {}
+            table.insert(groups[key], { slot = slot, count = it.count })
+        end
+        for _, g in pairs(groups) do
+            if #g > 1 then
+                local max = (chest.getItemDetail(g[1].slot) or {}).maxCount or 64
+                local part = {}
+                for _, s in ipairs(g) do
+                    if s.count < max then part[#part + 1] = s end
+                end
+                table.sort(part, function(a, b) return a.slot < b.slot end)
+                local i, j = 1, #part
+                while i < j do
+                    local n = chest.pushItems(self, part[j].slot,
+                        math.min(max - part[i].count, part[j].count), part[i].slot)
+                    if n == 0 then break end
+                    part[i].count, part[j].count = part[i].count + n, part[j].count - n
+                    if part[j].count == 0 then j = j - 1 end
+                    if part[i].count >= max then i = i + 1 end
+                end
+            end
+        end
+    end)
+end
+
 -- Move a stack of `name` into the chest's first slot, where suckDown()
 -- takes from.  Whatever is in slot 1 goes to an empty slot, or, with the
 -- chest full, into an empty turtle slot that is returned so the caller
@@ -661,13 +699,16 @@ local function feedCompost(fed)
     T.face(0)
 end
 
--- From home at cruise height, sink until the chest is below (up to 3).
+-- From home at cruise height, sink until the chest is below (up to 3),
+-- and tidy it up before anything is taken or moved.
 local function toChest()
     for _ = 1, 3 do
         if T.containerBelow() then break end
         if turtle.detectDown() or not T.down() then break end
     end
-    return T.containerBelow()
+    if not T.containerBelow() then return false end
+    compactChest()
+    return true
 end
 
 local function dumpAtHome()
@@ -680,6 +721,7 @@ local function dumpAtHome()
         end
         restockItem(DIRT, dirtNeeded(), "Dirt")
         restockBuckets()
+        compactChest()                           -- leave it tidy too
     else
         print("No chest found below home; keeping items.")
     end
@@ -699,7 +741,10 @@ local function waitAndCompost(seconds)
             local room = hopperSlotsFree()     -- the hopper is behind us up here
             if room > 0 then
                 local carrying = false
-                if toChest() then carrying, more = pullSurplusSeeds(room) end
+                if toChest() then
+                    carrying, more = pullSurplusSeeds(room)
+                    compactChest()
+                end
                 T.toStartHeight()
                 if carrying then feedCompost(fed) end
             end

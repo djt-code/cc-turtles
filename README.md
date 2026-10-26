@@ -211,6 +211,10 @@ fixes the lane first and then replants.
   potatoes and sugar cane are never composted, since the seed is the harvest. Route
   the bone meal back however you like, e.g. a hopper under the composter into the
   farm chest.
+- **Tidy chest.** At every visit, before taking or moving anything and again
+  before leaving, the turtle merges part stacks of the same item in the chest
+  (hoppers and its own partial takes leave them scattered), so each item fills as
+  few slots as possible.
 - **Full inventory, full chest.** Before working each tile the turtle checks it
   has room for that tile's drops (three empty slots). If not, it goes home to
   empty what it doesn't need, then carries on where it was, so harvest never
