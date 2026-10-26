@@ -146,6 +146,7 @@ table.sort(SEEDS)
 local DIRT = "minecraft:dirt"
 local WATER = "minecraft:water"
 local FARMLAND = "minecraft:farmland"
+local CHEST_SIDE = "bottom"    -- the output chest is always below home
 local BUCKET, WATER_BUCKET = "minecraft:bucket", "minecraft:water_bucket"
 local HOE, PICKAXE = "minecraft:diamond_hoe", "minecraft:diamond_pickaxe"
 local TILLABLE = {
@@ -416,7 +417,7 @@ end
 
 -- Restock from the chest below, leaving ROOM slots free for drops.
 local function restockItem(name, target, label, quiet)
-    T.restockBelow(name, target, { label = label, quiet = quiet, room = ROOM })
+    T.restockFrom(CHEST_SIDE, name, target, { label = label, quiet = quiet, room = ROOM })
 end
 
 local regenTile                -- defined with the lanes below
@@ -478,7 +479,7 @@ end
 local function pullSurplusSeeds(room)
     local any, more = false, false
     for _, c in pairs(CROPS) do
-        local have = c.compost and T.countBelow(c.seed)
+        local have = c.compost and T.countContainer(CHEST_SIDE, c.seed)
         local surplus = have and math.floor((have - 2 * plantedWith(c.seed)) / 64) or 0
         local stacks = math.min(room, surplus)
         if surplus > stacks then more = true end
@@ -527,7 +528,7 @@ local function toChest()
         if turtle.detectDown() or not T.down() then break end
     end
     if not T.containerBelow() then return false end
-    T.compactBelow()
+    T.compactContainer(CHEST_SIDE)
     return true
 end
 
@@ -542,7 +543,7 @@ local function dumpAtHome()
         restockItem(DIRT, dirtNeeded(), "Dirt")
         restockBuckets()
         restockItem(BONE_MEAL, wantBoneMeal, "Bone meal")
-        T.compactBelow()                         -- leave it tidy too
+        T.compactContainer(CHEST_SIDE)             -- leave it tidy too
     else
         print("No chest found below home; keeping items.")
     end
@@ -564,7 +565,7 @@ local function waitAndCompost(seconds)
                 local carrying = false
                 if toChest() then
                     carrying, more = pullSurplusSeeds(room)
-                    T.compactBelow()
+                    T.compactContainer(CHEST_SIDE)
                 end
                 T.toStartHeight()
                 if carrying then feedCompost(fed) end
@@ -1281,7 +1282,7 @@ end
 
 -- Bone meal the chest holds, counted from home; nil if it can't be read.
 local function chestBoneMeal()
-    local n = toChest() and T.countBelow(BONE_MEAL)
+    local n = toChest() and T.countContainer(CHEST_SIDE, BONE_MEAL)
     T.toStartHeight()
     return n
 end
