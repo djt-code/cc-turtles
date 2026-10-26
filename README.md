@@ -57,7 +57,8 @@ cd cc-turtles
 ```
 
 Later, `git pull` inside the directory fetches only the files that changed.
-`git status` shows the checked-out commit and whether the remote has moved on.
+`git status` shows the checked-out commit and whether the remote has moved on;
+`git log` lists recent commits on the branch, marking the one checked out.
 The programs `require("turtlelib")`, so run them from inside `cc-turtles`
 (or `cd` there first); if HTTP is disabled on the server, drop the files into
 `<world>/computercraft/computer/<id>/cc-turtles/` by hand.
@@ -68,6 +69,7 @@ The programs `require("turtlelib")`, so run them from inside `cc-turtles`
 git clone <url> [dir] [-b <branch>] [--token <token>]
 git pull   [dir]
 git status [dir]
+git log    [dir] [-n <count>]
 ```
 
 Not real git: it talks to the host's REST API (branch -> commit -> recursive

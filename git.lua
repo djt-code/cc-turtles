@@ -11,6 +11,7 @@
 --   git clone <url> [dir] [-b <branch>] [--token <token>]
 --   git pull   [dir]
 --   git status [dir]
+--   git log    [dir] [-n <count>]
 --
 --   <url> is the repo's web URL, with or without .git:
 --     https://git.example.com/me/cc-turtles
@@ -125,6 +126,9 @@ local function makeRemote(url, token)
             return "https://raw.githubusercontent.com/" .. owner .. "/" .. repo
                    .. "/" .. sha .. "/" .. encodePath(path)
         end
+        R.logUrl = function(branch, n)
+            return R.api .. "/commits?sha=" .. encodeSegment(branch) .. "&per_page=" .. n
+        end
     else
         R.kind = "forgejo"
         R.api  = scheme .. "://" .. host .. "/api/v1/repos/" .. owner .. "/" .. repo
@@ -135,6 +139,9 @@ local function makeRemote(url, token)
         end
         R.rawUrl = function(sha, path)
             return R.api .. "/raw/" .. encodePath(path) .. "?ref=" .. sha
+        end
+        R.logUrl = function(branch, n)
+            return R.api .. "/commits?sha=" .. encodeSegment(branch) .. "&limit=" .. n .. "&stat=false"
         end
     end
 
@@ -165,6 +172,19 @@ local function makeRemote(url, token)
             page = page + 1
         end
         return files
+    end
+
+    -- Recent commits on a branch: { {sha, message, author, date}, ... }
+    function R.log(branch, n)
+        local list = requestJSON(R.logUrl(branch, n), R.headers)
+        local out = {}
+        for _, c in ipairs(list) do
+            local cm = c.commit or {}
+            local au = cm.author or {}
+            out[#out + 1] = { sha = c.sha, message = cm.message or "",
+                              author = au.name or "?", date = au.date or "" }
+        end
+        return out
     end
 
     function R.blob(sha, path)
@@ -212,6 +232,7 @@ local function parseArgs(list)
         local a = list[i]
         if a == "-b" or a == "--branch" then opts.branch = list[i + 1]; i = i + 1
         elseif a == "--token" then opts.token = list[i + 1]; i = i + 1
+        elseif a == "-n" then opts.count = tonumber(list[i + 1]); i = i + 1
         else pos[#pos + 1] = a end
         i = i + 1
     end
@@ -269,6 +290,20 @@ local function cmdStatus(pos)
     end
 end
 
+local function cmdLog(pos, opts)
+    local dir, state, R = openCheckout(pos)
+    local n = opts.count or 10
+    local commits = R.log(state.branch, n)
+    for _, c in ipairs(commits) do
+        local marker = (c.sha == state.commit) and "*" or " "
+        local subject = c.message:match("^[^\n]*")
+        print(string.format("%s%s %s", marker, c.sha:sub(1, 7), subject))
+        print(string.format("   %s  %s", c.author, c.date:sub(1, 10)))
+    end
+    if #commits == 0 then print("No commits.") end
+    print("(* = checked out)")
+end
+
 --------------------------------------------------------------------------
 local pos, opts = parseArgs({ ... })
 local cmd = table.remove(pos, 1)
@@ -278,9 +313,11 @@ if not http then die("HTTP is disabled on this server.") end
 if cmd == "clone" then cmdClone(pos, opts)
 elseif cmd == "pull" then cmdPull(pos)
 elseif cmd == "status" then cmdStatus(pos)
+elseif cmd == "log" then cmdLog(pos, opts)
 else
     print("Usage:")
     print("  git clone <url> [dir] [-b branch] [--token t]")
     print("  git pull [dir]")
     print("  git status [dir]")
+    print("  git log [dir] [-n count]")
 end
