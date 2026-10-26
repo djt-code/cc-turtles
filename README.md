@@ -211,6 +211,15 @@ fixes the lane first and then replants.
   potatoes and sugar cane are never composted, since the seed is the harvest. Route
   the bone meal back however you like, e.g. a hopper under the composter into the
   farm chest.
+- **Grow passes (bone meal).** After each farming pass, if the chest holds enough
+  bone meal to grow the whole farm from seed (near the worst case: 4 per crop
+  tile, 6 per beetroot tile, since one bone meal adds 2-5 growth stages but
+  beetroot only advances one stage three times in four), the turtle does a grow
+  pass: it bone meals every crop until it's ripe, harvests it and replants it.
+  It repeats while there's still enough, carrying up to three stacks and fetching
+  more mid-pass, and returns what's left to the chest. Sugar cane is skipped (bone
+  meal doesn't grow it). If a pass uses no bone meal at all, it stops trying until
+  the next cycle.
 - **Tidy chest.** At every visit, before taking or moving anything and again
   before leaving, the turtle merges part stacks of the same item in the chest
   (hoppers and its own partial takes leave them scattered), so each item fills as

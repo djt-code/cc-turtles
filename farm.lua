@@ -114,12 +114,17 @@ local ROOM = 3                  -- empty slots to have before working a tile: it
 
 -- Crops grown on farmland: block -> item that plants it, age when ripe.
 -- compost: the seed isn't the harvest, so surplus seeds can be composted.
+-- meal: bone meal to grow one from seed, near the worst case (each adds
+-- 2-5 stages; beetroot only advances one stage, three times in four).
 local CROPS = {
-    ["minecraft:wheat"]     = { seed = "minecraft:wheat_seeds",    ripe = 7, name = "wheat", compost = true },
-    ["minecraft:carrots"]   = { seed = "minecraft:carrot",         ripe = 7, name = "carrots" },
-    ["minecraft:potatoes"]  = { seed = "minecraft:potato",         ripe = 7, name = "potatoes" },
-    ["minecraft:beetroots"] = { seed = "minecraft:beetroot_seeds", ripe = 3, name = "beetroot", compost = true },
+    ["minecraft:wheat"]     = { seed = "minecraft:wheat_seeds",    ripe = 7, meal = 4, name = "wheat", compost = true },
+    ["minecraft:carrots"]   = { seed = "minecraft:carrot",         ripe = 7, meal = 4, name = "carrots" },
+    ["minecraft:potatoes"]  = { seed = "minecraft:potato",         ripe = 7, meal = 4, name = "potatoes" },
+    ["minecraft:beetroots"] = { seed = "minecraft:beetroot_seeds", ripe = 3, meal = 6, name = "beetroot", compost = true },
 }
+local BONE_MEAL = "minecraft:bone_meal"
+local MAX_MEAL = 192           -- bone meal carried at once (3 stacks)
+local MEAL_PER_TILE = 10       -- give up on a tile after this many
 local DEFAULT_CROP = "minecraft:wheat"   -- for a farm with nothing growing yet
 
 -- Sugar cane is planted with the item itself, on any of these grounds, and
@@ -406,6 +411,7 @@ local function dirtNeeded()
 end
 
 local wantWaterBuckets = 0     -- buckets the lane builder needs on board
+local wantBoneMeal = 0         -- bone meal to carry, during a grow pass
 
 -- What stays on board at every visit home: seeds for a pass, fuel, the
 -- tools, and dirt and buckets only while a repair needs them.  Everything
@@ -415,6 +421,7 @@ local function keepPolicy(item, alreadyKept)
     if target > 0 then return math.max(0, target - alreadyKept) end
     if item.name == DIRT then return math.max(0, dirtNeeded() - alreadyKept) end
     if item.name == WATER_BUCKET then return math.max(0, wantWaterBuckets - alreadyKept) end
+    if item.name == BONE_MEAL then return math.max(0, wantBoneMeal - alreadyKept) end
     if item.name == BUCKET then
         local filled = math.min(T.countItem(WATER_BUCKET), wantWaterBuckets)
         return math.max(0, wantWaterBuckets - filled - alreadyKept)
@@ -721,6 +728,7 @@ local function dumpAtHome()
         end
         restockItem(DIRT, dirtNeeded(), "Dirt")
         restockBuckets()
+        restockItem(BONE_MEAL, wantBoneMeal, "Bone meal")
         compactChest()                           -- leave it tidy too
     else
         print("No chest found below home; keeping items.")
@@ -1360,13 +1368,38 @@ local function checkLane(t)
     return "dry"
 end
 
+-- Bone meal the crop below until it's ripe, or the bone meal on board
+-- runs out.  Returns how many were used.
+local function growCrop()
+    local used = 0
+    for _ = 1, MEAL_PER_TILE do
+        local name, d = below()
+        local c = CROPS[name]
+        if not c or (d.state and tonumber(d.state.age) or 0) >= c.ripe then break end
+        if not (T.selectItem(BONE_MEAL) and turtle.placeDown()) then break end
+        used = used + 1
+    end
+    return used
+end
+
+local mealUsed = 0             -- bone meal used by the last grow pass
+
 -- One sweep over the farm.  The farming pass (harvest, no lanes) visits
 -- crop tiles only; the repair inspection (no harvest, lanes) also checks
 -- every lane tile.  Bare farmland and untilled dirt are planted either
--- way; that isn't damage.  Returns the damaged tiles (ground or water
--- missing, or something in the way).
-local function farmPass(harvest, lanes)
+-- way; that isn't damage.  With `grow`, crop tiles are bone mealed until
+-- ripe before they're harvested and replanted (sugar cane is skipped:
+-- bone meal doesn't grow it).  Returns the damaged tiles (ground or
+-- water missing, or something in the way).
+local function farmPass(harvest, lanes, grow)
     local plan = passOrder(lanes)
+    if grow then
+        local only = {}
+        for _, t in ipairs(plan) do
+            if tiles[T.ckey(t.x, t.z)] == "crop" then only[#only + 1] = t end
+        end
+        plan, mealUsed = only, 0
+    end
     local stats = { harvested = 0, planted = 0, growing = 0, empty = 0, lane = 0,
                     damaged = 0, dry = 0, blocked = 0, noseeds = 0 }
     local damaged, skipped, triedRestock, bare = {}, 0, {}, {}
@@ -1374,6 +1407,13 @@ local function farmPass(harvest, lanes)
         local k = T.ckey(t.x, t.z)
         local kind = tiles[k]
         if kind ~= "water" then ensureRoom() end
+        if grow and T.countItem(BONE_MEAL) == 0 then
+            dumpAtHome()                         -- fetch more
+            if T.countItem(BONE_MEAL) == 0 then
+                print("Out of bone meal; finishing the pass without it.")
+                grow = false
+            end
+        end
         if visit(t, kind) then
             local r
             if kind == "water" then
@@ -1385,6 +1425,7 @@ local function farmPass(harvest, lanes)
                 else
                     local crop = cropAt(k)
                     work, seed = function() return workCrop(harvest, crop) end, CROPS[crop].seed
+                    if grow then mealUsed = mealUsed + growCrop() end
                 end
                 r = work()
                 if r == "noseeds" and not triedRestock[seed] then
@@ -1429,6 +1470,50 @@ local function repair(damaged)
     end
     pendingFills = {}                    -- the next pass finds them again
     dumpAtHome()
+end
+
+-- Bone meal the chest holds, counted from home; nil if it can't be read.
+local function chestBoneMeal()
+    local n = toChest() and chestCount(BONE_MEAL)
+    T.toStartHeight()
+    return n
+end
+
+-- Bone meal a grow pass may need: near the worst case for every crop tile.
+local function mealNeeded()
+    local n = 0
+    for k, kind in pairs(tiles) do
+        if kind == "crop" then n = n + CROPS[cropAt(k)].meal end
+    end
+    return n
+end
+
+-- After a farming pass, at home: while the chest holds enough bone meal
+-- to grow the whole farm, do grow passes (bone meal every crop until
+-- ripe, harvest, replant).  Stops if a pass uses none.
+local function growPasses()
+    local need = mealNeeded()
+    if need == 0 then return end
+    while true do
+        local have = chestBoneMeal() or 0
+        if have < need then
+            if have > 0 then
+                print(string.format("Bone meal: %d in the chest, a grow pass needs %d.", have, need))
+            end
+            return
+        end
+        print(string.format("Grow pass: %d bone meal in the chest, up to %d needed.", have, need))
+        wantBoneMeal = math.min(need, MAX_MEAL)
+        dumpAtHome()                             -- pick it up
+        farmPass(true, false, true)
+        wantBoneMeal = 0
+        dumpAtHome()                             -- put back what's left
+        print("Grow pass used " .. mealUsed .. " bone meal.")
+        if mealUsed == 0 then
+            print("No bone meal took; not trying again this time.")
+            return
+        end
+    end
 end
 
 -- Full repair pass: inspect every crop and lane tile (nothing harvested),
@@ -1527,6 +1612,7 @@ local ok, err = pcall(function()
             T.clearBlocked()
             fullRepair()
         end
+        growPasses()
         print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()))
         inventoryLine("Kept on board")
         if REPEAT <= 0 then break end
