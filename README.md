@@ -115,7 +115,8 @@ collects seeds.
 ```
 farm <width> <length> [repeatMinutes]        first run: learn layout, then farm
 farm [repeatMinutes]                         later runs: use saved layout
-farm learn <width> <length> [repeatMinutes]  re-learn after changing the farm
+farm learn <width> <length> [repeatMinutes]  save a new layout after changing the farm
+farm repair                                  inspect every tile once, fix damage, stop
 farm clone [repeatMinutes]                   build the last learned farm HERE
 farm reset                                   go home after an interruption
 ```
@@ -126,22 +127,30 @@ seeds in it: the turtle restocks seeds from the chest at the start of every pass
 and whenever it runs out mid-pass (up to one per crop tile, max 256), so you never
 need to hand it seeds directly.
 
-- Learning pass classifies every tile: wheat or farmland → crop tile; bare dirt,
-  grass block, path → tilled with the hoe and planted; water → lane; a missing
-  ground block → hole; anything else → left alone. Saved to `farm.map`.
-- **Strip repair.** Farms are usually land strips separated by water lanes, and
-  holes get fixed to match the strip they lie in. A hole whose column (or row) is
-  otherwise all land gets dirt, tilling and wheat. A hole in a water lane gets a
-  dirt floor beneath if that's missing, dirt walls on the two cross-lane sides if
-  they're open, and a water block. Water comes from one bucket, refilled at a lane
-  tile with two or more water neighbours so the source regenerates (or from water
-  buckets in the chest). Keep **dirt and a bucket in the chest**; holes it can't
-  fix yet are retried every pass.
-- Farming pass visits crop tiles only, harvests wheat at age 7 and replants it
-  immediately, plants any bare farmland, and re-tills farmland that reverted to
-  dirt — all from cruise height, since CC:Tweaked lets a hoe till through one
-  block of air below the turtle. Returns home, dumps wheat and surplus seeds, tops seeds back up, sleeps
+- **Learning** only records the layout; it doesn't touch the farm. Wheat or
+  farmland → crop tile; water → lane; anything else → left alone. A missing
+  ground block or bare dirt could be either, so it takes the kind of the strip it
+  lies in (a column or row that is otherwise all land, or all water); bare dirt
+  outside any strip is farmed. Saved to `farm.map`, which from then on is the farm
+  as it *should* be. Re-learn only when you change the farm on purpose.
+- **Farming pass** works the layout one line at a time along the lanes, entering
+  each line from the end nearest the last, so it never flies back across the
+  farm. It harvests wheat at age 7 and replants it immediately, plants any bare
+  farmland, and re-tills farmland that reverted to dirt, all from cruise height
+  (CC:Tweaked lets a hoe till through one block of air below the turtle). Over a
+  lane it drops to crop level to check the water and stays down along the lane.
+  Then it goes home, dumps wheat and surplus seeds, tops seeds back up, and sleeps
   (default 20 min; `0` for a single pass).
+- **Repair mode.** Ground missing under a crop tile, a lane tile without water,
+  or a block in the way counts as damage. After a pass that found any, the turtle
+  goes home, restocks and repairs before sleeping. `farm repair` does the same on
+  demand: one inspection sweep (no harvesting), then the fixes. Land gets dirt,
+  tilling and wheat. A lane tile gets a dirt floor beneath if that's missing,
+  dirt walls on every side the map doesn't call lane, and water. Water comes from
+  one bucket, refilled at a lane tile with two or more water neighbours so the
+  source regenerates (or from water buckets in the chest). Keep **dirt and a
+  bucket in the chest**. Anything it can't fix (a solid block in the way needs a
+  pickaxe) is listed and found again on the next pass.
 
 ### Cloning a farm
 
