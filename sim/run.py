@@ -5,6 +5,8 @@
     python sim/run.py farm_clone ...     just these (".lua" optional)
     python sim/run.py --check            syntax-check the programs only
 
+On a ComputerCraft computer, use sim/runsim.lua instead.
+
 Each simulator is a Lua script that mocks the CC:Tweaked APIs it needs
 (turtle, peripheral, fs, sleep, ...) around a small block world, runs the
 real program and prints what happened.  It gets the repo root as its
@@ -54,7 +56,8 @@ def main(args):
     if args:
         paths = [os.path.join(HERE, a if a.endswith(".lua") else a + ".lua") for a in args]
     else:
-        paths = sorted(glob.glob(os.path.join(HERE, "*.lua")))
+        paths = sorted(p for p in glob.glob(os.path.join(HERE, "*.lua"))
+                       if os.path.basename(p) != "runsim.lua")
     results = []
     for path in paths:
         name = os.path.basename(path)[:-4]

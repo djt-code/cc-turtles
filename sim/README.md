@@ -14,6 +14,21 @@ python sim/run.py farm_clone       # by name, ".lua" optional
 python sim/run.py --check          # syntax-check the programs and these files
 ```
 
+Or on a ComputerCraft computer or turtle that has the repo (`git clone`),
+no Python needed:
+
+```
+sim/runsim                         # all of them, then a summary
+sim/runsim farm_clone              # by name
+sim/runsim --list                  # what there is
+```
+
+`runsim` runs each simulator in a sandbox (its own globals, its own `os`,
+its own `loadfile`/`require`), so the mocks never touch the real computer,
+and yields about once a second so CC doesn't stop it for running too long
+without yielding. Full output goes to `sim/logs/<name>.log`; the screen
+scrolls it past as it runs. Ctrl+T stops it.
+
 A simulator counts as failing if the program raised an error (`ERROR:` in
 its output), it crashed, or it ran past 5 minutes. Everything else is for
 reading: compare the numbers before and after a change (`git stash`, run,

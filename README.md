@@ -341,6 +341,10 @@ python sim/run.py farm_clone       # one (or several) by name
 python sim/run.py --check          # syntax-check every program
 ```
 
+They also run on a ComputerCraft computer or turtle that has the repo, with
+`sim/runsim` (all of them) or `sim/runsim farm_clone`; full output lands in
+`sim/logs/`.
+
 See [sim/README.md](sim/README.md) for what each one covers. They're tests
 for the code, not for the game: the mock world only models the vanilla
 mechanics the programs rely on, so confirm anything new in game too.
