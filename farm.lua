@@ -1,4 +1,5 @@
--- farm.lua -- wheat farming turtle for CC:Tweaked
+-- farm.lua -- crop farming turtle for CC:Tweaked (wheat, carrots,
+-- potatoes, beetroot; any mix of them on one farm)
 --
 -- Needs a diamond hoe (and a diamond pickaxe for `clone`), equipped or in
 -- the inventory.  The program makes the tool it needs the only tool
@@ -27,8 +28,9 @@
 -- Placement: put the turtle diagonally outside one corner of the farm,
 -- hovering TWO blocks above the farmland (one block above the crop tops).
 -- Put the output chest/barrel directly below the start position (up to 3
--- blocks down).  Keep in the chest: wheat seeds, dirt, and a bucket or two
--- (water buckets for clone); the turtle restocks from it.
+-- blocks down).  Keep in the chest: what each crop is planted with (wheat
+-- or beetroot seeds, carrots, potatoes), dirt, and a bucket or two (water
+-- buckets for clone); the turtle restocks from it.
 --
 -- How it works:
 --  * Learning pass: only records the layout; it changes nothing.  Flies
@@ -54,7 +56,11 @@
 --    walls and waters the lanes.  Each lane is bootstrapped with two water
 --    buckets at tiles 1 and 3 (tile 2 becomes a source on its own) and the
 --    rest is scooped from that regenerating tile.
---  * Farming pass details: harvests wheat at age 7 and replants it, plants
+--  * Crops: learning notes which crop grows on each tile; bare farmland
+--    gets the crop most of its strip grows.  The farming pass harvests
+--    each crop when ripe (age 7; beetroot 3) and replants the crop the
+--    plan wants there (a different crop found growing is harvested when
+--    ripe and replaced), plants
 --    bare farmland (tilling through the air gap if it reverted to dirt),
 --    returns home, drops produce, restocks, repairs if needed, sleeps.
 --  * Navigation is at a fixed cruise height (turtlelib.stepFlat) with a
@@ -92,8 +98,17 @@ if REPEAT == nil then REPEAT = 20 end   -- minutes; 0 = single pass
 local CRUISE_MOVES_PER_TILE = 1.2
 local MAX_SEEDS = 256           -- never carry more than this many seeds
 
-local CROP = "minecraft:wheat"
-local SEED = "minecraft:wheat_seeds"
+-- Crops grown on farmland: block -> item that plants it, age when ripe.
+local CROPS = {
+    ["minecraft:wheat"]     = { seed = "minecraft:wheat_seeds",    ripe = 7, name = "wheat" },
+    ["minecraft:carrots"]   = { seed = "minecraft:carrot",         ripe = 7, name = "carrots" },
+    ["minecraft:potatoes"]  = { seed = "minecraft:potato",         ripe = 7, name = "potatoes" },
+    ["minecraft:beetroots"] = { seed = "minecraft:beetroot_seeds", ripe = 3, name = "beetroot" },
+}
+local DEFAULT_CROP = "minecraft:wheat"   -- for a farm with nothing growing yet
+local SEEDS = {}                         -- planting items, sorted
+for _, c in pairs(CROPS) do SEEDS[#SEEDS + 1] = c.seed end
+table.sort(SEEDS)
 local DIRT = "minecraft:dirt"
 local WATER = "minecraft:water"
 local FARMLAND = "minecraft:farmland"
@@ -110,10 +125,12 @@ T.mode = "flat"
 T.diggable = {}            -- never dig while moving
 
 --------------------------------------------------------------------------
--- Farm layout map: tiles[key] = "crop" | "water" | "other"
+-- Farm layout map: tiles[key] = "crop" | "water" | "other", and for crop
+-- tiles crops[key] = the crop block planned there.
 -- (the learning pass also uses "hole" and "dirt" until resolveLayout)
 --------------------------------------------------------------------------
 local tiles = {}
+local crops = {}
 local wet = {}             -- tiles that actually hold water right now
 local pendingFills = {}    -- holes (or clone targets) still to build
 
@@ -122,10 +139,15 @@ local function keyXZ(k)
     return tonumber(x), tonumber(z)
 end
 
+-- The crop planned for a tile (maps saved before crops were tracked: wheat).
+local function cropAt(k) return crops[k] or DEFAULT_CROP end
+
 local function saveMap()
     local f = fs.open(MAP_FILE, "w")
     f.writeLine(WIDTH .. " " .. LENGTH)
-    for k, t in pairs(tiles) do f.writeLine(k .. " " .. t) end
+    for k, t in pairs(tiles) do
+        f.writeLine(k .. " " .. t .. (crops[k] and (" " .. crops[k]) or ""))
+    end
     f.close()
 end
 
@@ -135,10 +157,13 @@ local function loadMap()
     local w, l = (f.readLine() or ""):match("(-?%d+) (-?%d+)")
     if not w then f.close(); return false end
     WIDTH, LENGTH = tonumber(w), tonumber(l)
-    tiles = {}
+    tiles, crops = {}, {}
     for line in f.readLine do
-        local k, t = line:match("(%S+) (%S+)")
-        if k then tiles[k] = t end
+        local k, t, c = line:match("^(%S+) (%S+) ?(%S*)")
+        if k then
+            tiles[k] = t
+            if c ~= "" and CROPS[c] then crops[k] = c end
+        end
     end
     f.close()
     return true
@@ -150,12 +175,38 @@ local function countKind(kind)
     return n
 end
 
--- How many seeds we want on board: enough to plant every crop tile (or the
--- whole box before the layout is known), capped.
-local function seedTarget()
-    local n = countKind("crop")
-    if n == 0 then n = math.abs(WIDTH * LENGTH) end
-    return math.min(MAX_SEEDS, n + 16)
+-- "12 wheat, 6 carrots": what the layout grows.
+local function cropSummary()
+    local n, order = {}, {}
+    for k, kind in pairs(tiles) do
+        if kind == "crop" then
+            local c = cropAt(k)
+            if not n[c] then n[c] = 0; order[#order + 1] = c end
+            n[c] = n[c] + 1
+        end
+    end
+    table.sort(order)
+    local parts = {}
+    for _, c in ipairs(order) do parts[#parts + 1] = n[c] .. " " .. CROPS[c].name end
+    return #parts > 0 and table.concat(parts, ", ") or "no crops"
+end
+
+-- How many of planting item `seed` we want on board: one per tile it
+-- grows on plus a margin, capped.  Zero for crops the farm doesn't grow.
+local function seedTarget(seed)
+    local n = 0
+    for k, kind in pairs(tiles) do
+        if kind == "crop" and CROPS[cropAt(k)].seed == seed then n = n + 1 end
+    end
+    return n == 0 and 0 or math.min(MAX_SEEDS, n + 16)
+end
+
+-- Is a planting item the farm needs completely missing from the inventory?
+local function lacksSeeds()
+    for _, seed in ipairs(SEEDS) do
+        if seedTarget(seed) > 0 and T.countItem(seed) == 0 then return true end
+    end
+    return false
 end
 
 --------------------------------------------------------------------------
@@ -175,8 +226,8 @@ local function sourceBelow()
     return name == WATER and not (d.state and (tonumber(d.state.level) or 0) > 0)
 end
 
-local function plantDown()
-    if not T.selectItem(SEED) then return false end
+local function plantDown(seed)
+    if not T.selectItem(seed) then return false end
     return turtle.placeDown()
 end
 
@@ -202,29 +253,34 @@ end
 -- farmland.  CC:Tweaked lets a hoe till THROUGH one block of air below the
 -- turtle (TurtleTool.useTool), so bare dirt can be tilled from cruise height
 -- with a plain digDown(); seeds also place through that gap onto farmland.
+-- `crop` is the crop the plan wants here; a different crop found growing
+-- is left to ripen, then harvested and replaced with the planned one.
 -- harvest = false only plants (repair mode's inspection).
 -- Returns: harvested | growing | planted | empty | noseeds | damaged | blocked
 -- (damaged: no farmland or dirt to plant on; blocked: something in the way)
-local function workCrop(harvest)
+local function workCrop(harvest, crop)
+    local seed = CROPS[crop].seed
     local name, d = below()
-    if name == CROP then
-        if harvest and d.state and tonumber(d.state.age) == 7 then
-            turtle.digDown()                 -- hoe on wheat: breaks it
-            plantDown()
+    local here = CROPS[name]
+    if here then
+        local age = d.state and tonumber(d.state.age)
+        if harvest and age and age >= here.ripe then
+            turtle.digDown()                 -- hoe on a crop: breaks it
+            plantDown(seed)
             return "harvested"
         end
         return "growing"
     elseif name == "air" then
-        if plantDown() then return "planted" end
-        if T.countItem(SEED) == 0 then return "noseeds" end
+        if plantDown(seed) then return "planted" end
+        if T.countItem(seed) == 0 then return "noseeds" end
         turtle.digDown()                     -- till through the gap
-        if plantDown() then return "planted" end
+        if plantDown(seed) then return "planted" end
         return "damaged"
     elseif TILLABLE[name] or name == FARMLAND then
         warnLow()
         if TILLABLE[name] then turtle.digDown() end
         if not T.up() then return "blocked" end
-        local r = plantDown() and "planted" or (T.countItem(SEED) == 0 and "noseeds" or "empty")
+        local r = plantDown(seed) and "planted" or (T.countItem(seed) == 0 and "noseeds" or "empty")
         T.down()
         return r
     end
@@ -232,10 +288,11 @@ local function workCrop(harvest)
 end
 
 -- Classify the tile below during the learning pass, without changing it.
--- crop | water | dirt | hole | other  (dirt and hole: see resolveLayout)
+-- crop | water | dirt | hole | other  (dirt and hole: see resolveLayout),
+-- plus the crop block for a tile with a known crop growing on it.
 local function learnTile()
     local name = below()
-    if name == CROP then return "crop" end
+    if CROPS[name] then return "crop", name end
     if name == WATER then return "water" end
     if name == FARMLAND then warnLow(); return "crop" end
     if TILLABLE[name] then warnLow(); return "dirt" end
@@ -267,7 +324,8 @@ local wantWaterBuckets = 0     -- buckets the lane builder needs on board
 -- tools, and dirt and buckets only while a repair needs them.  Everything
 -- else goes into the chest.
 local function keepPolicy(item, alreadyKept)
-    if item.name == SEED then return math.max(0, seedTarget() - alreadyKept) end
+    local target = seedTarget(item.name)
+    if target > 0 then return math.max(0, target - alreadyKept) end
     if item.name == DIRT then return math.max(0, dirtNeeded() - alreadyKept) end
     if item.name == WATER_BUCKET then return math.max(0, wantWaterBuckets - alreadyKept) end
     if item.name == BUCKET then
@@ -390,7 +448,9 @@ local function dumpAtHome()
     end
     if T.containerBelow() then
         T.dumpDown(keepPolicy)
-        restockItem(SEED, seedTarget(), "Seeds")
+        for _, seed in ipairs(SEEDS) do
+            restockItem(seed, seedTarget(seed), (seed:gsub("^minecraft:", ""):gsub("_", " ")))
+        end
         restockItem(DIRT, dirtNeeded(), "Dirt")
         restockBuckets()
     else
@@ -465,6 +525,37 @@ local function farmAxis()
         if kind == "water" then return laneAxis(keyXZ(k)) end
     end
     return "z"
+end
+
+-- Give every crop tile learned with nothing growing on it (bare farmland,
+-- settled gaps) the crop most of its strip grows, else the crop most of
+-- the farm grows, else wheat.  Returns the number of tiles assigned.
+local function assignCrops()
+    local function majority(filter)
+        local n, best = {}, nil
+        for k, c in pairs(crops) do
+            local x, z = keyXZ(k)
+            if filter(x, z) then
+                n[c] = (n[c] or 0) + 1
+                if not best or n[c] > n[best] or (n[c] == n[best] and c < best) then best = c end
+            end
+        end
+        return best
+    end
+    local alongX = farmAxis() == "x"
+    local farmWide = majority(function() return true end)
+    local assigned = {}
+    for k, kind in pairs(tiles) do
+        if kind == "crop" and not crops[k] then
+            local x, z = keyXZ(k)
+            assigned[k] = majority(function(px, pz)
+                if alongX then return pz == z else return px == x end
+            end) or farmWide or DEFAULT_CROP
+        end
+    end
+    local count = 0
+    for k, c in pairs(assigned) do crops[k] = c; count = count + 1 end
+    return count
 end
 
 -- Repair planning: rebuild each damaged tile as the layout says.
@@ -722,8 +813,8 @@ local function buildLanes(list)
 end
 
 ------------------------------------------------------------------ land --
--- Make (x,z) farmland with wheat on it.  Handles air (needs dirt), water
--- (dirt replaces it), tillable ground and existing farmland.
+-- Make (x,z) farmland with its planned crop on it.  Handles air (needs
+-- dirt), water (dirt replaces it), tillable ground and existing farmland.
 local function buildLand(t)
     if not (goToCruise(t.x, t.z) and T.down()) then return false end
     local g = below()
@@ -733,7 +824,7 @@ local function buildLand(t)
     if TILLABLE[g] then turtle.digDown(); g = FARMLAND end
     T.up()
     if g ~= FARMLAND then return false end
-    plantDown()
+    plantDown(CROPS[cropAt(T.ckey(t.x, t.z))].seed)
     return true
 end
 
@@ -746,7 +837,7 @@ local function buildPending(label)
     end
     -- two buckets to start a lane from scratch, one to top up from a source
     wantWaterBuckets = (#water == 0 and 0) or (regenTile() and 1 or 2)
-    if T.countItem(DIRT) < dirtNeeded() or T.countItem(SEED) == 0
+    if T.countItem(DIRT) < dirtNeeded() or lacksSeeds()
        or T.countItem(WATER_BUCKET) + T.countItem(BUCKET) < wantWaterBuckets then
         dumpAtHome()
     end
@@ -766,7 +857,7 @@ local function buildPending(label)
     -- a lane wall on a crop tile is new ground: till and plant it now
     -- (from cruise height, through the air gap) instead of next pass
     for _, t in ipairs(newGround) do
-        if goToCruise(t.x, t.z) then workCrop(false) end
+        if goToCruise(t.x, t.z) then workCrop(false, cropAt(T.ckey(t.x, t.z))) end
     end
     newGround = {}
     pendingFills = remaining
@@ -785,7 +876,7 @@ local function clonePrepare()
         local kind = tiles[T.ckey(t.x, t.z)]
         if (kind == "crop" or kind == "water") and goToCruise(t.x, t.z) then
             local c = below()
-            if c ~= "air" and c ~= CROP then turtle.digDown() end     -- clear crop level
+            if c ~= "air" and not CROPS[c] then turtle.digDown() end  -- clear crop level
             if T.down() then
                 local g = below()
                 if kind == "water" then
@@ -810,14 +901,15 @@ end
 --------------------------------------------------------------------------
 local function learnPass()
     print(string.format("Learning layout: %dx%d", WIDTH, LENGTH))
-    tiles, wet = {}, {}
+    tiles, crops, wet = {}, {}, {}
     local counts = { crop = 0, water = 0, other = 0, hole = 0, dirt = 0 }
     local plan = T.serpentine(WIDTH, LENGTH)
     for i, t in ipairs(plan) do
-        local kind = "other"
-        if goToCruise(t.x, t.z) then kind = learnTile() end
-        tiles[T.ckey(t.x, t.z)] = kind
-        if kind == "water" then wet[T.ckey(t.x, t.z)] = true end
+        local kind, crop = "other", nil
+        if goToCruise(t.x, t.z) then kind, crop = learnTile() end
+        local k = T.ckey(t.x, t.z)
+        tiles[k], crops[k] = kind, crop
+        if kind == "water" then wet[k] = true end
         counts[kind] = counts[kind] + 1
         if i % 50 == 0 then
             print(string.format("%d/%d scanned, %d crop tiles", i, #plan, counts.crop))
@@ -825,9 +917,11 @@ local function learnPass()
         if T.inventoryFull() then dumpAtHome() end
     end
     local settled = resolveLayout()
+    local guessed = assignCrops()
     saveMap()
     print(string.format("Layout saved: %d crop, %d water, %d other (%d gaps settled from their strips)",
         countKind("crop"), countKind("water"), countKind("other"), settled))
+    print(string.format("Crops: %s (%d bare tiles given their strip's crop)", cropSummary(), guessed))
 end
 
 -- Visiting order for a pass: every crop tile (and lane tile, with lanes),
@@ -893,20 +987,23 @@ local function farmPass(harvest, lanes)
     local plan = passOrder(lanes)
     local stats = { harvested = 0, planted = 0, growing = 0, empty = 0, lane = 0,
                     damaged = 0, dry = 0, blocked = 0, noseeds = 0 }
-    local damaged, skipped, triedRestock = {}, 0, false
+    local damaged, skipped, triedRestock, bare = {}, 0, {}, {}
     for i, t in ipairs(plan) do
-        local kind = tiles[T.ckey(t.x, t.z)]
+        local k = T.ckey(t.x, t.z)
+        local kind = tiles[k]
         if visit(t, kind) then
             local r
             if kind == "water" then
                 r = checkLane(t)
             else
-                r = workCrop(harvest)
-                if r == "noseeds" and not triedRestock then
+                local crop = cropAt(k)
+                r = workCrop(harvest, crop)
+                if r == "noseeds" and not triedRestock[crop] then
                     dumpAtHome()
-                    triedRestock = true
-                    if goToCruise(t.x, t.z) then r = workCrop(harvest) end
+                    triedRestock[crop] = true
+                    if goToCruise(t.x, t.z) then r = workCrop(harvest, crop) end
                 end
+                if r == "noseeds" then bare[crop] = (bare[crop] or 0) + 1 end
             end
             stats[r] = stats[r] + 1
             if r == "damaged" or r == "dry" or r == "blocked" then damaged[#damaged + 1] = t end
@@ -925,8 +1022,9 @@ local function farmPass(harvest, lanes)
         print(string.format("Damage: %d crop tiles without ground, %d lane tiles not a source, %d blocked",
             stats.damaged, stats.dry, stats.blocked))
     end
-    if stats.noseeds > 0 then
-        print("Out of seeds: " .. stats.noseeds .. " tiles left bare. Put seeds in the chest.")
+    for crop, n in pairs(bare) do
+        print(string.format("Out of %s: %d %s tiles left bare. Put some in the chest.",
+            CROPS[crop].seed:gsub("^minecraft:", ""):gsub("_", " "), n, CROPS[crop].name))
     end
     return damaged
 end
@@ -958,7 +1056,7 @@ end
 -- Main
 --------------------------------------------------------------------------
 local haveMap = (not forceLearn) and loadMap()
-if haveMap and resolveLayout() > 0 then saveMap() end   -- maps saved with holes
+if haveMap and resolveLayout() + assignCrops() > 0 then saveMap() end   -- older maps
 if (doClone or doRepair) and not haveMap then
     print("No saved layout to " .. (doClone and "clone" or "repair") .. ". Learn a farm first.")
     return
@@ -995,6 +1093,7 @@ local restoreTools = T.usePrimaryTool(HOE)
 local ok, err = pcall(function()
     T.clearBlocked()
     inventoryLine("On board")
+    if haveMap then print("Farm plan: " .. cropSummary()) end
     if doClone then
         print(string.format("Cloning saved %dx%d layout here (%d crop, %d water tiles)",
             WIDTH, LENGTH, countKind("crop"), countKind("water")))
@@ -1029,8 +1128,7 @@ local ok, err = pcall(function()
             T.clearBlocked()
             fullRepair()
         end
-        print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()) ..
-            ", seeds: " .. T.countItem(SEED))
+        print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()))
         inventoryLine("Kept on board")
         if REPEAT <= 0 then break end
         print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")

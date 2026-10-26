@@ -7,7 +7,7 @@ upgrade in software.
 | Program | What it does |
 |---|---|
 | `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
-| `farm.lua` | Learns the layout of a wheat farm inside a bounding box (tilling any dirt it finds), then loops: harvest ripe wheat, replant, dump into a chest, sleep. |
+| `farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
@@ -123,23 +123,34 @@ farm reset                                   go home after an interruption
 ```
 
 Hover the turtle **two blocks above the farmland** (one above the crop tops),
-diagonally outside one corner of the farm, facing along the length axis. Put the output chest directly below the start position with some wheat
-seeds in it: the turtle restocks seeds from the chest at the start of every pass
-and whenever it runs out mid-pass (up to one per crop tile, max 256), so you never
-need to hand it seeds directly.
+diagonally outside one corner of the farm, facing along the length axis. Put the
+output chest directly below the start position with what each crop is planted
+with in it (wheat seeds, carrots, potatoes, beetroot seeds): the turtle restocks
+them from the chest at the start of every pass and whenever it runs out mid-pass
+(up to one per tile of that crop, max 256), so you never need to hand them to it
+directly.
 
-- **Learning** only records the layout; it doesn't touch the farm. Wheat or
-  farmland → crop tile; water → lane; anything else → left alone. A missing
+Farms can grow **wheat, carrots, potatoes and beetroot**, in any mix: strips of
+different crops, or crops mixed within a strip.
+
+- **Learning** only records the layout; it doesn't touch the farm. A crop or
+  farmland → crop tile, and the crop growing there becomes that tile's crop;
+  water → lane; anything else → left alone. Bare farmland, and gaps settled as
+  land, get the crop most of their strip grows (else the farm's most common crop,
+  else wheat). A missing
   ground block or bare dirt could be either, so it takes the kind of the strip it
   lies in (a column or row that is otherwise all land, or all water); bare dirt
   outside any strip is farmed. Saved to `farm.map`, which from then on is the farm
   as it *should* be. Re-learn only when you change the farm on purpose.
 - **Farming pass** serpentines over the crop tiles only, one line at a time
   along the lanes, entering each line from the end nearest the last; lanes are
-  skipped. It harvests wheat at age 7 and replants it immediately, plants any bare
-  farmland, and re-tills farmland that reverted to dirt, all from cruise height
-  (CC:Tweaked lets a hoe till through one block of air below the turtle). Then it
-  goes home, dumps wheat and surplus seeds, tops seeds back up, and sleeps
+  skipped. It harvests each crop when ripe (age 7; beetroot at 3) and replants
+  the tile's planned crop immediately, plants any bare farmland, and re-tills
+  farmland that reverted to dirt, all from cruise height (CC:Tweaked lets a hoe
+  till through one block of air below the turtle). A different crop found growing
+  on a tile is left to ripen, then harvested and replaced with the planned one.
+  Then it goes home, dumps the harvest and surplus planting items, tops them back
+  up, and sleeps
   (default 20 min; `0` for a single pass).
 - **Full repair pass.** Ground missing under a crop tile, or a block in the way,
   makes the turtle go home after the farming pass and run a full repair pass
@@ -148,7 +159,7 @@ need to hand it seeds directly.
   to check its water, then fixes everything it found. Lane damage counts there: a
   lane tile that isn't a water *source* (dry, flowing, or filled in). It also runs
   once after `learn` or `clone`, and `farm repair` runs it on demand and stops.
-  - Land gets dirt, tilling and wheat right away.
+  - Land gets dirt, tilling and its planned crop right away.
   - A filled-in lane tile (dirt or anything else in it or on top of it) is dug
     out with a **diamond pickaxe**, which the turtle swaps in for the hoe; keep one
     in its inventory.
@@ -164,7 +175,7 @@ need to hand it seeds directly.
   - Anything it can't fix is listed and found again on the next pass.
 - **Inventory.** At the start of a run and after every pass the turtle prints
   what it carries, then puts everything it doesn't need right now into the chest:
-  it keeps seeds for one pass, fuel and its tools, plus dirt and buckets only
+  it keeps planting items for one pass, fuel and its tools, plus dirt and buckets only
   while a repair is using them. Keep **seeds, dirt and a bucket or two in the
   chest**.
 
