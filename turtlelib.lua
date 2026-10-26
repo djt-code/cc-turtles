@@ -234,7 +234,8 @@ end
 -- empty slot, which needs one free slot.
 function T.equipped(side)
     if turtle.getEquippedLeft then
-        local it = (side == "left") and turtle.getEquippedLeft() or turtle.getEquippedRight()
+        local it
+        if side == "left" then it = turtle.getEquippedLeft() else it = turtle.getEquippedRight() end
         return it and it.name or nil
     end
     local empty = findEmptySlot()
