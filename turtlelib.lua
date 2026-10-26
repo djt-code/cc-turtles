@@ -31,6 +31,7 @@ T.cfg = {
     maxReplans = 10,    -- BFS re-plans per target before giving up
     lowFuel    = 50,    -- top up from inventory below this
     topupFuel  = 1000,  -- ...to about this level
+    fuelMargin = 30,    -- spare fuel kept beyond the trip home (detours)
     maxClimb   = 3,     -- terrain stepping: max climb per column
     maxDrop    = 12,    -- max blocks below start level
     maxHeight  = 16,    -- max blocks above start level
@@ -152,11 +153,39 @@ function T.refuelTo(target)
     return turtle.getFuelLevel() >= target
 end
 
--- Called before every move.  Waits for the user if truly out of fuel.
+-- Fuel to get home from here: straight-line moves by default.  Programs
+-- that travel at a set height or dig down to a chest override it.
+function T.homeCost()
+    return math.abs(T.pos.x) + math.abs(T.pos.y) + math.abs(T.pos.z)
+end
+
+-- Set by a program: function() that goes home, refuels and comes back to
+-- exactly where it was (see ensureFuel).
+T.fuelTrip = nil
+local onFuelTrip = false
+
+-- Called before every move.  Below what it takes to get home (plus
+-- cfg.fuelMargin) the tank is topped up from the inventory; when that
+-- isn't enough and the program set T.fuelTrip, it runs, so the turtle
+-- refuels at home instead of running dry in the field.  Without one, or
+-- on the trip itself, it waits for the user once truly out.
 function T.ensureFuel()
-    if turtle.getFuelLevel() == "unlimited" then return end
-    if turtle.getFuelLevel() >= T.cfg.lowFuel then return end
-    while not T.refuelTo(T.cfg.topupFuel) and turtle.getFuelLevel() < T.cfg.lowFuel do
+    local level = turtle.getFuelLevel()
+    if level == "unlimited" then return end
+    local need = T.cfg.lowFuel
+    if onFuelTrip then need = 1                 -- budgeted for already: just don't stall
+    elseif T.fuelTrip then need = math.max(need, T.homeCost() + T.cfg.fuelMargin) end
+    if level >= need then return end
+    T.refuelTo(math.max(need, T.cfg.topupFuel))
+    if turtle.getFuelLevel() >= need then return end
+    if T.fuelTrip and not onFuelTrip then
+        onFuelTrip = true
+        local ok, err = pcall(T.fuelTrip)
+        onFuelTrip = false
+        if not ok then error(err, 0) end
+        if turtle.getFuelLevel() >= T.cfg.lowFuel then return end
+    end
+    while not T.refuelTo(T.cfg.topupFuel) and turtle.getFuelLevel() < need do
         print("Out of fuel at " .. T.posString() .. ". Add fuel, then press a key.")
         os.pullEvent("key")
     end
@@ -946,6 +975,50 @@ function T.restockFrom(side, name, target, opts)
     if not opts.quiet then
         print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
     end
+end
+
+-- Burn fuel from the container on `side` until the tank holds `target`
+-- (capped at the tank's limit), fuel already on board first.  Takes one
+-- item of a kind to learn what it's worth, then only as many as needed.
+-- Empty buckets left by lava go back in.  True if the target was reached.
+function T.refuelFrom(side, target)
+    if turtle.getFuelLevel() == "unlimited" then return true end
+    target = math.min(target, turtle.getFuelLimit())
+    local _, drop = sideFuncs(side)
+    local buckets = T.countItem("minecraft:bucket")
+    T.refuelTo(target)
+    for name in pairs(T.fuel) do
+        local per
+        while turtle.getFuelLevel() < target and (T.countContainer(side, name) or 1) > 0 do
+            local want = per and math.ceil((target - turtle.getFuelLevel()) / per) or 1
+            local have = T.countItem(name)
+            T.restockFrom(side, name, have + want, { quiet = true, room = 0 })
+            if T.countItem(name) == have then break end
+            local before = turtle.getFuelLevel()
+            local sel = turtle.getSelectedSlot()
+            for s = 1, 16 do
+                local it = turtle.getItemDetail(s)
+                if it and it.name == name then
+                    turtle.select(s)
+                    while turtle.getFuelLevel() < target and turtle.refuel(1) do end
+                end
+            end
+            turtle.select(sel)
+            if turtle.getFuelLevel() == before then break end
+            per = per or (turtle.getFuelLevel() - before)
+        end
+    end
+    local sel = turtle.getSelectedSlot()
+    for s = 16, 1, -1 do
+        if T.countItem("minecraft:bucket") <= buckets then break end
+        local it = turtle.getItemDetail(s)
+        if it and it.name == "minecraft:bucket" then
+            turtle.select(s)
+            drop(math.min(it.count, T.countItem("minecraft:bucket") - buckets))
+        end
+    end
+    turtle.select(sel)
+    return turtle.getFuelLevel() >= target
 end
 
 return T

@@ -208,6 +208,15 @@ fixes the lane first and then replants.
   it keeps planting items for one pass, fuel and its tools, plus dirt and buckets only
   while a repair is using them. Keep **seeds, dirt and a bucket or two in the
   chest**.
+- **Fuel.** Keep **fuel in the chest** too. Every visit home tops the tank up
+  from it to about one pass's worth. Before any move that would leave too
+  little fuel to get home (plus a margin of 30 for detours), the turtle stops
+  what it's doing, flies home, empties out, refuels from the chest, flies back
+  to the exact spot and carries on, mid-learn, mid-clone or mid-pass. If the
+  chest has no fuel either, it waits **at home** and says so, checking again
+  whenever you put fuel in the chest or the turtle (or every 10 seconds). A run
+  starts with whatever fuel it can get, as long as it has enough to make
+  headway.
 - **Compost hopper (optional).** Put a hopper **directly behind the turtle's start
   position**, at the turtle's height, feeding a composter. The turtle looks for it
   at the start of every run. Composting happens while the turtle waits for its

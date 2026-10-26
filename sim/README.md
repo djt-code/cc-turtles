@@ -30,6 +30,7 @@ reading: compare the numbers before and after a change (`git stash`, run,
 | `farm_chest_merge_stacks` | farm | part stacks in the farm chest are merged on every visit |
 | `farm_clone` | farm | `farm clone` of a 7x16 farm with two lanes; moves, buckets scooped/poured, lane tiles that aren't sources |
 | `farm_clone_lane_fallback` | farm | as `farm_clone`, but two lane tiles never fill on their own and must be poured |
+| `farm_fuel` | farm | real fuel levels: learn and clone starting nearly empty with little coal in the chest; trips home to refuel and back, waiting at home for the "player" to add coal; never a move on an empty tank |
 | `farm_pass_moves` | farm | moves for one plain farming pass on a 9x8 farm (`ALONGX=1`: lane along x) |
 | `turtlelib_restock` | turtlelib | `T.restockFrom` reaching items behind other stacks in a chest |
 | `autocompost_with_chest` | autocompost | composts what it can, rejects the rest into the chest in front |

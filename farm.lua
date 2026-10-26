@@ -282,6 +282,12 @@ local function goToCruise(tx, tz)
     return T.goTo(tx, tz) and T.toY(0)
 end
 
+-- Fuel to get home and down to the chest from here: up to travel height,
+-- across, and back down (the chest is at most 3 below home).
+function T.homeCost()
+    return math.abs(T.pos.x) + math.abs(T.pos.z) + math.abs(travelY - T.pos.y) + travelY + 4
+end
+
 local warnedLow = false
 local function warnLow()
     if not warnedLow then
@@ -399,6 +405,8 @@ end
 local wantWaterBuckets = 0     -- buckets the lane builder carries
 local needWaterBuckets = 0     -- ...of which it can't do without
 local wantBoneMeal = 0         -- bone meal to carry, during a grow pass
+local fuelGoal = 0             -- fuel to set out with: about one pass
+local FUEL_WORK = 100          -- least fuel worth setting out with, beyond the trip
 
 -- What stays on board at every visit home: seeds for a pass, fuel, the
 -- tools, and dirt and buckets only while a repair needs them.  Everything
@@ -540,6 +548,7 @@ local function dumpAtHome()
     T.face(0)
     if toChest() then
         T.dumpDownWait(keepPolicy)               -- a full chest: wait for room
+        if fuelGoal > 0 then T.refuelFrom(CHEST_SIDE, fuelGoal) end
         for _, seed in ipairs(SEEDS) do
             restockItem(seed, seedTarget(seed), (seed:gsub("^minecraft:", ""):gsub("_", " ")))
         end
@@ -586,6 +595,47 @@ local function waitAndCompost(seconds)
     end
     local left = wake - os.clock()
     if left > 0 then sleep(left) end
+end
+
+-- Wait at home until the tank holds `enough`, refuelling from the
+-- inventory and the chest whenever something changes (or every 10 s).
+local function waitForFuel(enough)
+    local level = turtle.getFuelLevel()
+    if level == "unlimited" or level >= enough then return end
+    print(string.format("Need %d fuel, have %d: put fuel (coal, charcoal, lava...) in the chest or the turtle.",
+        enough, turtle.getFuelLevel()))
+    while turtle.getFuelLevel() < enough do
+        local timer = os.startTimer(10)
+        repeat
+            local ev, id = os.pullEvent()
+        until (ev == "timer" and id == timer) or ev == "turtle_inventory" or ev == "key"
+        T.refuelTo(math.max(enough, fuelGoal))
+        if turtle.getFuelLevel() < enough and toChest() then
+            T.refuelFrom(CHEST_SIDE, math.max(enough, fuelGoal))
+        end
+        T.toStartHeight()
+    end
+    print("Fuel: " .. turtle.getFuelLevel())
+end
+
+-- T.ensureFuel calls this before a move that would leave too little fuel
+-- to get home: go home, empty out and refuel, then come back to the exact
+-- spot and facing so whatever was under way carries on.  With no fuel to
+-- be had it waits at home, not out in the field.
+local function fuelTrip()
+    local x, y, z, d = T.pos.x, T.pos.y, T.pos.z, T.dir
+    print(string.format("Low on fuel (%d) at %s: going home to refuel.", turtle.getFuelLevel(), T.posString()))
+    dumpAtHome()
+    local back = math.abs(x) + math.abs(z) + math.abs(travelY - y) + travelY
+    waitForFuel(2 * back + T.cfg.fuelMargin + FUEL_WORK)
+    T.toY(travelY)
+    T.goTo(x, z)
+    T.toY(y)
+    T.face(d)
+    if T.pos.x ~= x or T.pos.y ~= y or T.pos.z ~= z then
+        print(string.format("Couldn't get back to (%d,%d,%d) after refuelling; carrying on from %s.",
+            x, y, z, T.posString()))
+    end
 end
 
 -- Make sure the next tile's drops will fit, so nothing is left on the
@@ -1500,10 +1550,24 @@ if not T.requireHome(forceHere, "farm") then return end
 
 T.cfg.width, T.cfg.length = WIDTH, LENGTH
 local perTile = doClone and 5 or CRUISE_MOVES_PER_TILE
-T.requireFuel(math.floor(math.abs(WIDTH * LENGTH) * perTile)
-              + 2 * countKind("water")                -- worst case: a dip per lane tile
-              + 2 * countKind("cane")                 -- dropping down to check cane
-              + math.abs(WIDTH) + math.abs(LENGTH) + 150)
+fuelGoal = math.floor(math.abs(WIDTH * LENGTH) * perTile)
+           + 2 * countKind("water")                   -- worst case: a dip per lane tile
+           + 2 * countKind("cane")                    -- dropping down to check cane
+           + math.abs(WIDTH) + math.abs(LENGTH) + 150
+-- Set out with about a pass's worth, from the chest if need be; short of
+-- that, go anyway with enough to make headway: the turtle comes home to
+-- refuel before it could run dry.
+T.refuelTo(fuelGoal)
+if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < fuelGoal then
+    if toChest() then T.refuelFrom(CHEST_SIDE, fuelGoal) end
+    T.toStartHeight()
+    waitForFuel(T.cfg.fuelMargin + FUEL_WORK)
+    if turtle.getFuelLevel() < fuelGoal then
+        print(string.format("Fuel %d of the ~%d a pass takes; will come home to refuel as needed.",
+            turtle.getFuelLevel(), fuelGoal))
+    end
+end
+T.fuelTrip = fuelTrip
 
 if haveMap and not doClone then
     for k, kind in pairs(tiles) do if kind == "water" then wet[k] = true end end
