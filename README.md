@@ -318,3 +318,20 @@ T.goTo(0, 0)
 Everything is relative to the start: `(0,0,0)` facing `+z`, `+x` to the right.
 `T.goTo` learns obstacles as it bumps into them and re-plans with BFS; it returns
 `false` only when no route exists through the known map.
+
+## Simulators
+
+`sim/` holds offline simulators for testing changes without a Minecraft
+server: each mocks the CC:Tweaked APIs around a small block world, runs the
+real program and prints what happened. They need Python and
+[lupa](https://pypi.org/project/lupa/) (`pip install lupa`):
+
+```
+python sim/run.py                  # all of them, with a summary
+python sim/run.py farm_clone       # one (or several) by name
+python sim/run.py --check          # syntax-check every program
+```
+
+See [sim/README.md](sim/README.md) for what each one covers. They're tests
+for the code, not for the game: the mock world only models the vanilla
+mechanics the programs rely on, so confirm anything new in game too.
