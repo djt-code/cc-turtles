@@ -6,10 +6,15 @@
 -- keeps running unattended.
 --
 -- Usage:  mine <width> <height> [length] [--spacing N] [--no-lights] [--here]
---         mine --resume          keep digging the tunnel it stopped in
+--         mine --resume          keep digging the tunnel it stopped in (from
+--                                the start, or from the last home)
 --         mine ... --new         start a fresh tunnel, forgetting the old one
---         mine reset             return to the start after a Ctrl+T or restart
---         mine reset --here      turtle was put back by hand: reset position
+--         mine haul              shuttle the valuables in the homes back to
+--                                the start, as many trips as it takes
+--         mine reset             back to the last home it built, after a
+--                                Ctrl+T or restart
+--         mine reset --to-start  back to the start instead
+--         mine reset --here      turtle was put back at the start by hand
 --
 -- width  = blocks to the RIGHT of the turtle (negative = to the LEFT)
 -- height = blocks UP from the turtle (negative = DOWN)
@@ -91,8 +96,9 @@
 --    and --no-lights turns it off (torches are then just valuables).
 --  * Never digs chests, barrels, shulker boxes, spawners or ComputerCraft
 --    blocks (other turtles, computers).
---  * Position is saved after every move, so `mine reset` can bring it
---    home after a Ctrl+T or a server restart.  It runs under T.run, so a
+--  * Position is saved after every move, so `mine reset` can bring it to
+--    its last home (or `--to-start`, the start) after a Ctrl+T or a server
+--    restart, checking the home's chests are there when it arrives.  It runs under T.run, so a
 --    Ctrl+T in the middle of a move or turn waits for it to be saved.
 --    `mine reset` checks the heading against the tunnel first, and stops
 --    if the way back digs through far more rock than it should.
@@ -125,15 +131,17 @@ for i = #args - 1, 1, -1 do
     end
 end
 local doReset = args[1] == "reset"
+local toStart = T.popFlag(args, "--to-start")
+local doHaul = args[1] == "haul"
 local WIDTH, HEIGHT, LENGTH = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
 
 local function usage()
     print("Usage: mine <width> <height> [length] [--spacing N] [--no-lights] [--here]")
-    print("       mine --resume | mine reset [--here]")
+    print("       mine --resume | mine haul | mine reset [--to-start | --here]")
     print("width: + right / - left; height: + up / - down;")
     print("no length: dig until out of chests, fuel or room")
 end
-if not (doReset or resume) and (not (WIDTH and HEIGHT) or WIDTH == 0 or HEIGHT == 0
+if not (doReset or resume or doHaul) and (not (WIDTH and HEIGHT) or WIDTH == 0 or HEIGHT == 0
         or (args[3] and not (LENGTH and LENGTH >= 1))) then
     usage()
     return
@@ -1307,12 +1315,11 @@ local function collect(side)
     return left
 end
 
-local function returnToStart()
-    inTrip, T.fuelTrip, bound = true, nil, nil
-    T.cfg.lowFuel = 1                       -- the tank was kept for this
-    for i = #trail, 1, -1 do go(OPP[trail[i]]) end
-    trail = {}
-    tunnelHome()
+-- From the home the turtle is at, walk back to the start collecting the
+-- valuables from every home on the way, and leave them at the start.
+-- True if it got there and the start's chests took everything.
+local function walkBackCollecting()
+    leftBehind = {}
     unload("bulk")
     print("Walking back to the start, collecting valuables.")
     for k = home.k, 1, -1 do
@@ -1331,7 +1338,48 @@ local function returnToStart()
     home = homeAt(0)
     local ok = unload("everything")
     if not ok then print("The chests at the start are full or missing: the rest is still in the turtle.") end
-    return T.pos.x == 0 and T.pos.y == 0 and T.pos.z == 0
+    return ok and T.pos.x == 0 and T.pos.y == 0 and T.pos.z == 0
+end
+
+local function returnToStart()
+    inTrip, T.fuelTrip, bound = true, nil, nil
+    T.cfg.lowFuel = 1                       -- the tank was kept for this
+    for i = #trail, 1, -1 do go(OPP[trail[i]]) end
+    trail = {}
+    tunnelHome()
+    return walkBackCollecting()
+end
+
+-- `mine haul`: shuttle the valuables in the homes back to the start,
+-- walking out to the last home and back collecting, as many trips as it
+-- takes (the most valuable come first), refuelling at the start.
+-- Supplies stay where they are, for `mine --resume`.
+local function haul()
+    inTrip, T.fuelTrip = true, nil
+    T.cfg.lowFuel = 1                       -- each trip's fuel is checked first
+    local last = homeAt(lastHome)
+    for _ = 1, 20 do
+        if home.k == 0 then
+            local need = 2 * last.z + T.cfg.fuelMargin + FUEL_WORK
+            if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < need then
+                T.refuelFrom("top", need)
+            end
+            if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < need then
+                print(string.format("A trip out to home %d and back takes %d fuel; it has %d. Put fuel in the top chest.",
+                    last.k, need, turtle.getFuelLevel()))
+                return
+            end
+            print(string.format("Out to home %d (z=%d).", last.k, last.z))
+            alongAxis("z", 1); alongAxis("z", last.z)
+            T.face(last.face)
+            home = last
+        end
+        if not walkBackCollecting() then return end
+        if next(leftBehind) == nil then
+            print("All the valuables are at the start.")
+            return
+        end
+    end
 end
 
 --------------------------------------------------------------------------
@@ -1406,7 +1454,17 @@ if doReset then
     local saved = T.loadPos()
     if not saved then print("No saved position; the turtle hasn't moved since its last job."); return end
     T.pos.x, T.pos.y, T.pos.z, T.dir = saved.x, saved.y, saved.z, saved.dir
-    print(string.format("Last position %s facing %d. Heading back to the start.", T.posString(), T.dir))
+    -- where to: the last home it built, or the start (asked for, no homes
+    -- yet, or it's at the start already)
+    local target = homeAt(job.homes)
+    if toStart or saved.z <= 0 then target = homeAt(0) end
+    if T.pos.x == target.x and T.pos.y == target.y and T.pos.z == target.z then
+        T.face(target.face)
+        print(target.k == 0 and "At the start already." or ("At home " .. target.k .. " already."))
+        return
+    end
+    print(string.format("Last position %s facing %d. Heading back to %s.", T.posString(), T.dir,
+        target.k == 0 and "the start" or string.format("home %d (z=%d)", target.k, target.z)))
     inTrip = true                       -- no trips: just get back
     local h = checkHeading(job.homes * SPACING)
     if h and h ~= T.dir then
@@ -1424,19 +1482,69 @@ if doReset then
             alongAxis("x", math.max(X0, math.min(X1, T.pos.x)))
             alongAxis("z", math.max(1, math.min(LENGTH, T.pos.z)))
         end
-        alongAxis("x", 0); alongAxis("y", 0); alongAxis("z", 0)
-        T.face(0)
+        alongAxis("x", 0); alongAxis("y", 0); alongAxis("z", target.z)
+        T.face(target.face)
     end)
     digLimit = nil
-    if not ok then
-        if type(err) ~= "table" or not err.lost then error(err, 0) end
-        print("It's digging through far more rock than the way back should take, so its saved")
+    -- there means its chests are there
+    local there = ok and T.pos.x == 0 and T.pos.y == 0 and T.pos.z == target.z
+    if there then
+        if target.k == 0 then there = containerOn("top") and containerOn("bottom")
+        else there = containerOn("front") and containerOn(target.bulk) end
+    end
+    if not ok or not there then
+        if not ok and (type(err) ~= "table" or not err.lost) then error(err, 0) end
+        print(not ok and "It's digging through far more rock than the way back should take, so its saved"
+            or "There are no home chests where it ended up, so its saved")
         print("position or heading must be wrong (it thinks it's at " .. T.posString() .. "). Stopped.")
         print("Pick it up, put it back at the start facing down the tunnel, and run `mine reset --here`.")
         return
     end
-    if T.pos.x == 0 and T.pos.y == 0 and T.pos.z == 0 then print("Home.")
-    else print("Couldn't reach the start; stopped at " .. T.posString()) end
+    if T.pos.x == 0 and T.pos.y == 0 and T.pos.z == target.z then
+        if target.k == 0 then print("At the start.")
+        else
+            print(string.format("At home %d (z=%d). `mine --resume` carries on from here;", target.k, target.z))
+            print("`mine haul` brings the valuables back to the start.")
+        end
+    else
+        print("Couldn't get there; stopped at " .. T.posString())
+    end
+    return
+end
+
+-- Where a run starts: at the start, or (resuming or hauling) at the last
+-- home, where `mine reset` leaves it.  nil (having said why) if neither.
+local function startingHome(fromLast)
+    local saved = T.loadPos()
+    local last = homeAt(lastHome)
+    if fromLast and lastHome > 0 and saved and saved.x == 0 and saved.y == 0 and saved.z == last.z then
+        T.pos.x, T.pos.y, T.pos.z, T.dir = 0, 0, last.z, saved.dir
+        T.face(last.face)
+        if not (containerOn("front") and containerOn(last.bulk)) then
+            print("Home " .. last.k .. "'s chests are missing.")
+            return nil
+        end
+        return last
+    end
+    if not T.requireHome(forceHere, "mine") then return nil end
+    if not (containerOn("top") and containerOn("bottom")) then
+        print("Needs a chest above the turtle (valuables) and one below it (bulk).")
+        return nil
+    end
+    return homeAt(0)
+end
+
+if doHaul then
+    if not (job and job.homes > 0) then print("No homes yet: everything is at the start already."); return end
+    useJob(job)
+    lastHome = job.homes
+    segEnd = LENGTH
+    home = startingHome(true)
+    if not home then return end
+    T.withTool(pickaxe, haul)
+    for k, n in pairs(leftBehind) do
+        print(string.format("Still %d items in home %d (z=%d).", n, k, homeAt(k).z))
+    end
     return
 end
 
@@ -1452,12 +1560,8 @@ else
     setBox()
 end
 
-if not T.requireHome(forceHere, "mine") then return end
-home = homeAt(0)
-if not (containerOn("top") and containerOn("bottom")) then
-    print("Needs a chest above the turtle (valuables) and one below it (bulk).")
-    return
-end
+home = startingHome(resume)
+if not home then return end
 local lanes = #planLanes()
 fuelGoal = lanes * SPACING + 4 * SPACING + 300
 saveJob("active")
@@ -1482,8 +1586,8 @@ T.withTool(pickaxe, function()
         T.fuelTrip = function() trip("Low on fuel") end
         print(string.format("Mining a %dx%d tunnel, %s, homes every %d blocks.", math.abs(WIDTH),
             math.abs(HEIGHT), LENGTH == math.huge and "as long as it can" or (LENGTH .. " long"), SPACING))
-        -- resuming: carry the start's new supplies out to the last home
-        if resume and job.homes > 0 then
+        -- resuming from the start: carry its new supplies out to the last home
+        if resume and job.homes > 0 and home.k == 0 then
             local last = homeAt(job.homes)
             if not fuelToGoOn(2 * last.z) then stop("Not enough fuel to get back out to home " .. last.k .. ".") end
             inTrip = true

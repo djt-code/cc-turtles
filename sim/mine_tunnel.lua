@@ -15,8 +15,9 @@
 -- fuel); a crevasse across the tunnel, which it bridges so a player can
 -- walk the floor; a tunnel with no length that runs out of chests, then
 -- `mine --resume` once more chests are added (twice: the second time a
--- home holds more valuables than fit, and the most valuable come back);
--- bedrock; running short of fuel; `mine reset` from inside a vein; and a
+-- home holds more valuables than fit, and the most valuable come back),
+-- `mine haul` bringing the rest back, `mine reset` to the last home and
+-- `--resume` from there; bedrock; running short of fuel; `mine reset` from inside a vein; and a
 -- tunnel to the left and down.
 local PROJ = ...
 package.path = PROJ .. "/?.lua;" .. package.path
@@ -640,6 +641,30 @@ check("brought back every diamond and all the iron", (got["minecraft:diamond"] o
 check("said what it left in home 1", logHas("No room to bring back %d+ items from home 1"))
 check("back at the start", atStart())
 
+-- 4c. `mine haul`: out to the last home (5) and back collecting, as many
+--     trips as it takes, until home 1's string is all at the start
+FUEL = 500
+run("haul")
+local _, got2 = contents(chestAt(0, 1, 0))
+local _, h1left = contents(chestAt(-1, 0, 8))
+check("hauled the rest of home 1's string back", (got2["minecraft:string"] or 0) == 640 and not h1left["minecraft:string"],
+    (got2["minecraft:string"] or 0) .. " string at the start")
+check("said everything's at the start", logHas("All the valuables are at the start"))
+check("left the supplies in the last home", (select(2, contents(chestAt(-1, 0, 40)))["minecraft:coal"] or 0) > 0)
+check("back at the start", atStart())
+
+-- 4d. stopped between homes 4 and 5: `mine reset` goes on to home 5 (the
+--     last), and `mine --resume` carries on from there, not the start
+P.x, P.y, P.z, P.d = 1, 1, 36, 0
+files[".turtlepos"] = "1 1 36 0 flat"
+run("reset")
+check("reset to home 5 (z=40), facing its wall", P.x == 0 and P.y == 0 and P.z == 40 and P.d == 3)
+for _, it in ipairs(stock(2, 0)) do table.insert(chestAt(-1, 0, 40), it) end   -- two more chests, out there
+run("--resume")
+check("resumed from home 5, not the start", not logHas("Back at home") and logHas("Built home 6"))
+check("tunnel dug to z=48", leftIn(0, 1, 0, 1, 1, 48) == 0, leftIn(0, 1, 0, 1, 1, 48) .. " blocks left")
+check("back at the start", atStart())
+
 -- 5. bedrock across the tunnel at z=13: stops there and comes back
 setup(stock(10, 64))
 for x = 0, 1 do for y = 0, 1 do set(x, y, 13, { name = "minecraft:bedrock" }) end end
@@ -789,6 +814,7 @@ check("back at the start", atStart())
 local function dugTunnel()
     setup(stock(4, 64))
     for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do set(x, y, z, nil) end end end
+    for _, z in ipairs({ 16, 32 }) do set(-1, 0, z, chest()); set(0, -1, z, chest()) end
     files = { ["mine.job"] = "3 3 0 16 2 active" }    -- homes at 16 and 32: dug to 32
     inv = {}
     EQ = { right = "minecraft:diamond_pickaxe" }
@@ -800,17 +826,24 @@ files[".turtlepos"] = "0 1 20 0 flat"                 -- ... saved as facing ahe
 local before = leftIn(-3, 5, -3, 5, 1, 41)
 run("reset")
 check("saw it really faces right, and corrected it", logHas("really faces 1, not 0"))
-check("got home", atStart())
+check("went to the last home (z=32), facing its wall", P.x == 0 and P.y == 0 and P.z == 32 and P.d == 3)
 check("dug nothing on the way", leftIn(-3, 5, -3, 5, 1, 41) == before)
+-- 13b. the same with --to-start: all the way back to the start
+dugTunnel()
+P.x, P.y, P.z, P.d = 0, 1, 20, 1
+files[".turtlepos"] = "0 1 20 0 flat"
+run("reset", "--to-start")
+check("--to-start went to the start", atStart())
 
 -- 14. in the middle of a 3-wide tunnel every way is open, so it can't
---     tell: it goes by the (wrong) saved heading, but stops once it's
---     digging through far more rock than the way back could take
+--     tell: it goes by the (wrong) saved heading, but stops, finding no
+--     home chests where it ends up (or digging through far more rock than
+--     the way back could take)
 dugTunnel()
 P.x, P.y, P.z, P.d = 1, 1, 20, 1
 files[".turtlepos"] = "1 1 20 0 flat"
 before = leftIn(-20, 20, -3, 5, 1, 41)
 run("reset")
 local dug = before - leftIn(-20, 20, -3, 5, 1, 41)
-check("stopped, saying its position or heading must be wrong", logHas("far more rock"))
+check("stopped, saying its position or heading must be wrong", logHas("position or heading must be wrong"))
 check("dug no more than its limit (12)", dug <= 12, dug .. " blocks")

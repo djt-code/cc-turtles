@@ -304,8 +304,9 @@ more than one block.
 ```
 mine <width> <height> [length] [--spacing N] [--no-lights] [--here]
 mine --resume
+mine haul
 mine ... --new
-mine reset [--here]
+mine reset [--to-start | --here]
 ```
 
 Digs a tunnel `width` blocks wide (to the right; negative: to the left) and
@@ -354,7 +355,15 @@ recognise. Needs a pickaxe, equipped or in the inventory.
 - **Resume:** supplies left over stay in the last home. After a stop, top up
   the start's top chest with chests and fuel and run `mine --resume`. It
   carries the new supplies out to the last home and carries on from there.
-  To start a fresh tunnel somewhere else instead, add `--new`.
+  Run from the last home (where `mine reset` leaves it), it just carries on
+  from there. To start a fresh tunnel somewhere else instead, add `--new`.
+- **Haul:** `mine haul` shuttles the valuables in the homes back to the start
+  whenever you like. Run it from the start or from the last home. It walks
+  out to the last home, then back collecting from every home (the most
+  valuable first when it can't carry everything), and leaves them in the
+  start's top chest. It repeats until the homes are empty, refuelling from
+  the top chest at the start; it stops if there isn't enough fuel for another
+  trip. Supplies stay where they are, so `mine --resume` still finds them.
 - **Lanes:** each segment is dug in lanes along it: every row of the two side
   columns, and every third row plus the top and bottom ones in the columns
   between. The rows in between are dug from above and below. So the turtle
@@ -442,10 +451,13 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   Behind it, torches higher up the walls are safe.
 - **Never dug:** chests, barrels, shulker boxes, spawners and ComputerCraft
   blocks (other turtles, computers).
-- **Reset:** position is saved after every move. `mine reset` brings the
-  turtle back to the start after a Ctrl+T or a server restart, even from
-  inside a vein: it digs straight back into the tunnel, then follows it out.
-  The tunnel can then be carried on with `mine --resume`.
+- **Reset:** position is saved after every move. After a Ctrl+T or a server
+  restart, `mine reset` brings the turtle to the **last home it built**, even
+  from inside a vein: it digs straight back into the tunnel, then follows it.
+  From there `mine --resume` carries on, or `mine haul` brings the valuables
+  back. `mine reset --to-start` goes all the way back to the start instead.
+  It only counts as arrived if the home's chests are there; if not, its
+  saved position or heading must be wrong and it stops and says so.
   - **Ctrl+T is safe:** a turtle command (a move or a turn) waits for the
     game to do it. A plain Ctrl+T in that wait stops the program, but the
     turtle still moves or turns, without the program recording it. So `mine`
