@@ -31,21 +31,25 @@ scrolls it past as it runs. Ctrl+T stops it.
 
 ## Watching one on a monitor
 
-`sim/watchsim <name>` plays a farm simulator out move by move on an
-attached monitor:
+`sim/watchsim <name>` plays a simulator out move by move on an attached
+monitor:
 
-- **top-down view** of the farm (+z up the screen, +x to the right), the
-  turtle as a yellow arrow;
-- **side view**, a slice through the turtle's current x (z across, y up),
-  so you see it dip into lanes, dig and climb;
-- the move count, position, facing and fuel, and the farm's own messages
+- for a farm, a **top-down view** of it (+z up the screen, +x to the
+  right), the turtle as a yellow arrow;
+- for the mine (`mine_tunnel`), a **plan** instead: a level slice through
+  the rock at the turtle's height, so you see the tunnel open up lane by
+  lane and the turtle wander off into ore veins;
+- a **side view**, a slice through the turtle's current x (z across, y up),
+  so you see it dip into lanes, dig and climb. For the mine, both views
+  follow the turtle along the tunnel;
+- the move count, position, facing and fuel, and the program's own messages
   as it prints them. The computer's screen shows the simulator's report.
 
 Keys on the computer: **space** pause/resume (or tap the monitor),
 **right** one move while paused, **up/down** faster/slower (from 1 s down
 to one move per tick), **f** skip to the end of the current farm run,
 **q** quit. `sim/watchsim` on its own lists the simulators it can show
-(the `farm_*` ones; the others have no world to draw).
+(the farm ones and `mine_tunnel`; the others have no world to draw).
 
 What to build:
 
@@ -62,16 +66,23 @@ What to build:
   | `farm_clone`, `farm_clone_lane_fallback`, `farm_fuel` (7x16) | 57x21 | 3 wide x 2 tall |
   | `farm_pass_moves` (9x8) | 45x15 | 3 wide x 2 tall |
   | every other `farm_*` (5x6) | 33x15 | 2 wide x 2 tall |
+  | `mine_tunnel` (follows the turtle) | 51x20 | 3 wide x 2 tall |
 
-  **4x3 (78x38) shows all of them, with room for plenty of the farm's
-  messages; 3x2 shows all but `farm_reset`.** A monitor that's too small gets a message naming the
+  **4x3 (78x38) shows all of them, with room for plenty of the
+  messages; 3x2 shows all but `farm_reset`.** The mine's views grow with
+  the monitor: a bigger one shows more of the tunnel at once. A monitor that's too small gets a message naming the
   size to build.
 - Put the monitor against any side of the computer, or connect it with
   wired modems (right-click each modem to connect it). With more than one
   monitor attached, name the one to use: `sim/watchsim farm_clone
   monitor_0`.
 
-What the colours mean: blue `~~` water source, light blue `~n` flowing
+What the colours mean: in the mine, `##` rock in its own shade (stone,
+deepslate, andesite, diorite, granite, tuff), ores by symbol on the
+metal's colour (`Fe` iron, `Au` gold, `Di` diamond, `Em` emerald, `Co`
+coal, `La` lapis, `Rs` redstone, `Cu` copper, `**` a modded ore), red on
+orange `~~` lava, `..` gravel, `BB` bedrock, black open space. On a farm:
+blue `~~` water source, light blue `~n` flowing
 water, brown `::` farmland, brown dirt, green grass, crops as letter and
 age (`w3` wheat at stage 3) on green, lime once ripe, `||` sugar cane,
 `..` sand, orange `[]` chest, gray `\/` hopper, gray `##` stone, yellow

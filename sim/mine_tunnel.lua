@@ -212,6 +212,12 @@ local function front() return P.x + DX[P.d], P.y, P.z + DZ[P.d] end
 local function above() return P.x, P.y + 1, P.z end
 local function below() return P.x, P.y - 1, P.z end
 
+-- what watchsim.lua draws: the world and the turtle, and the slices of a
+-- mine to show (x and y take in the tunnels and their veins; z runs along
+-- them, the view following the turtle)
+SIM_WORLD = { W = { get = get }, P = P, moves = function() return moves end,
+              view = { x = { -5, 7 }, y = { -5, 7 }, z = { -1, 70 } } }
+
 turtle = {
     forward = function() return move(DX[P.d], 0, DZ[P.d]) end,
     back = function() return move(-DX[P.d], 0, -DZ[P.d]) end,

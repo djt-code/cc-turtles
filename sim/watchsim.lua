@@ -1,4 +1,4 @@
--- watchsim.lua -- play a farm simulator out on a monitor, move by move
+-- watchsim.lua -- play a simulator out on a monitor, move by move
 --
 -- Usage:
 --   sim/watchsim                    list the simulators it can show
@@ -7,11 +7,15 @@
 -- Needs an Advanced Computer (or turtle) with the repo and an Advanced
 -- Monitor, at least 3 blocks wide by 2 tall, attached to it directly or
 -- through wired modems; give the monitor's name when there's more than
--- one.  The monitor shows:
---   * top-down view of the farm (+z up, +x right), the turtle in yellow
---   * side view: a slice through the turtle's column x (z across, y up)
---   * the turtle's moves, position, facing and fuel, and the farm's own
---     messages as it prints them
+-- one.  It shows the simulators that publish their world (SIM_WORLD):
+--   * a farm: a top-down view of it (+z up, +x right), the turtle in
+--     yellow, and a side view, a slice through the turtle's column x
+--     (z across, y up)
+--   * a mine (SIM_WORLD.view): a plan, a level slice at the turtle's
+--     height, and the same side view, both following the turtle along
+--     the tunnel
+--   * the turtle's moves, position, facing and fuel, and the program's
+--     own messages as it prints them
 -- The computer's screen shows the simulator's report.
 --
 -- Keys on the computer (or tap the monitor to pause/resume):
@@ -25,25 +29,28 @@ local here = realFs.getDir(shell.getRunningProgram())
 local root = realFs.getDir(here)
 local S = dofile(realFs.combine(here, "lib/sandbox.lua"))
 
+-- Does the simulator at `path` publish a world to show?
+local function showable(path)
+    local f = realFs.open(path, "r")
+    local src = f.readAll()
+    f.close()
+    return src:find("SIM_WORLD", 1, true) ~= nil
+end
+
 local args = { ... }
 if not args[1] then
-    print("Usage: watchsim <name> [monitor]   (farm simulators only)")
+    print("Usage: watchsim <name> [monitor]")
     for _, n in ipairs(S.list(here)) do
-        if n:find("^farm_") then print("  " .. n) end
+        if showable(realFs.combine(here, n .. ".lua")) then print("  " .. n) end
     end
     return
 end
 local name = args[1]:gsub("%.lua$", "")
 local path = realFs.combine(here, name .. ".lua")
 if not realFs.exists(path) then printError("No simulator " .. name); return end
-do
-    local f = realFs.open(path, "r")
-    local src = f.readAll()
-    f.close()
-    if not src:find("SIM_WORLD", 1, true) then
-        printError(name .. " has no world to show; watchsim shows the farm_* simulators.")
-        return
-    end
+if not showable(path) then
+    printError(name .. " has no world to show; `sim/watchsim` lists the ones that do.")
+    return
 end
 local mon = args[2] and peripheral.wrap(args[2]) or peripheral.find("monitor")
 if not mon then printError("No monitor found. Attach an Advanced Monitor (3x2 blocks or more)."); return end
@@ -59,9 +66,32 @@ local CROP = {
     ["minecraft:wheat"] = { "w", 7 }, ["minecraft:carrots"] = { "c", 7 },
     ["minecraft:potatoes"] = { "p", 7 }, ["minecraft:beetroots"] = { "b", 3 },
 }
+-- Ores: their chemical symbol, more or less, on the colour of the metal.
+local ORE = {
+    iron = { "Fe", "f", "1" }, gold = { "Au", "f", "4" }, diamond = { "Di", "f", "3" },
+    emerald = { "Em", "f", "5" }, coal = { "Co", "0", "7" }, lapis = { "La", "0", "b" },
+    redstone = { "Rs", "0", "e" }, copper = { "Cu", "f", "1" },
+}
+-- Rock: "##" in its own shade.
+local ROCK = {
+    ["minecraft:stone"] = { "8", "7" }, ["minecraft:deepslate"] = { "7", "f" },
+    ["minecraft:andesite"] = { "7", "8" }, ["minecraft:diorite"] = { "8", "0" },
+    ["minecraft:granite"] = { "1", "c" }, ["minecraft:tuff"] = { "8", "7" },
+}
 local function glyph(b)
     if not b then return "  ", "0", "f" end
     local n = b.name
+    if n == "minecraft:lava" then return "~~", "e", "1" end
+    if ROCK[n] then return "##", ROCK[n][1], ROCK[n][2] end
+    if n:find("_ore$") then
+        for metal, g in pairs(ORE) do
+            if n:find(metal) then return g[1], g[2], g[3] end
+        end
+        return "Or", "f", "a"
+    end
+    if b.tags and (b.tags["c:ores"] or b.tags["forge:ores"]) then return "**", "f", "a" end
+    if n == "minecraft:gravel" then return "..", "7", "8" end
+    if n == "minecraft:bedrock" then return "BB", "8", "f" end
     if n == "minecraft:water" then
         if b.level then return "~" .. (b.level % 10), "b", "3" end   -- flowing
         return "~~", "3", "b"                                         -- source
@@ -102,8 +132,26 @@ local function blocksFor(cols, rows)
 end
 
 local L                 -- the layout, worked out once the world is known
+local MIN_SIDE_Z = 12      -- a mine's side view shows at least this many blocks along z
 local function layout(world)
     local mw, mh = mon.getSize()
+    if world.view then
+        -- a mine: the plan on the left as tall as the monitor, the side view
+        -- on the right as wide as what's left, the text under it
+        local v = world.view
+        local topW, sideH = 2 * (v.x[2] - v.x[1] + 1), v.y[2] - v.y[1] + 1
+        local MIN_TEXT = 4
+        local w, h = topW + 1 + 2 * MIN_SIDE_Z, 3 + sideH + MIN_TEXT
+        if w <= mw and h <= mh then
+            local sideZ = math.floor((mw - topW - 1) / 2)
+            return { top = { 1, 3 }, side = { topW + 2, 3 }, text = { topW + 2, 3 + sideH + 1 },
+                     textW = mw - topW - 1, textH = mh - (3 + sideH), topW = topW, topH = mh - 2,
+                     sideW = 2 * sideZ, sideH = sideH, sideZ = sideZ }
+        end
+        local bw, bh = blocksFor(w, h)
+        error(string.format("Monitor too small for %s: %dx%d characters, needs %dx%d. " ..
+            "Build an Advanced Monitor at least %d wide x %d tall.", name, mw, mh, w, h, bw, bh), 0)
+    end
     local topW, topH = 2 * (world.width + 2), world.length + 3
     local sideW, sideH = 2 * (world.length + 3), Y_TOP - Y_BOTTOM + 1
     local MIN_TEXT = 6              -- status lines plus a few messages
@@ -172,6 +220,47 @@ local function status(world)
     end
 end
 
+-- The first of `n` blocks along z in a window that follows the turtle,
+-- kept within z0..z1.
+local function window(P, n, z0, z1)
+    local first = P.z - math.floor(n / 2)
+    return math.max(z0, math.min(first, z1 - n + 1))
+end
+
+-- A mine: a plan (the level slice at the turtle's height) and a side view
+-- (the slice through its column), both following it along z.
+local function drawView(world)
+    local W, P, v = world.W, world.P, world.view
+    line(L.top[1], L.top[2] - 1, L.topW, "plan y=" .. P.y .. " +z^ +x>", "8", "f")
+    local rows = L.topH - 1
+    local zTop = window(P, rows, v.z[1], v.z[2]) + rows - 1
+    for row = 0, rows - 1 do
+        local z = zTop - row
+        local t, f, b = {}, {}, {}
+        for x = v.x[1], v.x[2] do
+            local s, fg, bg
+            if x == P.x and z == P.z then s, fg, bg = TOP_ARROW[P.d], "f", "4"
+            else s, fg, bg = glyph(W.get(x, P.y, z)) end
+            t[#t + 1] = s; f[#f + 1] = fg .. fg; b[#b + 1] = bg .. bg
+        end
+        put(L.top[1], L.top[2] + row, table.concat(t), table.concat(f), table.concat(b))
+    end
+    line(L.side[1], L.side[2] - 1, L.sideW, "side x=" .. P.x .. " +z> y^", "8", "f")
+    local zLeft = window(P, L.sideZ, v.z[1], v.z[2])
+    for row = 0, L.sideH - 1 do
+        local y = v.y[2] - row
+        local t, f, b = {}, {}, {}
+        for z = zLeft, zLeft + L.sideZ - 1 do
+            local s, fg, bg
+            if z == P.z and y == P.y then s, fg, bg = SIDE_ARROW[P.d], "f", "4"
+            else s, fg, bg = glyph(W.get(P.x, y, z)) end
+            t[#t + 1] = s; f[#f + 1] = fg .. fg; b[#b + 1] = bg .. bg
+        end
+        put(L.side[1], L.side[2] + row, table.concat(t), table.concat(f), table.concat(b))
+    end
+    status(world)
+end
+
 local function draw(world)
     if not L then
         L = layout(world)
@@ -180,6 +269,7 @@ local function draw(world)
     end
     local W, P = world.W, world.P
     header()
+    if world.view then return drawView(world) end
     -- top-down: the highest block in each column
     line(L.top[1], L.top[2] - 1, L.topW, "top  +z^ +x>", "8", "f")
     for row = 0, L.topH - 1 do
