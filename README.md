@@ -394,10 +394,12 @@ recognise. Needs a pickaxe, equipped or in the inventory.
     found. It tunnels out to ore up to 6 blocks from the tunnel
     (`SCAN_REACH`) and mines the whole vein, then goes on with the tunnel.
     It refills any floor it dug through, and seals lava on the way.
-  - **Diamonds:** it always mines any diamond a scan shows, however far
-    out, but never goes further from the tunnel than the scan reached (8
-    blocks along any direction from where the scan was taken), even
-    following a vein.
+  - **Diamonds:** it always mines any diamond a scan shows, however far out.
+    Otherwise it goes no further than the scan reached (8 blocks along any
+    direction from where the scan was taken). The exception is a diamond
+    vein: that's followed to its end, past the scan if need be. With or
+    without a scanner, a diamond vein the turtle finds is always followed
+    all the way.
   - **Coal first when fuel is low:** when its fuel gets low, it fetches the
     coal a scan found first, and burns it.
   - **Cost:** scans are radius 8, which costs no fuel (Advanced Peripherals'

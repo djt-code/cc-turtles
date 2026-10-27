@@ -61,8 +61,8 @@
 --    lava or water, and right after each scan it tunnels out to the ore it
 --    found, up to SCAN_REACH (6) from the tunnel, and diamonds however far
 --    out as long as the scan saw them, then goes on with the tunnel.  It
---    never goes further than the scan reached.  Low on fuel, it fetches
---    the coal first.  See the Geo Scanner section for how it lines the
+--    goes no further than the scan reached, except to follow a diamond
+--    vein to its end.  Low on fuel, it fetches the coal first.  See the Geo Scanner section for how it lines the
 --    scan's world directions up with the tunnel.
 --  * Veins: an ore it touches (anything tagged as an ore, *_ore blocks,
 --    ancient debris) is mined along with its whole vein: the turtle
@@ -557,18 +557,22 @@ local function around()
 end
 
 -- The block in direction d is ore: dig into it, look all round, follow
--- any more ore, then come back.
+-- any more ore, then come back.  Ore is followed within reach (and
+-- within the scan, fetching what one found); diamond further: anywhere
+-- a scan saw, and from a diamond block on to the next however far out,
+-- so a diamond vein is followed to its end.
 function mineVein(d)
+    local ok0, data0 = look(d)
+    local diamond = ok0 and isDiamond(data0.name)
     if #trail == 0 then stats.veins = stats.veins + 1 end
     if not go(d) then return end
     stats.ore = stats.ore + 1
     trail[#trail + 1] = d
     for _, e in ipairs(around()) do
         local m = neighbour(e)
-        -- fetching what a scan found, look past the usual reach for more
-        -- diamond, but never past the scan
         local near = inReach(m)
-        if not opened[key(m)] and (near or (bound and m.z >= 1 and inScan(m))) then
+        local further = m.z >= 1 and (diamond or (bound and inScan(m)))
+        if not opened[key(m)] and (near or further) then
             local ok, data = look(e)
             if not ok then opened[key(m)] = true
             elseif isOre(data) and (near or isDiamond(data.name)) then mineVein(e)
@@ -968,9 +972,10 @@ end
 -- the walls without turning to look at them, and where ore lies further
 -- out: right after each scan it tunnels out to what that scan found, up to
 -- SCAN_REACH from the tunnel (diamonds however far, as long as the scan
--- saw them), mines it, and goes on with the tunnel; it never goes further
--- than the scan reached from where it was taken.  Low on fuel, it fetches
--- the coal first, and burns it.
+-- saw them), mines it, and goes on with the tunnel; it goes no further
+-- than the scan reached from where it was taken, except to follow a
+-- diamond vein to its end.  Low on fuel, it fetches the coal first, and
+-- burns it.
 --------------------------------------------------------------------------
 local warnedScan = false
 
