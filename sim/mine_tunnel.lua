@@ -777,3 +777,35 @@ check("mined all 4 coal ore", oreGone(-5, 0, 10) and oreGone(-6, 0, 10) and oreG
 check("finished the tunnel on it", logHas("^Done"), logHas("Stopped") and "stopped" or "")
 check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("back at the start", atStart())
+
+-- 13. `mine reset` when the saved heading is wrong (a turn the program
+--     never recorded): by a wall in a finished part of the tunnel it sees
+--     which way it really faces, and gets home
+local function dugTunnel()
+    setup(stock(4, 64))
+    for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do set(x, y, z, nil) end end end
+    files = { ["mine.job"] = "3 3 0 16 2 active" }    -- homes at 16 and 32: dug to 32
+    inv = {}
+    EQ = { right = "minecraft:diamond_pickaxe" }
+    FUEL, DRY = 500, 0
+end
+dugTunnel()
+P.x, P.y, P.z, P.d = 0, 1, 20, 1                      -- really faces +x ...
+files[".turtlepos"] = "0 1 20 0 flat"                 -- ... saved as facing ahead
+local before = leftIn(-3, 5, -3, 5, 1, 41)
+run("reset")
+check("saw it really faces right, and corrected it", logHas("really faces 1, not 0"))
+check("got home", atStart())
+check("dug nothing on the way", leftIn(-3, 5, -3, 5, 1, 41) == before)
+
+-- 14. in the middle of a 3-wide tunnel every way is open, so it can't
+--     tell: it goes by the (wrong) saved heading, but stops once it's
+--     digging through far more rock than the way back could take
+dugTunnel()
+P.x, P.y, P.z, P.d = 1, 1, 20, 1
+files[".turtlepos"] = "1 1 20 0 flat"
+before = leftIn(-20, 20, -3, 5, 1, 41)
+run("reset")
+local dug = before - leftIn(-20, 20, -3, 5, 1, 41)
+check("stopped, saying its position or heading must be wrong", logHas("far more rock"))
+check("dug no more than its limit (12)", dug <= 12, dug .. " blocks")

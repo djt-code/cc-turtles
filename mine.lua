@@ -92,7 +92,10 @@
 --  * Never digs chests, barrels, shulker boxes, spawners or ComputerCraft
 --    blocks (other turtles, computers).
 --  * Position is saved after every move, so `mine reset` can bring it
---    home after a Ctrl+T or a server restart.
+--    home after a Ctrl+T or a server restart.  It runs under T.run, so a
+--    Ctrl+T in the middle of a move or turn waits for it to be saved.
+--    `mine reset` checks the heading against the tunnel first, and stops
+--    if the way back digs through far more rock than it should.
 
 local T = require("turtlelib")
 
@@ -450,6 +453,8 @@ local seal
 -- and sand included); a lava or water source in the tunnel is filled and
 -- dug out first, so none is left behind.  False if it can't: a protected
 -- or unbreakable block, or something that won't move out of the way.
+local digLimit             -- `mine reset`: blocks it may dig on the way back (nil: any)
+
 local function go(d)
     for _ = 1, 30 do
         room()                     -- first: a trip changes what's there
@@ -459,6 +464,10 @@ local function go(d)
         end
         if ok and not FLUID[data.name] then
             if protected(data.name) then return false, data.name end
+            if digLimit then
+                if digLimit <= 0 then error({ lost = true }, 0) end
+                digLimit = digLimit - 1
+            end
             if not digDir(d) then return false, data.name end
         end
         if moveDir(d) then
@@ -1329,6 +1338,45 @@ local function useJob(job)
     setBox()
 end
 
+-- `mine reset` trusts the saved position but checks the heading first:
+-- it looks all round (turning on the spot is safe whichever way it
+-- really faces) and keeps the way round that fits what it knows of the
+-- tunnel here: the finished segments are dug (air), the walls solid.
+-- Returns the heading, or nil if it can't tell (it then keeps the saved
+-- one; the dig limit catches it if that's wrong).
+local function checkHeading(dugTo)
+    local solid = {}
+    for a = 0, 3 do                        -- a quarter turns right of the way it faces
+        local ok, data = turtle.inspect()
+        solid[a] = ok and not FLUID[data.name]
+        turtle.turnRight()
+    end
+    local function expect(t)
+        local v = DELTA[t]
+        local n = { x = T.pos.x + v[1], y = T.pos.y, z = T.pos.z + v[3] }
+        if n.z < 1 then return nil end
+        if inBox(n) then return n.z <= dugTo and "air" or nil end
+        return "solid"
+    end
+    local score, best = {}, nil
+    for h = 0, 3 do                        -- if it really faces tunnel direction h
+        local strong, weak = 0, 0
+        for a = 0, 3 do
+            local e = expect((h + a) % 4)
+            if e == "air" and solid[a] then strong = strong + 1 end
+            if e == "solid" and not solid[a] then weak = weak + 1 end   -- a cave, a vein
+        end
+        score[h] = strong * 10 + weak
+        if not best or score[h] < score[best] then best = h end
+    end
+    for h = 0, 3 do
+        if h ~= best and score[h] == score[best] then return nil end
+    end
+    if score[best] >= 10 then return nil end
+    return best
+end
+
+local function main()
 if doReset and forceHere then T.setHomeHere(); return end
 pickaxe = findPickaxe()
 if not pickaxe then print("Needs a pickaxe, equipped or in the inventory."); return end
@@ -1344,7 +1392,16 @@ if doReset then
     T.pos.x, T.pos.y, T.pos.z, T.dir = saved.x, saved.y, saved.z, saved.dir
     print(string.format("Last position %s facing %d. Heading back to the start.", T.posString(), T.dir))
     inTrip = true                       -- no trips: just get back
-    T.withTool(pickaxe, function()
+    local h = checkHeading(job.homes * SPACING)
+    if h and h ~= T.dir then
+        print(string.format("It really faces %d, not %d (the tunnel says so): going by that.", h, T.dir))
+        T.dir = h
+        T.savePos()
+    end
+    -- the way back digs at most out of a vein and across the segment it
+    -- was in; much more than that and its position or heading is wrong
+    digLimit = outside(T.pos) + (X1 - X0) + (Y1 - Y0) + 8
+    local ok, err = pcall(T.withTool, pickaxe, function()
         -- out of a vein first: straight back to the nearest tunnel block
         if not inBox(T.pos) and T.pos.z >= 1 then
             alongAxis("y", math.max(Y0, math.min(Y1, T.pos.y)))
@@ -1354,6 +1411,14 @@ if doReset then
         alongAxis("x", 0); alongAxis("y", 0); alongAxis("z", 0)
         T.face(0)
     end)
+    digLimit = nil
+    if not ok then
+        if type(err) ~= "table" or not err.lost then error(err, 0) end
+        print("It's digging through far more rock than the way back should take, so its saved")
+        print("position or heading must be wrong (it thinks it's at " .. T.posString() .. "). Stopped.")
+        print("Pick it up, put it back at the start facing down the tunnel, and run `mine reset --here`.")
+        return
+    end
     if T.pos.x == 0 and T.pos.y == 0 and T.pos.z == 0 then print("Home.")
     else print("Couldn't reach the start; stopped at " .. T.posString()) end
     return
@@ -1447,3 +1512,7 @@ for k, n in pairs(leftBehind) do
     print(string.format("No room to bring back %d items from home %d (z=%d).", n, k, homeAt(k).z))
 end
 if stopped then print("Stopped because: " .. stopped .. " `mine --resume` carries on.") end
+end
+
+-- Under T.run, Ctrl+T never leaves the saved position or heading wrong.
+T.run(main)

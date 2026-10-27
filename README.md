@@ -446,6 +446,21 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   turtle back to the start after a Ctrl+T or a server restart, even from
   inside a vein: it digs straight back into the tunnel, then follows it out.
   The tunnel can then be carried on with `mine --resume`.
+  - **Ctrl+T is safe:** a turtle command (a move or a turn) waits for the
+    game to do it. A plain Ctrl+T in that wait stops the program, but the
+    turtle still moves or turns, without the program recording it. So `mine`
+    holds a Ctrl+T back until the move or turn is saved (`T.run` in
+    turtlelib).
+  - **Checking its heading:** before setting off, `mine reset` looks all
+    round. It compares what it sees with what it knows of the tunnel there:
+    finished segments are dug, walls are solid. If exactly one way round
+    fits, it goes by that.
+  - **Stopping if lost:** if the way back starts digging through far more
+    rock than it should, its position or heading must be wrong, so it stops
+    instead of wandering off.
+  - **Recovering by hand:** give it a label (`label set miner`, or it loses
+    its files when picked up). Empty it, pick it up, and place it back at the
+    start, facing down the tunnel. Then run `mine reset --here`.
 
 A second turtle working as a courier is planned: it would shuttle between
 the start and the newest home, bringing chests and fuel out and valuables

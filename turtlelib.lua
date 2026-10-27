@@ -75,11 +75,48 @@ end
 
 local POS_FILE = ".turtlepos"
 
+-- Ctrl+T while a program runs under T.run: held back during a turtle
+-- command, and raised here, once the move or turn is saved.
+T.stopping = false
+
 function T.savePos()
     local f = fs.open(T.dataPath(POS_FILE), "w")
     if not f then return end
     f.write(string.format("%d %d %d %d %s", T.pos.x, T.pos.y, T.pos.z, T.dir, T.mode))
     f.close()
+    if T.stopping then
+        T.stopping = false
+        error("Terminated", 0)
+    end
+end
+
+-- Run fn(...) so that Ctrl+T can't leave the saved position wrong.  Plain
+-- Ctrl+T stops a program wherever it's waiting, in the middle of a turtle
+-- command too: the turtle still moves or turns, but the program never
+-- records it, so its saved position or heading is off by one and going
+-- home from there goes astray.  Under T.run a Ctrl+T that comes during a
+-- command (or a peripheral call) is held back until it's done: the
+-- program stops at the next saved move or turn (T.savePos), or the next
+-- ordinary wait (sleep, a key), whichever comes first.
+local COMMAND_EVENTS = { turtle_response = true, task_complete = true }
+function T.run(fn, ...)
+    local co = coroutine.create(fn)
+    local args = table.pack(...)
+    while true do
+        local ok, filter = coroutine.resume(co, table.unpack(args, 1, args.n))
+        if not ok then error(filter, 0) end
+        if coroutine.status(co) == "dead" then return end
+        if T.stopping and not COMMAND_EVENTS[filter] then
+            T.stopping = false
+            args = table.pack("terminate")
+        else
+            repeat
+                args = table.pack(os.pullEventRaw())
+                local hold = args[1] == "terminate" and COMMAND_EVENTS[filter]
+                if hold then T.stopping = true end
+            until not hold and (filter == nil or args[1] == filter or args[1] == "terminate")
+        end
+    end
 end
 
 -- Returns the saved position table or nil.
