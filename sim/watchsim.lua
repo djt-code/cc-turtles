@@ -91,6 +91,7 @@ local function glyph(b)
     end
     if b.tags and (b.tags["c:ores"] or b.tags["forge:ores"]) then return "**", "f", "a" end
     if n == "minecraft:gravel" then return "..", "7", "8" end
+    if n:find("torch") then return "!!", "4", "f" end
     if n == "minecraft:bedrock" then return "BB", "8", "f" end
     if n == "minecraft:water" then
         if b.level then return "~" .. (b.level % 10), "b", "3" end   -- flowing

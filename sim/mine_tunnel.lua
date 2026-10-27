@@ -8,7 +8,8 @@
 -- touches open space, valuables end up at the start and bulk in the
 -- homes, and it never moves on an empty tank.  Then homes along a longer
 -- tunnel (supplies carried forward, valuables collected on the way
--- back); a crevasse across the tunnel, which it bridges so a player can
+-- back), lit by torches in wall niches with no floor block dark enough
+-- for mobs; a crevasse across the tunnel, which it bridges so a player can
 -- walk the floor; a tunnel with no length that runs out of chests, then
 -- `mine --resume` once more chests are added (twice: the second time a
 -- home holds more valuables than fit, and the most valuable come back);
@@ -151,9 +152,14 @@ local function digAt(x, y, z)
     gravity(x, y, z)
     return true
 end
-local function placeAt(x, y, z)
+local function solid(b) return b and not passable(b) and b.name ~= "minecraft:torch" end
+-- `behind`: the block beyond the target, which a torch can hang on.
+local function placeAt(x, y, z, behind)
     local it = inv[sel]; if not it then return false end
     if not passable(get(x, y, z)) then return false end
+    if it.name == "minecraft:torch" and not (solid(get(x, y - 1, z)) or (behind and solid(get(behind[1], behind[2], behind[3])))) then
+        return false
+    end
     if it.name:find("raw_") or FUEL_VALUE[it.name] or it.name == "minecraft:diamond"
         or it.name == "minecraft:emerald" then return false end
     if it.name == "minecraft:chest" then set(x, y, z, chest())
@@ -234,7 +240,10 @@ turtle = {
     dig = function() return digAt(front()) end,
     digUp = function() return digAt(above()) end,
     digDown = function() return digAt(below()) end,
-    place = function() return placeAt(front()) end,
+    place = function()
+        local x, y, z = front()
+        return placeAt(x, y, z, { x + DX[P.d], y, z + DZ[P.d] })
+    end,
     placeUp = function() return placeAt(above()) end,
     placeDown = function() return placeAt(below()) end,
     attack = function() return false end, attackUp = function() return false end, attackDown = function() return false end,
@@ -358,12 +367,13 @@ local function contents(c)
 end
 local BULKY = { cobblestone = true, cobbled_deepslate = true, andesite = true, diorite = true,
                 granite = true, tuff = true, gravel = true }
-local SUPPLY = { chest = true, coal = true }
+local SUPPLY = { chest = true, coal = true, torch = true }
 
 local function startAt() P.x, P.y, P.z, P.d = 0, 0, 0, 0 end
 local function atStart() return P.x == 0 and P.y == 0 and P.z == 0 and P.d == 0 end
-local function stock(chests, coal)
+local function stock(chests, coal, torches)
     local t = {}
+    if torches then t[#t + 1] = { name = "minecraft:torch", count = torches } end
     for _ = 1, math.floor(chests / 64) do t[#t + 1] = { name = "minecraft:chest", count = 64 } end
     if chests % 64 > 0 then t[#t + 1] = { name = "minecraft:chest", count = chests % 64 } end
     while coal > 0 do t[#t + 1] = { name = "minecraft:coal", count = math.min(64, coal) }; coal = coal - 64 end
@@ -392,6 +402,41 @@ end
 local function checkFloor(x0, x1, fy, z1, z2)
     local holes = floorHoles(x0, x1, fy, z1, z2)
     check("floor solid all along", #holes == 0, #holes .. " holes" .. (#holes > 0 and (": " .. table.concat(holes, " ", 1, math.min(#holes, 6))) or ""))
+end
+
+-- Block light on the tunnel's floor-level blocks x0..x1, y = fy + 1,
+-- z1..z2: flood from every torch through open space (14 at the torch, one
+-- less each block).  Mobs spawn at 0; the darkest is reported.
+local function checkLight(x0, x1, fy, z1, z2)
+    local light, queue, head = {}, {}, 1
+    for key, b in pairs(W) do
+        if b and b.name == "minecraft:torch" then
+            light[key] = 14
+            local x, y, z = key:match("(-?%d+),(-?%d+),(-?%d+)")
+            queue[#queue + 1] = { tonumber(x), tonumber(y), tonumber(z) }
+        end
+    end
+    while queue[head] do
+        local c = queue[head]; head = head + 1
+        local l = light[k(c[1], c[2], c[3])]
+        if l > 1 then
+            for _, d in ipairs({ { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }) do
+                local x, y, z = c[1] + d[1], c[2] + d[2], c[3] + d[3]
+                local key = k(x, y, z)
+                if not get(x, y, z) and (light[key] or 0) < l - 1 then
+                    light[key] = l - 1
+                    queue[#queue + 1] = { x, y, z }
+                end
+            end
+        end
+    end
+    local darkest, where = 99, ""
+    for x = x0, x1 do for z = z1, z2 do
+        local l = light[k(x, fy + 1, z)] or 0
+        if l < darkest then darkest, where = l, k(x, fy + 1, z) end
+    end end
+    check("no floor block dark enough for mobs", darkest >= 1, "darkest " .. darkest .. " at " .. where)
+    return darkest
 end
 
 local function checkOres()
@@ -476,7 +521,7 @@ check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
 check("job done", jobState() == "done", tostring(jobState()))
 
 -- 2. 50 long with homes every 16: supplies go forward, valuables come back
-setup(stock(8, 128)); features()
+setup(stock(8, 128, 64)); features()
 set(-1, 1, 20, ore("minecraft:diamond_ore"))       -- in the wall near home 1
 set(3, 0, 40, ore("minecraft:emerald_ore"))        -- in the wall near home 2
 remember()
@@ -489,6 +534,14 @@ local tn = checkStart()
 check("diamonds and emerald brought back", (tn["minecraft:diamond"] or 0) == 3 and (tn["minecraft:emerald"] or 0) == 1,
     (tn["minecraft:diamond"] or 0) .. " diamond, " .. (tn["minecraft:emerald"] or 0) .. " emerald")
 checkHomes(16, 3)
+checkLight(0, 2, -1, 1, 50)
+local niches = {}
+for z = 1, 50 do
+    local b = get(-1, 0, z)
+    if b and b.name == "minecraft:torch" then niches[#niches + 1] = z end
+end
+check("torches in wall niches every 19, none on a home", table.concat(niches, ",") == "10,29,49",
+    "at z=" .. table.concat(niches, ","))
 check("back at the start", atStart())
 check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
@@ -579,11 +632,26 @@ run("reset")
 check("reset from a vein got home", atStart())
 
 -- 8. a tunnel to the left and down: `mine -2 -2 6`
-setup(stock(4, 64)); features()
+setup(stock(4, 64, 8)); features()
 startAt(); inv, files = {}, {}
 FUEL, DRY = 1000, 0
 run("-2", "-2", "6")
+checkLight(-1, 0, -2, 1, 6)
 check("left-and-down tunnel clear", leftIn(-1, 0, -1, 0, 1, 6) == 0, leftIn(-1, 0, -1, 0, 1, 6) .. " blocks left")
 checkFloor(-1, 0, -2, 1, 6)
 check("nothing dug right of or above it", get(1, 0, 3) ~= nil and get(0, 1, 3) ~= nil)
+check("back at the start", atStart())
+
+-- 9. a tunnel 10 wide is too wide to light from one wall: torches on both
+setup(stock(4, 64, 16))
+startAt(); inv, files = {}, {}
+FUEL, DRY = 2000, 0
+run("10", "2", "30")
+checkLight(0, 9, -1, 1, 30)
+local left, right = 0, 0
+for z = 1, 30 do
+    if (get(-1, 0, z) or {}).name == "minecraft:torch" then left = left + 1 end
+    if (get(10, 0, z) or {}).name == "minecraft:torch" then right = right + 1 end
+end
+check("torches on both walls", left > 0 and left == right, left .. " left, " .. right .. " right")
 check("back at the start", atStart())

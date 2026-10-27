@@ -319,7 +319,7 @@ supplies last.
 
 Put **two chests** at the start: one directly **above** the turtle for
 valuables and supplies, and one directly **below** it for bulk. Stock the top
-one with **fuel and chests**. Bulk is stone, cobblestone, deepslate,
+one with **fuel and chests**, and **torches** if you want the tunnel lit. Bulk is stone, cobblestone, deepslate,
 andesite, diorite, granite, tuff, dirt, gravel, sand, netherrack and the
 like. Everything else counts as a valuable, including anything it doesn't
 recognise. Needs a pickaxe, equipped or in the inventory.
@@ -389,6 +389,23 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   its stack of bulk blocks up from each home's bulk chest, and goes back for
   more if it runs out halfway across. Openings in the walls and ceiling (into
   caves) are left open, apart from lava and water.
+- **Lighting:** given torches, the turtle lights the tunnel so mobs can't spawn
+  on its floor (since 1.18 they need block light 0), using as few torches as
+  that takes:
+  - It aims for light 2 or more on every floor block, one level of margin.
+  - Each torch goes in a niche it digs into the wall at floor level, beside its
+    start column, outside the tunnel, so the turtle never digs it up again.
+  - A 3-wide tunnel gets one every 19 blocks; narrower tunnels need fewer.
+  - Wider than 8, both walls get them.
+  - A torch that would land on a home's wall chest moves one block along.
+  - Torches are supplies: they move forward with the homes, and it keeps up to
+    64 on board.
+  - Light doesn't stop slimes, which spawn in slime chunks at any light level.
+
+  Torches *you* place inside the tunnel get dug up wherever the turtle's path
+  crosses them. That's everywhere in the stretch it's still digging, and the
+  start column's bottom row on its way back. It keeps them and reuses them.
+  Behind it, torches higher up the walls are safe.
 - **Never dug:** chests, barrels, shulker boxes, spawners and ComputerCraft
   blocks (other turtles, computers).
 - **Reset:** position is saved after every move. `mine reset` brings the

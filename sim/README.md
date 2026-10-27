@@ -81,7 +81,8 @@ What the colours mean: in the mine, `##` rock in its own shade (stone,
 deepslate, andesite, diorite, granite, tuff), ores by symbol on the
 metal's colour (`Fe` iron, `Au` gold, `Di` diamond, `Em` emerald, `Co`
 coal, `La` lapis, `Rs` redstone, `Cu` copper, `**` a modded ore), red on
-orange `~~` lava, `..` gravel, `BB` bedrock, black open space. On a farm:
+orange `~~` lava, `..` gravel, `BB` bedrock, yellow `!!` torch, black
+open space. On a farm:
 blue `~~` water source, light blue `~n` flowing
 water, brown `::` farmland, brown dirt, green grass, crops as letter and
 age (`w3` wheat at stage 3) on green, lime once ripe, `||` sugar cane,
@@ -109,7 +110,7 @@ reading: compare the numbers before and after a change (`git stash`, run,
 | `farm_clone_lane_fallback` | farm | as `farm_clone`, but two lane tiles never fill on their own and must be poured |
 | `farm_fuel` | farm | real fuel levels: learn and clone starting nearly empty with little coal in the chest; trips home to refuel and back, waiting at home for the "player" to add coal; never a move on an empty tank; a farming pass 5 min apart that waits longer than that for fuel starts over, a short wait carries on |
 | `farm_pass_moves` | farm | moves for one plain farming pass on a 9x8 farm (`ALONGX=1`: lane along x) |
-| `mine_tunnel` | mine | tunnels through mixed rock: veins out of the walls, floor and ceiling (part of one beyond reach), ore inside the tunnel, a tag-only modded ore, lava, falling gravel, a floor solid all along (the hole floor ore leaves filled); a crevasse across the tunnel bridged; homes every 16 with supplies carried forward and valuables collected on the way back; a tunnel with no length that runs out of chests, then `--resume` (twice, the second time with more valuables in a home than it can carry: the most valuable come back); bedrock; running short of fuel (gets back with its margin); `mine reset` from inside a vein; a tunnel to the left and down |
+| `mine_tunnel` | mine | tunnels through mixed rock: veins out of the walls, floor and ceiling (part of one beyond reach), ore inside the tunnel, a tag-only modded ore, lava, falling gravel, a floor solid all along (the hole floor ore leaves filled); a crevasse across the tunnel bridged; torches in wall niches with no floor block dark enough for mobs (one wall, both walls for a tunnel 10 wide, one at the end of a short tunnel); homes every 16 with supplies carried forward and valuables collected on the way back; a tunnel with no length that runs out of chests, then `--resume` (twice, the second time with more valuables in a home than it can carry: the most valuable come back); bedrock; running short of fuel (gets back with its margin); `mine reset` from inside a vein; a tunnel to the left and down |
 | `turtlelib_restock` | turtlelib | `T.restockFrom` reaching items behind other stacks in a chest |
 | `autocompost_with_chest` | autocompost | composts what it can, rejects the rest into the chest in front |
 | `autocompost_no_chest` | autocompost | no chest and a backed-up composter: ends idle instead of spinning |

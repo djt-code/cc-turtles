@@ -25,6 +25,7 @@
 -- one directly BELOW it for bulk (stone, cobblestone, deepslate, dirt,
 -- gravel, sand...).  Stock the top chest with fuel and with CHESTS: the
 -- turtle builds a new home out of two of them every `spacing` blocks.
+-- Torches in it too, and it lights the tunnel.
 --
 -- How it works:
 --  * Homes: the tunnel is dug a segment at a time.  At the end of each
@@ -67,6 +68,13 @@
 --    cobwebs, dripstone) is filled with a bulk block; a crevasse across the
 --    tunnel gets a bridge.  The turtle tops its stack of bulk up from each
 --    home's bulk chest, and fetches more if it runs out mid-crevasse.
+--  * Lighting: with torches, it keeps every floor block of the tunnel at
+--    block light 2 or more (mobs spawn at 0, since 1.18), using as few as
+--    that takes: one in a niche dug into the wall at floor level every
+--    19 blocks or so for a 3-wide tunnel (fewer the narrower), on both
+--    walls when it's wider than 8.  In the niche the torch is out of the
+--    tunnel, so the turtle never digs it up again.  Torches are supplies:
+--    they move forward with the homes, and it keeps up to 64 on board.
 --  * Never digs chests, barrels, shulker boxes, spawners or ComputerCraft
 --    blocks (other turtles, computers).
 --  * Position is saved after every move, so `mine reset` can bring it
@@ -173,9 +181,11 @@ for _, n in ipairs({ "short_grass", "grass", "tall_grass", "fern", "large_fern",
     SOFT["minecraft:" .. n] = true
 end
 
--- Supplies: what homes are built from, and fuel.  They travel forward.
+-- Supplies: what homes are built from, fuel and torches.  They travel
+-- forward.
 local CHEST_ITEMS = { ["minecraft:chest"] = true, ["minecraft:barrel"] = true }
-local function isSupply(name) return CHEST_ITEMS[name] or T.fuel[name] end
+local TORCHES = { ["minecraft:torch"] = true, ["minecraft:soul_torch"] = true }
+local function isSupply(name) return CHEST_ITEMS[name] or T.fuel[name] or TORCHES[name] end
 
 -- What's worth carrying back first when the turtle can't carry it all.
 -- Anything not listed: 40 if it looks like an ore's drop, else 10.
@@ -202,6 +212,16 @@ T.diggable = { [LAVA] = true, [WATER] = true }  -- move into fluids (digging the
 local X0, X1, Y0, Y1, SPACING, WALL
 local segEnd = 0           -- last block of the segment being mined
 
+-- Lighting.  Since 1.18 mobs spawn only at block light 0; a torch is 14
+-- and light drops by 1 a block, so a floor block within 13 of a torch is
+-- safe.  Torches go in niches dug into the wall at floor level (out of
+-- the tunnel, so the turtle never digs them up again), every torchEvery
+-- blocks, and on both walls when the tunnel is too wide to light from
+-- one.  LIGHT_REACH leaves a margin: every floor block gets light 2.
+local LIGHT_REACH = 12
+local TORCH_KEEP = 64      -- torches carried
+local torchEvery, torchWalls, torchAlong
+
 local function setBox()
     X0, X1 = math.min(0, WIDTH - T.sgn(WIDTH)), math.max(0, WIDTH - T.sgn(WIDTH))
     Y0, Y1 = math.min(0, HEIGHT - T.sgn(HEIGHT)), math.max(0, HEIGHT - T.sgn(HEIGHT))
@@ -210,6 +230,32 @@ local function setBox()
     SPACING = SPACING or spacingArg
         or math.max(8, math.min(MAX_SPACING, math.floor(27 * 64 * 0.75 / math.abs(WIDTH * HEIGHT))))
     WALL = WIDTH > 0 and 3 or 1             -- the wall beside the start column
+    -- how far along z a torch may be from the darkest floor block: one
+    -- wall reaches across the width; two walls meet in the middle
+    local w = math.abs(WIDTH)
+    local along = LIGHT_REACH - w           -- 1 into the niche, w - 1 across
+    torchWalls = 1
+    if along < 3 then
+        torchWalls = 2
+        along = math.max(0, LIGHT_REACH - 1 - math.floor((w - 1) / 2))
+    end
+    torchEvery, torchAlong = 2 * along + 1, along
+end
+
+-- Is z where a torch goes?  Every torchEvery blocks, the first lighting
+-- the tunnel's mouth; one that would land on a home's wall chest moves
+-- one block on.  The last block of a tunnel that ends too far past the
+-- last of those (or before the first) gets one too.
+local function torchAt(z)
+    local first = torchAlong + 1
+    local function due(n) return n >= 1 and (n - first) % torchEvery == 0 end
+    if due(z) and z % SPACING ~= 0 then return true end
+    if due(z - 1) and (z - 1) % SPACING == 0 then return true end
+    if z == LENGTH then
+        local last = z >= first and z - (z - first) % torchEvery or nil
+        return not last or z - last > torchAlong
+    end
+    return false
 end
 
 local function inBox(p)
@@ -325,7 +371,7 @@ local opened = {}          -- key(p) = true: known to be air (dug or visited)
 local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
-local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, homes = 0 }
+local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes = 0 }
 
 -- Stop the job: unwinds to the top, which walks back to the start.
 local function stop(reason) error({ stop = reason }, 0) end
@@ -548,13 +594,42 @@ local function chestCounts(side)
     return n
 end
 
+-- How many of the items `test` picks the turtle carries.
+local function carried(test)
+    local n = 0
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s)
+        if it and test(it.name) then n = n + it.count end
+    end
+    return n
+end
+
+-- Top up what the turtle works with from the home's chests: a stack of
+-- filler from the bulk chest (floors and seals), torches from the
+-- valuables chest.
+local function restockKit()
+    for _, want in ipairs({ { side = home.bulk, set = FILLER, keep = FILLER_KEEP },
+                            { side = home.val, set = TORCHES, keep = TORCH_KEEP } }) do
+        local test = function(n) return want.set[n] end
+        for name, n in pairs(chestCounts(want.side)) do
+            local have = carried(test)
+            if have >= want.keep then break end
+            if want.set[name] then
+                T.restockFrom(want.side, name, T.countItem(name) + math.min(n, want.keep - have),
+                    { quiet = true, room = ROOM })
+            end
+        end
+    end
+end
+
 -- Put what the turtle carries in the home's chests: bulk in the bulk
 -- chest, the rest (supplies included) in the valuables chest, keeping
--- tools and a stack of filler.  `only` limits it to "bulk".  Returns
--- true if everything fit.
+-- tools, a stack of filler and its torches; then restock those.  `only`
+-- limits it to "bulk", or makes it "everything".  Returns true if
+-- everything fit.
 local function unload(only)
     if not (containerOn(home.val) and containerOn(home.bulk)) then return false, "missing" end
-    local fits, kept = true, 0
+    local fits, kept, torches = true, 0, 0
     for s = 1, 16 do
         local it = turtle.getItemDetail(s, true)
         if it and not T.isTool(it.name) then
@@ -562,6 +637,9 @@ local function unload(only)
             if FILLER[it.name] and kept < FILLER_KEEP and only ~= "everything" then
                 keep = math.min(it.count, FILLER_KEEP - kept)
                 kept = kept + keep
+            elseif TORCHES[it.name] and torches < TORCH_KEEP and only ~= "everything" then
+                keep = math.min(it.count, TORCH_KEEP - torches)
+                torches = torches + keep
             end
             local bulk = isBulk(it)
             if it.count > keep and (bulk or only == nil or only == "everything") then
@@ -573,18 +651,7 @@ local function unload(only)
     end
     turtle.select(1)
     if home.val ~= "front" or home.face == T.dir then T.compactContainer(home.val) end
-    if only == nil then
-        -- top the filler back up from the bulk chest, for floors and seals
-        for name, n in pairs(chestCounts(home.bulk)) do
-            local have = 0
-            for f in pairs(FILLER) do have = have + T.countItem(f) end
-            if have >= FILLER_KEEP then break end
-            if FILLER[name] then
-                T.restockFrom(home.bulk, name, T.countItem(name) + math.min(n, FILLER_KEEP - have),
-                    { quiet = true, room = ROOM })
-            end
-        end
-    end
+    if only == nil then restockKit() end
     return fits, "full"
 end
 
@@ -723,6 +790,7 @@ local function advance()
     saveJob("active")
     print(string.format("Built home %d at z=%d.", home.k, home.z))
     refuel()
+    restockKit()                   -- the torches went in with the supplies
     inTrip = false
 end
 
@@ -777,6 +845,46 @@ local function scanHere()
     end
 end
 
+-- Light the tunnel from here, if this is a floor-level block by a wall
+-- and z is where a torch goes: dig a niche in the wall and put a torch
+-- in it, against the block behind or on the one below.
+local warnedTorch = false
+local function lightHere()
+    if T.pos.y ~= Y0 or not torchAt(T.pos.z) then return end
+    local d
+    if T.pos.x == 0 then d = WALL
+    elseif torchWalls == 2 and T.pos.x == (WIDTH > 0 and X1 or X0) then d = (WALL + 2) % 4
+    else return end
+    local function isTorch(n) return TORCHES[n] end
+    if carried(isTorch) == 0 then
+        if not warnedTorch then
+            warnedTorch = true
+            if stats.torches == 0 then
+                print("No torches: the tunnel isn't being lit (put some in the start's top chest).")
+            else
+                print(string.format("Out of torches at z=%d: the tunnel is dark from here.", T.pos.z))
+            end
+        end
+        return
+    end
+    for _ = 1, 10 do                       -- the niche (again while gravel falls into it)
+        room()
+        local ok, data = look(d)
+        if not ok then break end
+        if TORCHES[data.name] or protected(data.name) then return end
+        if FLUID[data.name] then
+            if not (isSource(data) and seal(d)) then break end
+        elseif not digDir(d) then return end
+    end
+    if selectItem(isTorch) and placeDir(d) then
+        stats.torches = stats.torches + 1
+    elseif not warnedTorch then
+        warnedTorch = true
+        print("Couldn't place a torch at " .. T.posString() .. " (nothing to hang it on).")
+    end
+    turtle.select(1)
+end
+
 -- Mine the segment from z1 to z2, starting and ending at the home.
 local function mineSegment(z1, z2)
     local lanes = planLanes()
@@ -797,6 +905,7 @@ local function mineSegment(z1, z2)
         for z = from, to, dz do
             if not ok then break end
             scanHere()
+            lightHere()
             if z ~= to then ok, what = go(ahead and 0 or 2) end
         end
         if not ok then stop(string.format("Can't get through at %s (%s).", T.posString(), tostring(what))) end
@@ -975,6 +1084,7 @@ T.withTool(pickaxe, function()
             lastHome = last.k
             leaveSupplies()
             refuel()
+            restockKit()
             inTrip = false
             print(string.format("Back at home %d (z=%d).", home.k, home.z))
         end
@@ -997,8 +1107,8 @@ T.withTool(pickaxe, function()
     returnToStart()
 end)
 saveJob(stopped and "active" or "done")
-print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled.",
-    stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled))
+print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled, %d torches placed.",
+    stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled, stats.torches))
 for k, n in pairs(leftBehind) do
     print(string.format("No room to bring back %d items from home %d (z=%d).", n, k, homeAt(k).z))
 end
