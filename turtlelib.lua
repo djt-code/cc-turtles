@@ -561,7 +561,9 @@ end
 -- Used by the `reset` subcommands and home.lua.  In flat mode the trip is
 -- made at height opts.travelY (default 0, the start height), e.g. above
 -- tall crops.  The routing area is cfg.width/length, stretched to take in
--- the turtle's position.  Returns true if home.
+-- the turtle's position.  opts.check, if given, runs once at travel height
+-- before setting off (it may correct T.dir); false from it stops the trip.
+-- Returns true if home.
 function T.goHome(opts)
     opts = opts or {}
     local saved = T.loadPos()
@@ -577,6 +579,7 @@ function T.goHome(opts)
     print(string.format("Last position %s facing %d (%s). Heading home.", T.posString(), T.dir, T.mode))
 
     if T.mode == "flat" then T.toY(opts.travelY or 0) end
+    if opts.check and not opts.check() then return false end
     local ok = T.goTo(0, 0)
     if T.mode == "flat" then T.toStartHeight() else T.settle() end
     T.face(0)

@@ -1527,15 +1527,123 @@ local function fullRepair()
 end
 
 --------------------------------------------------------------------------
+-- Heading check
+--------------------------------------------------------------------------
+-- The saved heading is only as good as the last save: a server stop
+-- between a turn and its save, or a turtle put back by hand facing the
+-- wrong way, leaves it facing other than it thinks, and it would work the
+-- farm on the wrong axis.  So before working from a saved map, look at a
+-- few farm tiles near the turtle (as learning does, changing nothing) and
+-- see which way round they fit the map.
+local HEADING_PROBES = 5
+local HEADING_REACH = 4        -- probe tiles at most this far away
+
+-- (x,z) turned r quarter turns to the right about (px,pz).
+local function turned(x, z, px, pz, r)
+    local dx, dz = x - px, z - pz
+    for _ = 1, r do dx, dz = dz, -dx end
+    return px + dx, pz + dz
+end
+
+-- Does what learnTile saw fit a map tile of this kind (nil: off the map)?
+-- Anything that isn't crop, cane or water fits the rest.
+local FARMED = { crop = true, cane = true, water = true }
+local function fits(seen, kind)
+    if FARMED[kind] then return seen == kind end
+    return not FARMED[seen]
+end
+
+-- The heading that fits: the one whose score is within a tile of all the
+-- tiles seen (one off is allowed for: damage, a block left on the farm)
+-- and two clear of every other; nil if none does.
+local function fittingHeading(score, seen)
+    if seen < 3 then return nil end
+    for r = 0, 3 do
+        local clear = score[r] >= seen - 1
+        for o = 0, 3 do
+            if o ~= r and score[o] > score[r] - 2 then clear = false end
+        end
+        if clear then return r end
+    end
+    return nil
+end
+
+-- Returns true to carry on, with T.dir corrected if the tiles fit the map
+-- only with the turtle facing another way; false if they don't fit any
+-- way round.  Either way the turtle ends where it started.
+-- The tiles looked at are the farm tiles nearest the turtle, as they lie
+-- with the turtle facing each way in turn (from home, the wrong ways all
+-- face off the farm), the saved heading first: if those fit, that's it.
+local function checkHeading()
+    local px, py, pz = T.pos.x, T.pos.y, T.pos.z
+    local near = {}
+    for k, kind in pairs(tiles) do
+        if FARMED[kind] then
+            local x, z = keyXZ(k)
+            local d = math.abs(x - px) + math.abs(z - pz)
+            if d <= HEADING_REACH then near[#near + 1] = { x = x, z = z, d = d } end
+        end
+    end
+    if #near < 3 then return true end          -- too few farm tiles nearby to tell
+    table.sort(near, function(a, b)
+        if a.d ~= b.d then return a.d < b.d end
+        if a.x ~= b.x then return a.x < b.x end
+        return a.z < b.z
+    end)
+    local score, seen, looked = { [0] = 0, 0, 0, 0 }, 0, {}
+    local r
+    local margin = T.cfg.margin
+    T.cfg.margin = margin + HEADING_REACH           -- the turned tiles may lie off the farm
+    for way = 0, 3 do
+        for i = 1, math.min(HEADING_PROBES, #near) do
+            -- where this tile is if the turtle faces `way` right of its save
+            local x, z = turned(near[i].x, near[i].z, px, pz, (4 - way) % 4)
+            local k = T.ckey(x, z)
+            if not looked[k] then
+                looked[k] = true
+                T.toY(travelY)
+                if T.goTo(x, z) then
+                    local kind = learnTile()
+                    seen = seen + 1
+                    for o = 0, 3 do
+                        if fits(kind, tiles[T.ckey(turned(x, z, px, pz, o))]) then score[o] = score[o] + 1 end
+                    end
+                end
+            end
+        end
+        r = fittingHeading(score, seen)
+        if r == 0 then break end
+    end
+    T.toY(travelY)
+    local back = T.goTo(px, pz) and T.toY(py)
+    T.cfg.margin = margin
+    T.clearBlocked()
+    if back and r == 0 then return true end
+    if back and r then
+        T.dir = (T.dir + r) % 4
+        T.savePos()
+        print("The turtle faces " .. ({ "right of", "opposite", "left of" })[r]
+            .. " the way it had saved; heading corrected from the farm map.")
+        return true
+    end
+    print("The farm here doesn't match the saved map whichever way the turtle")
+    print("faces, so its saved position can't be trusted. Carry it home, face it")
+    print("along the farm, and run `farm reset --here`.")
+    return false
+end
+
+--------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------
 -- `farm reset`: home from wherever the saved position says, routing over
--- the saved farm's area at its travel height (above any cane).  With no
--- map yet (stopped while learning) it climbs to cane height to be safe.
+-- the saved farm's area at its travel height (above any cane), once the
+-- heading is checked against the farm.  With no map yet (stopped while
+-- learning) it climbs to cane height to be safe.
 if doReset then
     local haveMap = loadMap()
     if haveMap then T.cfg.width, T.cfg.length = WIDTH, LENGTH end
-    T.goHome({ travelY = (not haveMap or countKind("cane") > 0) and CANE_TRAVEL_Y or 0 })
+    travelY = (not haveMap or countKind("cane") > 0) and CANE_TRAVEL_Y or 0
+    T.goHome({ travelY = travelY, check = haveMap and checkHeading or nil })
     return
 end
 
@@ -1577,6 +1685,8 @@ if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < fuelGoal the
             turtle.getFuelLevel(), fuelGoal))
     end
 end
+-- a cloned layout isn't built yet, so there's nothing to check against
+if haveMap and not doClone and not checkHeading() then return end
 T.fuelTrip = fuelTrip
 
 if haveMap and not doClone then

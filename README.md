@@ -48,7 +48,17 @@ Position is saved to `.turtlepos` after every move. If a job is interrupted
 back to the start, from anywhere: a farm or lawn of any size or direction, or
 past its edge. `farm reset` routes over the saved farm, flying above sugar cane
 when the farm has some (or when it stopped while still learning, before a map
-was saved). Starting a job while the saved position isn't home prints a
+was saved).
+
+A server stop in the instant between a turn and its save, or a turtle put
+back by hand facing the wrong way, leaves it facing other than it thinks.
+So before `farm reset` sets off, and before any farm run from a saved map,
+the turtle looks at a few farm tiles near it, changing nothing, and checks
+which way round they fit the map. If they fit another heading, it corrects
+its own and carries on. If they fit none, it stops and asks you to place it
+by hand. With the heading right, this costs about a dozen moves per start.
+
+Starting a job while the saved position isn't home prints a
 warning and stops; add `--here` to declare the current spot as the new home.
 If you carried the turtle back yourself, `farm reset --here` / `mow reset --here`
 just marks where it is as home without moving it or starting a job (the saved
