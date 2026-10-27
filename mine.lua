@@ -5,30 +5,53 @@
 -- afterwards.  Optional: Advanced Peripherals Chunky Turtle upgrade so it
 -- keeps running unattended.
 --
--- Usage:  mine <length> <width> <height> [--here]
---         mine reset            return to the start after a stop
---         mine reset --here     turtle was put back by hand: reset position
+-- Usage:  mine <width> <height> [length] [--spacing N] [--here]
+--         mine --resume          keep digging the tunnel it stopped in
+--         mine ... --new         start a fresh tunnel, forgetting the old one
+--         mine reset             return to the start after a Ctrl+T or restart
+--         mine reset --here      turtle was put back by hand: reset position
 --
--- length = blocks the tunnel runs ahead of the turtle
 -- width  = blocks to the RIGHT of the turtle (negative = to the LEFT)
 -- height = blocks UP from the turtle (negative = DOWN)
+-- length = blocks the tunnel runs ahead; leave it out to keep going until
+--          the turtle can't (out of chests or fuel, a full chest, bedrock)
 -- The turtle's own column and row are part of the tunnel: it stands in
 -- the mouth at one bottom (or top, for negative heights) corner, and the
--- tunnel starts with the block in front of it.  `mine 32 3 3` digs a 3x3
+-- tunnel starts with the block in front of it.  `mine 3 3 32` digs a 3x3
 -- tunnel 32 long, up and to the right of the turtle.
 --
 -- Placement: put the turtle where the tunnel's corner should start,
--- facing along it.  Put a chest/barrel directly ABOVE the start for
--- valuables and one directly BELOW it for bulk (stone, cobblestone,
--- deepslate, dirt, gravel, sand...).  Put fuel in the valuables chest;
--- coal the turtle mines lands there too and fuels it as well.
+-- facing along it.  Put a chest directly ABOVE the start for valuables and
+-- one directly BELOW it for bulk (stone, cobblestone, deepslate, dirt,
+-- gravel, sand...).  Stock the top chest with fuel and with CHESTS: the
+-- turtle builds a new home out of two of them every `spacing` blocks.
 --
 -- How it works:
---  * Lanes: the tunnel is mined in lanes running along its length, one
---    per row in the side columns and every third row (plus the top and
---    bottom ones) in the middle columns, digging the rows in between up
---    and down.  So the turtle touches every block of the walls, floor,
---    ceiling and far end, and looks at each one.
+--  * Homes: the tunnel is dug a segment at a time.  At the end of each
+--    segment the turtle builds a home there: a chest set into the wall
+--    beside its start column (valuables and supplies) and one under the
+--    floor (bulk; over the ceiling for a downward tunnel).  Spacing is
+--    chosen so a segment's bulk fits in its home's chest (at most 64), and
+--    trips to unload or refuel only ever go back to the nearest home.
+--  * Supplies move forward: building a home, the turtle carries the spare
+--    chests and the fuel from the old home to the new one, as many trips
+--    as it takes.  Bulk stays in the home it was mined near; valuables
+--    stay in their home's chest until the end.
+--  * Stopping: out of chests for the next home, not enough fuel to go on
+--    and still get back, a home chest full or missing, or something it
+--    can't dig through.  Then (or once the tunnel is as long as asked) it
+--    walks back to the start, collecting the valuables from every home on
+--    the way, the most valuable first when it can't carry them all, and
+--    leaves them in the top chest at the start.  Supplies stay in the last
+--    home, so `mine --resume` can carry on from there (bringing any new
+--    chests and fuel from the start's top chest with it).
+--  * Fuel: the tank always keeps enough to get back to the start; the
+--    turtle refuels from each home's chest, and coal it mines lands there.
+--  * Lanes: each segment is mined in lanes running along it, one per row
+--    in the side columns and every third row (plus the top and bottom ones)
+--    in the middle columns, digging the rows in between up and down.  So
+--    the turtle touches every block of the walls, floor and ceiling, and
+--    looks at each one.
 --  * Veins: an ore it touches (anything tagged as an ore, *_ore blocks,
 --    ancient debris) is mined along with its whole vein: the turtle
 --    follows it block by block, looking all round each one, up to
@@ -38,14 +61,8 @@
 --    no harm from lava, but lava burns any item that falls in it and
 --    makes the tunnel deadly for players.  Lava or water inside the
 --    tunnel is filled and dug out.
---  * Room and fuel: before a dig with fewer than ROOM empty slots, or a
---    move that would leave too little fuel to get home, the turtle goes
---    home, sorts what it carries into the two chests, refuels from the
---    valuables chest (waiting there if there's no fuel), then returns to
---    the same spot, back up the vein if it was in one.
 --  * Never digs chests, barrels, shulker boxes, spawners or ComputerCraft
---    blocks (other turtles, computers).  An unbreakable block (bedrock) in
---    the tunnel ends the job: the turtle goes home and says where.
+--    blocks (other turtles, computers).
 --  * Position is saved after every move, so `mine reset` can bring it
 --    home after a Ctrl+T or a server restart.
 
@@ -56,23 +73,35 @@ local VEIN_REACH = 4       -- how far a vein is followed out from the tunnel
 local ROOM = 2             -- empty slots wanted before each dig
 local FILLER_KEEP = 64     -- bulk blocks kept on board for sealing
 local FUEL_WORK = 100      -- fuel for some work after a trip back out
-local VALUABLE_SIDE, BULK_SIDE = "top", "bottom"
+local MAX_SPACING = 64     -- most blocks between homes
 
 --------------------------------------------------------------------------
 -- Arguments
 --------------------------------------------------------------------------
 local args = { ... }
 local forceHere = T.popFlag(args, "--here")
-local doReset = args[1] == "reset"
-local LENGTH, WIDTH, HEIGHT
-if not doReset then
-    LENGTH, WIDTH, HEIGHT = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
-    if not (LENGTH and WIDTH and HEIGHT) or LENGTH < 1 or WIDTH == 0 or HEIGHT == 0 then
-        print("Usage: mine <length> <width> <height> [--here]")
-        print("       mine reset [--here]")
-        print("width: + right / - left; height: + up / - down")
-        return
+local resume = T.popFlag(args, "--resume")
+local fresh = T.popFlag(args, "--new")
+local spacingArg
+for i = #args - 1, 1, -1 do
+    if args[i] == "--spacing" then
+        spacingArg = tonumber(args[i + 1])
+        table.remove(args, i + 1); table.remove(args, i)
     end
+end
+local doReset = args[1] == "reset"
+local WIDTH, HEIGHT, LENGTH = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
+
+local function usage()
+    print("Usage: mine <width> <height> [length] [--spacing N] [--here]")
+    print("       mine --resume | mine reset [--here]")
+    print("width: + right / - left; height: + up / - down;")
+    print("no length: dig until out of chests, fuel or room")
+end
+if not (doReset or resume) and (not (WIDTH and HEIGHT) or WIDTH == 0 or HEIGHT == 0
+        or (args[3] and not (LENGTH and LENGTH >= 1))) then
+    usage()
+    return
 end
 
 --------------------------------------------------------------------------
@@ -96,7 +125,7 @@ local function protected(name)
         or name:find("spawner") or name:find("^computercraft:")
 end
 
--- Bulk items go in the bottom chest; everything else is a valuable.
+-- Bulk items go in a home's bulk chest; everything else is a valuable.
 local BULK = {}
 for _, n in ipairs({ "cobblestone", "cobbled_deepslate", "stone", "deepslate", "dirt",
         "coarse_dirt", "rooted_dirt", "gravel", "sand", "red_sand", "sandstone",
@@ -129,57 +158,100 @@ for _, n in ipairs({ "cobblestone", "cobbled_deepslate", "netherrack", "dirt", "
     FILLER["minecraft:" .. n] = true
 end
 
+-- Supplies: what homes are built from, and fuel.  They travel forward.
+local CHEST_ITEMS = { ["minecraft:chest"] = true, ["minecraft:barrel"] = true }
+local function isSupply(name) return CHEST_ITEMS[name] or T.fuel[name] end
+
+-- What's worth carrying back first when the turtle can't carry it all.
+-- Anything not listed: 40 if it looks like an ore's drop, else 10.
+local VALUE = {
+    ["minecraft:netherite_scrap"] = 100, ["minecraft:ancient_debris"] = 100,
+    ["minecraft:diamond"] = 90, ["minecraft:emerald"] = 80, ["minecraft:raw_gold"] = 60,
+    ["minecraft:gold_nugget"] = 30, ["minecraft:amethyst_shard"] = 35,
+    ["minecraft:lapis_lazuli"] = 45, ["minecraft:raw_iron"] = 50, ["minecraft:raw_copper"] = 25,
+    ["minecraft:redstone"] = 30, ["minecraft:quartz"] = 30,
+}
+local function value(name)
+    if VALUE[name] then return VALUE[name] end
+    if name:find("raw_") or name:find("ore") or name:find("gem") then return 40 end
+    return 10
+end
+
 T.cfg.maxHeight, T.cfg.maxDrop = 1000, 1000    -- the tunnel sets the limits
 T.diggable = { [LAVA] = true, [WATER] = true }  -- move into fluids (digging them does nothing)
 
 --------------------------------------------------------------------------
--- Tunnel geometry: x in X0..X1, y in Y0..Y1, z in 1..LENGTH
+-- Tunnel geometry: x in X0..X1, y in Y0..Y1, z in 1..LENGTH; homes every
+-- SPACING blocks along it.
 --------------------------------------------------------------------------
-local X0, X1, Y0, Y1
+local X0, X1, Y0, Y1, SPACING, WALL
+local segEnd = 0           -- last block of the segment being mined
 
 local function setBox()
     X0, X1 = math.min(0, WIDTH - T.sgn(WIDTH)), math.max(0, WIDTH - T.sgn(WIDTH))
     Y0, Y1 = math.min(0, HEIGHT - T.sgn(HEIGHT)), math.max(0, HEIGHT - T.sgn(HEIGHT))
+    LENGTH = LENGTH or math.huge
+    -- a segment's bulk fits in one chest, with room to spare
+    SPACING = SPACING or spacingArg
+        or math.max(8, math.min(MAX_SPACING, math.floor(27 * 64 * 0.75 / math.abs(WIDTH * HEIGHT))))
+    WALL = WIDTH > 0 and 3 or 1             -- the wall beside the start column
 end
 
 local function inBox(p)
     return p.x >= X0 and p.x <= X1 and p.y >= Y0 and p.y <= Y1 and p.z >= 1 and p.z <= LENGTH
 end
 
--- Within VEIN_REACH of the tunnel, and not back past its start.
+-- Within VEIN_REACH of the tunnel dug so far, and not back past its start.
 local function inReach(p)
     if p.z < 1 then return false end
     local dx = math.max(X0 - p.x, 0, p.x - X1)
     local dy = math.max(Y0 - p.y, 0, p.y - Y1)
-    local dz = math.max(0, p.z - LENGTH)
+    local dz = math.max(0, p.z - math.min(LENGTH, segEnd))
     return math.max(dx, dy, dz) <= VEIN_REACH
 end
 
-local function saveJob()
+--------------------------------------------------------------------------
+-- Homes.  Home 0 is the start: valuables chest above, bulk below.  Home
+-- k sits at z = k * SPACING in the start column, top row 0: valuables and
+-- supplies in a chest in the wall, bulk in one under the floor (over the
+-- ceiling, for a tunnel going down).
+--------------------------------------------------------------------------
+local function homeAt(k)
+    if k == 0 then return { k = 0, x = 0, y = 0, z = 0, face = 0, val = "top", bulk = "bottom" } end
+    return { k = k, x = 0, y = 0, z = k * SPACING, face = WALL, val = "front",
+             bulk = HEIGHT > 0 and "bottom" or "top" }
+end
+local home = nil          -- the home the turtle works from
+local lastHome = 0         -- the furthest home built (the supplies are there)
+
+-- The job, saved so `mine --resume` and `mine reset` know the tunnel.
+local function saveJob(state)
     local f = fs.open(JOB_FILE, "w")
-    f.write(LENGTH .. " " .. WIDTH .. " " .. HEIGHT)
+    f.write(string.format("%d %d %d %d %d %s", WIDTH, HEIGHT,
+        LENGTH == math.huge and 0 or LENGTH, SPACING, lastHome, state))
     f.close()
 end
 
 local function loadJob()
-    if not fs.exists(JOB_FILE) then return false end
+    if not fs.exists(JOB_FILE) then return nil end
     local f = fs.open(JOB_FILE, "r")
-    local l, w, h = (f.readAll() or ""):match("(-?%d+) (-?%d+) (-?%d+)")
+    local w, h, l, s, k, state = (f.readAll() or ""):match("(-?%d+) (-?%d+) (-?%d+) (%d+) (%d+) (%a+)")
     f.close()
-    if not l then return false end
-    LENGTH, WIDTH, HEIGHT = tonumber(l), tonumber(w), tonumber(h)
-    return true
+    if not w then return nil end
+    return { width = tonumber(w), height = tonumber(h), length = tonumber(l) ~= 0 and tonumber(l) or nil,
+             spacing = tonumber(s), homes = tonumber(k), state = state }
 end
 
 --------------------------------------------------------------------------
 -- Directions: 0..3 as turtlelib's T.dir (0 = +z ahead, 1 = +x right),
--- plus "up" and "down".
+-- plus "up" and "down".  Sides, for chests: "front", "top", "bottom".
 --------------------------------------------------------------------------
 local DELTA = {
     [0] = { 0, 0, 1 }, [1] = { 1, 0, 0 }, [2] = { 0, 0, -1 }, [3] = { -1, 0, 0 },
     up = { 0, 1, 0 }, down = { 0, -1, 0 },
 }
 local OPP = { [0] = 2, [1] = 3, [2] = 0, [3] = 1, up = "down", down = "up" }
+local SIDE_DIR = { top = "up", bottom = "down" }
 
 local function neighbour(d)
     local v = DELTA[d]
@@ -216,6 +288,21 @@ local function moveDir(d)
     return T.forward()
 end
 
+-- Drop/suck on a chest side (the turtle already faces a "front" chest).
+local function dropSide(side, n)
+    if side == "top" then return turtle.dropUp(n) end
+    if side == "bottom" then return turtle.dropDown(n) end
+    return turtle.drop(n)
+end
+
+local function containerOn(side)
+    local ok, data
+    if side == "top" then ok, data = turtle.inspectUp()
+    elseif side == "bottom" then ok, data = turtle.inspectDown()
+    else ok, data = turtle.inspect() end
+    return ok and T.isContainer(data.name)
+end
+
 --------------------------------------------------------------------------
 -- State
 --------------------------------------------------------------------------
@@ -223,12 +310,16 @@ local opened = {}          -- key(p) = true: known to be air (dug or visited)
 local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
-local stats = { veins = 0, ore = 0, sealed = 0 }
-local stuck                -- why the job stopped early, if it did
+local stats = { veins = 0, ore = 0, sealed = 0, homes = 0 }
 
--- Fuel home: back down the vein, then along the tunnel.
+-- Stop the job: unwinds to the top, which walks back to the start.
+local function stop(reason) error({ stop = reason }, 0) end
+
+-- Fuel to get to the current home (back down the vein, then along the
+-- tunnel) and from there back to the start: the tank never holds less.
 function T.homeCost()
-    return math.abs(T.pos.x) + math.abs(T.pos.y) + math.abs(T.pos.z) + 2 * #trail + 2
+    return math.abs(T.pos.x - home.x) + math.abs(T.pos.y - home.y) + math.abs(T.pos.z - home.z)
+        + 2 * #trail + 2 + home.z
 end
 
 --------------------------------------------------------------------------
@@ -270,17 +361,17 @@ local function go(d)
     return false, "something in the way"
 end
 
-local function selectFiller()
+local function selectItem(test)
     for s = 1, 16 do
         local it = turtle.getItemDetail(s)
-        if it and FILLER[it.name] then turtle.select(s); return true end
+        if it and test(it.name) then turtle.select(s); return true end
     end
     return false
 end
 
 -- Seal lava or water in direction d with a bulk block.
 function seal(d)
-    if not selectFiller() then return false end
+    if not selectItem(function(n) return FILLER[n] end) then return false end
     local ok = placeDir(d)
     turtle.select(1)
     if ok then stats.sealed = stats.sealed + 1 end
@@ -348,12 +439,14 @@ end
 --------------------------------------------------------------------------
 -- Getting around inside the tunnel, through blocks already dug (a trip
 -- home is made with a nearly full inventory): over to `via`, a finished
--- lane, if the turtle's own lane isn't dug back to the first slice yet;
--- back to the first slice; along its row to the start's column (columns
--- are finished in order), down that column (finished first) to the start's
--- row, then out.  Going back out reverses that.
+-- lane, if the turtle's own lane isn't dug back to the segment's first
+-- slice yet; back to that slice; along its row to the start column
+-- (columns are finished in order), up or down it (finished first) to row
+-- 0, then back along the start column to the home.  Going back out
+-- reverses that.
 --------------------------------------------------------------------------
-local via                  -- the lane before, while the turtle's lane runs back toward the start
+local via                  -- the lane before, while the turtle's lane runs back toward the home
+
 local function alongAxis(axis, target)
     while T.pos[axis] ~= target do
         local up = T.pos[axis] < target
@@ -368,20 +461,23 @@ local function alongAxis(axis, target)
 end
 
 local function tunnelHome()
-    if via and T.pos.z >= 1 then
-        alongAxis("y", via.y)
-        alongAxis("x", via.x)
+    local first = home.z + 1
+    if T.pos.z >= first then
+        if via then
+            alongAxis("y", via.y)
+            alongAxis("x", via.x)
+        end
+        alongAxis("z", first)
     end
-    if T.pos.z > 1 then alongAxis("z", 1) end
     alongAxis("x", 0)
     alongAxis("y", 0)
-    alongAxis("z", 0)
-    T.face(0)
-    return T.pos.x == 0 and T.pos.y == 0 and T.pos.z == 0
+    alongAxis("z", home.z)
+    T.face(home.face)
+    return T.pos.x == home.x and T.pos.y == home.y and T.pos.z == home.z
 end
 
 local function tunnelTo(p)
-    if T.pos.z < 1 then alongAxis("z", 1) end
+    if T.pos.z < home.z + 1 then alongAxis("z", home.z + 1) end
     local lane = via or p
     alongAxis("y", lane.y)
     alongAxis("x", lane.x)
@@ -391,79 +487,54 @@ local function tunnelTo(p)
 end
 
 --------------------------------------------------------------------------
--- Home: the two chests
+-- At a home
 --------------------------------------------------------------------------
-local function containerOn(side)
-    local ok, data
-    if side == "top" then ok, data = turtle.inspectUp() else ok, data = turtle.inspectDown() end
-    return ok and T.isContainer(data.name)
-end
-
--- Sort the inventory into the chests: bulk below, valuables above,
--- keeping tools and a stack of filler.  Waits while a chest is full or
--- missing (nothing is ever dropped on the ground).
-local function unload()
-    local warned = false
-    while not (containerOn("top") and containerOn("bottom")) do
-        if not warned then
-            warned = true
-            print("A chest is missing: needs one above (valuables) and one below (bulk). Waiting.")
-        end
-        sleep(10)
-    end
-    warned = false
-    while true do
-        local full, kept = {}, 0
-        for s = 1, 16 do
-            local it = turtle.getItemDetail(s, true)
-            if it and not T.isTool(it.name) then
-                local keep = 0
-                if FILLER[it.name] and kept < FILLER_KEEP then
-                    keep = math.min(it.count, FILLER_KEEP - kept)
-                    kept = kept + keep
-                end
-                if it.count > keep then
-                    local bulk = isBulk(it)
-                    turtle.select(s)
-                    if bulk then turtle.dropDown(it.count - keep) else turtle.dropUp(it.count - keep) end
-                    if turtle.getItemCount(s) > keep then full[bulk and "bulk" or "valuables"] = true end
-                end
+-- Put what the turtle carries in the home's chests: bulk in the bulk
+-- chest, the rest (supplies included) in the valuables chest, keeping
+-- tools and a stack of filler.  `only` limits it to "bulk".  Returns
+-- true if everything fit.
+local function unload(only)
+    if not (containerOn(home.val) and containerOn(home.bulk)) then return false, "missing" end
+    local fits, kept = true, 0
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s, true)
+        if it and not T.isTool(it.name) then
+            local keep = 0
+            if FILLER[it.name] and kept < FILLER_KEEP and only ~= "everything" then
+                keep = math.min(it.count, FILLER_KEEP - kept)
+                kept = kept + keep
+            end
+            local bulk = isBulk(it)
+            if it.count > keep and (bulk or only == nil or only == "everything") then
+                turtle.select(s)
+                dropSide(bulk and home.bulk or home.val, it.count - keep)
+                if turtle.getItemCount(s) > keep then fits = false end
             end
         end
-        turtle.select(1)
-        if not (full.bulk or full.valuables) then break end
-        if not warned then
-            warned = true
-            print("The " .. (full.valuables and "valuables (top)" or "bulk (bottom)")
-                .. " chest is full; waiting for room.")
-        end
-        sleep(30)
     end
-    if warned then print("Chest has room again; carrying on.") end
-    T.compactContainer(VALUABLE_SIDE)
+    turtle.select(1)
+    if home.val ~= "front" or home.face == T.dir then T.compactContainer(home.val) end
+    return fits, "full"
 end
 
--- Wait at home until the tank holds `enough`, refuelling from the
--- inventory and the valuables chest whenever something changes.
-local function waitForFuel(enough)
-    local level = turtle.getFuelLevel()
-    if level == "unlimited" or level >= enough then return end
-    print(string.format("Need %d fuel, have %d: put fuel (coal, charcoal, lava...) in the top chest or the turtle.",
-        enough, level))
-    while turtle.getFuelLevel() < enough do
-        local timer = os.startTimer(10)
-        repeat
-            local ev, id = os.pullEvent()
-        until (ev == "timer" and id == timer) or ev == "turtle_inventory" or ev == "key"
-        T.refuelTo(math.max(enough, fuelGoal))
-        if turtle.getFuelLevel() < enough then T.refuelFrom(VALUABLE_SIDE, math.max(enough, fuelGoal)) end
+-- unload, or stop the job if a chest is missing or full.
+local function unloadOrStop()
+    local ok, why = unload()
+    if not ok then
+        stop(string.format("The %s at home %d (z=%d) is %s.",
+            why == "missing" and "chests" or "chest", home.k, home.z, why))
     end
-    print("Fuel: " .. turtle.getFuelLevel())
 end
 
 local function refuel()
     if turtle.getFuelLevel() == "unlimited" then return end
-    T.refuelFrom(VALUABLE_SIDE, fuelGoal)
+    T.refuelFrom(home.val, fuelGoal + home.z)
+end
+
+-- Enough fuel to do some work and still get back to the start?
+local function fuelToGoOn(extra)
+    local level = turtle.getFuelLevel()
+    return level == "unlimited" or level >= home.z + T.cfg.fuelMargin + (extra or FUEL_WORK)
 end
 
 -- Go home, unload and refuel, and come back to this exact spot and
@@ -473,25 +544,123 @@ function trip(why)
     inTrip = true
     local back = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
     local facing = T.dir
-    local path = {}
-    for i, d in ipairs(trail) do path[i] = d end
-    print(string.format("%s at %s: going home.", why, T.posString()))
+    local path = trail
+    print(string.format("%s at %s: back to home %d.", why, T.posString(), home.k))
     for i = #path, 1, -1 do go(OPP[path[i]]) end
+    trail = {}                     -- out of the vein (also if the job stops here)
     local spot = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
-    if not tunnelHome() then
-        inTrip = false
-        error("Couldn't get home from " .. T.posString(), 0)
-    end
-    unload()
+    if not tunnelHome() then stop("Couldn't get back to home " .. home.k .. " from " .. T.posString()) end
+    unloadOrStop()
     refuel()
-    local away = math.abs(spot.x) + math.abs(spot.y) + math.abs(spot.z) + #path
-    waitForFuel(2 * away + T.cfg.fuelMargin + FUEL_WORK)
+    if not fuelToGoOn() then stop("Not enough fuel left to go on and still get back.") end
     tunnelTo(spot)
     for _, d in ipairs(path) do go(d) end
+    trail = path
     T.face(facing)
     if T.pos.x ~= back.x or T.pos.y ~= back.y or T.pos.z ~= back.z then
         print("Couldn't get back to (" .. key(back) .. "); carrying on from " .. T.posString())
     end
+    inTrip = false
+end
+
+-- How many of each item the chest on `side` holds.
+local function chestCounts(side)
+    local chest = peripheral.wrap(side)
+    local n = {}
+    if not (chest and chest.list) then return n end
+    for _, it in pairs(chest.list()) do n[it.name] = (n[it.name] or 0) + it.count end
+    return n
+end
+
+-- Take supplies (chests and fuel) from the home's valuables chest while
+-- there's room.  Returns how many it took, and whether any are left.
+local function takeSupplies()
+    local took = 0
+    for name, n in pairs(chestCounts(home.val)) do
+        if isSupply(name) then
+            local before = T.countItem(name)
+            T.restockFrom(home.val, name, before + n, { quiet = true, room = 1 })
+            took = took + T.countItem(name) - before
+        end
+    end
+    for name in pairs(chestCounts(home.val)) do
+        if isSupply(name) then return took, true end
+    end
+    return took, false
+end
+
+-- Put the supplies the turtle carries in the valuables chest in front.
+local function leaveSupplies()
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s)
+        if it and isSupply(it.name) then
+            turtle.select(s)
+            turtle.drop()
+        end
+    end
+    turtle.select(1)
+end
+
+-- Dig out the block on side `d` (outside the tunnel) and put a chest there.
+local function placeChest(d)
+    for _ = 1, 10 do
+        local ok, data = look(d)
+        if not ok then break end
+        if protected(data.name) then return T.isContainer(data.name) end
+        if FLUID[data.name] then
+            if not (isSource(data) and seal(d)) then break end
+        end
+        if not FLUID[data.name] and not digDir(d) then return false end
+    end
+    if not selectItem(function(n) return CHEST_ITEMS[n] end) then return false end
+    local ok = placeDir(d)
+    turtle.select(1)
+    return ok
+end
+
+-- The segment is done: build the next home at its end and move the
+-- supplies there from this one.  The turtle starts and ends at a home.
+local function advance()
+    local next = homeAt(home.k + 1)
+    local have = T.countItem("minecraft:chest") + T.countItem("minecraft:barrel")
+    for name, n in pairs(chestCounts(home.val)) do
+        if CHEST_ITEMS[name] then have = have + n end
+    end
+    if have < 2 then stop("Out of chests to build the next home (needs 2).") end
+    if not fuelToGoOn(next.z - home.z + 4 * SPACING) then
+        stop("Not enough fuel to build the next home and still get back.")
+    end
+    inTrip = true                  -- no unloading trips while carrying supplies
+    local built = false
+    while true do
+        local took, more = takeSupplies()
+        alongAxis("z", next.z)
+        if not built then
+            if not (placeChest(next.face) and placeChest(SIDE_DIR[next.bulk])) then
+                stop(string.format("Couldn't build home %d at z=%d.", next.k, next.z))
+            end
+            built = true
+        end
+        T.face(next.face)
+        leaveSupplies()
+        if not more then break end
+        if took == 0 then
+            print("Can't carry the rest of the supplies (no room); leaving them in home " .. home.k .. ".")
+            break
+        end
+        if not fuelToGoOn(2 * (next.z - home.z) + next.z) then
+            print("Not enough fuel to fetch the rest of the supplies; leaving them in home " .. home.k .. ".")
+            break
+        end
+        alongAxis("z", home.z)     -- back for the rest
+        T.face(home.face)
+    end
+    home = next
+    lastHome = home.k
+    stats.homes = stats.homes + 1
+    saveJob("active")
+    print(string.format("Built home %d at z=%d.", home.k, home.z))
+    refuel()
     inTrip = false
 end
 
@@ -544,34 +713,111 @@ local function scanHere()
     end
 end
 
-local function mineTunnel()
+-- Mine the segment from z1 to z2, starting and ending at the home.
+local function mineSegment(z1, z2)
     local lanes = planLanes()
+    print(string.format("Segment z=%d..%d from home %d: %d lanes, fuel %s.", z1, z2, home.k, #lanes,
+        tostring(turtle.getFuelLevel())))
     for i, lane in ipairs(lanes) do
         local ahead = i % 2 == 1
-        local z1, z2, dz = 1, LENGTH, 1
-        if not ahead then z1, z2, dz = LENGTH, 1, -1 end
-        print(string.format("Lane %d/%d (x=%d, y=%d), fuel %s", i, #lanes, lane.x, lane.y,
-            tostring(turtle.getFuelLevel())))
+        local from, to, dz = z1, z2, 1
+        if not ahead then from, to, dz = z2, z1, -1 end
         local ok, what
-        if i == 1 then ok, what = alongAxis("z", 1)
+        if i == 1 then ok, what = alongAxis("z", z1)
         else
             via = lanes[i - 1]             -- finished: the way home meanwhile
             ok, what = alongAxis("y", lane.y)
             if ok then ok, what = alongAxis("x", lane.x) end
         end
-        if ahead then via = nil end        -- this lane is dug back to the start
-        for z = z1, z2, dz do
+        if ahead then via = nil end        -- this lane is dug back to the segment's start
+        for z = from, to, dz do
             if not ok then break end
             scanHere()
-            if z ~= z2 then ok, what = go(ahead and 0 or 2) end
+            if z ~= to then ok, what = go(ahead and 0 or 2) end
         end
-        if not ok then
-            stuck = string.format("Can't get through at %s (%s).", T.posString(), tostring(what))
-            return
-        end
+        if not ok then stop(string.format("Can't get through at %s (%s).", T.posString(), tostring(what))) end
     end
+    via = nil
+    tunnelHome()
 end
 
+--------------------------------------------------------------------------
+-- The way back: collect the valuables from every home, most valuable
+-- first when there's no room for them all, and leave them at the start.
+--------------------------------------------------------------------------
+local leftBehind = {}      -- home number -> items left in it
+
+-- The lowest-valued thing carried that's worth less than `than`.
+local function cheapestSlot(than)
+    local slot, low
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s)
+        if it and not T.isTool(it.name) and not isSupply(it.name) then
+            local v = isBulk(it) and 0 or value(it.name)
+            if v < than and (not low or v < low) then slot, low = s, v end
+        end
+    end
+    return slot
+end
+
+local function collect(side)
+    local counts = chestCounts(side)
+    local names = {}
+    for name in pairs(counts) do
+        if not isSupply(name) then names[#names + 1] = name end
+    end
+    table.sort(names, function(a, b) return value(a) > value(b) end)
+    for _, name in ipairs(names) do
+        while (chestCounts(side)[name] or 0) > 0 do
+            if T.freeSlots() == 0 then
+                local s = cheapestSlot(value(name))
+                if not s then break end
+                turtle.select(s)
+                if not dropSide(side) then break end   -- swap it for something better
+            end
+            local before = T.countItem(name)
+            T.restockFrom(side, name, before + chestCounts(side)[name], { quiet = true, room = 0 })
+            if T.countItem(name) == before then break end
+        end
+    end
+    turtle.select(1)
+    local left = 0
+    for name, n in pairs(chestCounts(side)) do
+        if not isSupply(name) then left = left + n end
+    end
+    return left
+end
+
+local function returnToStart()
+    inTrip, T.fuelTrip = true, nil
+    T.cfg.lowFuel = 1                       -- the tank was kept for this
+    for i = #trail, 1, -1 do go(OPP[trail[i]]) end
+    trail = {}
+    tunnelHome()
+    unload("bulk")
+    print("Walking back to the start, collecting valuables.")
+    for k = home.k, 1, -1 do
+        local h = homeAt(k)
+        alongAxis("x", 0); alongAxis("y", 0)
+        alongAxis("z", h.z)
+        T.face(h.face)
+        if containerOn("front") then
+            local left = collect("front")
+            if left > 0 then leftBehind[k] = left end
+        end
+    end
+    alongAxis("x", 0); alongAxis("y", 0)
+    alongAxis("z", 0)
+    T.face(0)
+    home = homeAt(0)
+    local ok = unload("everything")
+    if not ok then print("The chests at the start are full or missing: the rest is still in the turtle.") end
+    return T.pos.x == 0 and T.pos.y == 0 and T.pos.z == 0
+end
+
+--------------------------------------------------------------------------
+-- Main
+--------------------------------------------------------------------------
 -- The pickaxe to mine with: one equipped, else one in the inventory.
 local function findPickaxe()
     for _, side in ipairs({ "left", "right" }) do
@@ -584,21 +830,26 @@ local function findPickaxe()
     end
 end
 
---------------------------------------------------------------------------
--- Main
---------------------------------------------------------------------------
+local function useJob(job)
+    WIDTH, HEIGHT, LENGTH, SPACING = job.width, job.height, job.length, job.spacing
+    setBox()
+end
+
 if doReset and forceHere then T.setHomeHere(); return end
 local pickaxe = findPickaxe()
 if not pickaxe then print("Needs a pickaxe, equipped or in the inventory."); return end
+local job = loadJob()
 
 if doReset then
-    if not loadJob() then print("No saved job; nothing to go back along."); return end
-    setBox()
+    if not job then print("No saved job; nothing to go back along."); return end
+    useJob(job)
+    home = homeAt(0)
+    segEnd = LENGTH
     local saved = T.loadPos()
     if not saved then print("No saved position; the turtle hasn't moved since its last job."); return end
     T.pos.x, T.pos.y, T.pos.z, T.dir = saved.x, saved.y, saved.z, saved.dir
-    print(string.format("Last position %s facing %d. Heading home.", T.posString(), T.dir))
-    inTrip = true                       -- no trips: just get home
+    print(string.format("Last position %s facing %d. Heading back to the start.", T.posString(), T.dir))
+    inTrip = true                       -- no trips: just get back
     T.withTool(pickaxe, function()
         -- out of a vein first: straight back to the nearest tunnel block
         if not inBox(T.pos) and T.pos.z >= 1 then
@@ -606,39 +857,85 @@ if doReset then
             alongAxis("x", math.max(X0, math.min(X1, T.pos.x)))
             alongAxis("z", math.max(1, math.min(LENGTH, T.pos.z)))
         end
-        if tunnelHome() then print("Home.") else print("Couldn't reach home; stopped at " .. T.posString()) end
+        alongAxis("x", 0); alongAxis("y", 0); alongAxis("z", 0)
+        T.face(0)
     end)
+    if T.pos.x == 0 and T.pos.y == 0 and T.pos.z == 0 then print("Home.")
+    else print("Couldn't reach the start; stopped at " .. T.posString()) end
     return
 end
 
+if resume then
+    if not (job and job.state == "active") then print("No stopped tunnel to resume."); return end
+    useJob(job)
+    lastHome = job.homes
+elseif job and job.state == "active" and job.homes > 0 and not fresh then
+    print(string.format("A %dx%d tunnel with %d homes was stopped here.", job.width, job.height, job.homes))
+    print("Run `mine --resume` to keep digging it, or add --new to start a fresh tunnel.")
+    return
+else
+    setBox()
+end
+
 if not T.requireHome(forceHere, "mine") then return end
+home = homeAt(0)
 if not (containerOn("top") and containerOn("bottom")) then
     print("Needs a chest above the turtle (valuables) and one below it (bulk).")
     return
 end
-setBox()
-saveJob()
-
 local lanes = #planLanes()
-fuelGoal = lanes * LENGTH + 2 * (LENGTH + math.abs(WIDTH) + math.abs(HEIGHT)) + 300
-unload()
-refuel()
-waitForFuel(T.cfg.fuelMargin + FUEL_WORK)
-if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < fuelGoal then
-    print(string.format("Fuel %d of the ~%d the tunnel takes; will come home to refuel as needed.",
-        turtle.getFuelLevel(), fuelGoal))
-end
-T.fuelTrip = function() trip("Low on fuel") end
+fuelGoal = lanes * SPACING + 4 * SPACING + 300
+saveJob("active")
 
-print(string.format("Mining a %dx%d tunnel %d long: %d lanes.", math.abs(WIDTH), math.abs(HEIGHT), LENGTH, lanes))
+local stopped
 T.withTool(pickaxe, function()
-    mineTunnel()
+    local ok, err = pcall(function()
+        unloadOrStop()
+        refuel()
+        if not fuelToGoOn() then stop("Not enough fuel to start: put fuel in the top chest.") end
+        T.fuelTrip = function() trip("Low on fuel") end
+        print(string.format("Mining a %dx%d tunnel, %s, homes every %d blocks.", math.abs(WIDTH),
+            math.abs(HEIGHT), LENGTH == math.huge and "as long as it can" or (LENGTH .. " long"), SPACING))
+        -- resuming: carry the start's new supplies out to the last home
+        if resume and job.homes > 0 then
+            local last = homeAt(job.homes)
+            if not fuelToGoOn(2 * last.z) then stop("Not enough fuel to get back out to home " .. last.k .. ".") end
+            inTrip = true
+            takeSupplies()
+            alongAxis("z", 1); alongAxis("z", last.z)
+            T.face(last.face)
+            if not (containerOn("front") and containerOn(last.bulk)) then
+                stop("Home " .. last.k .. "'s chests are missing.")
+            end
+            home = last
+            lastHome = last.k
+            leaveSupplies()
+            refuel()
+            inTrip = false
+            print(string.format("Back at home %d (z=%d).", home.k, home.z))
+        end
+        while home.z < LENGTH do
+            segEnd = math.min(home.z + SPACING, LENGTH)
+            mineSegment(home.z + 1, segEnd)
+            unloadOrStop()
+            refuel()
+            if segEnd >= LENGTH then break end
+            advance()
+        end
+    end)
     T.fuelTrip = nil
-    inTrip = true
-    tunnelHome()
-    unload()
     inTrip = false
+    if not ok then
+        if err == "Terminated" then error(err, 0) end
+        stopped = type(err) == "table" and err.stop or tostring(err)
+        print("Stopping: " .. stopped)
+    end
+    returnToStart()
 end)
-print(string.format("Done: %d veins (%d ore blocks), %d fluid blocks sealed.",
-    stats.veins, stats.ore, stats.sealed))
-if stuck then print(stuck) end
+saveJob(stopped and "active" or "done")
+print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed.",
+    stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed))
+for k, n in pairs(leftBehind) do
+    print(string.format("No room to bring back %d items from home %d (z=%d).", n, k, homeAt(k).z))
+end
+if stopped then print("Stopped because: " .. stopped .. " `mine --resume` carries on.") end

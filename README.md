@@ -8,7 +8,7 @@ upgrade in software.
 |---|---|
 | `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
 | `farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot, sugar cane) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
-| `mine.lua` | Digs a tunnel of any width and height, following every ore vein it touches (a few blocks out at most), sealing lava and water, and sorting what it mines into a valuables chest and a bulk chest. |
+| `mine.lua` | Digs a tunnel of any width and height, as long as asked or as long as its supplies last, following every ore vein it touches. It builds a new home from chests every so often, carries its supplies forward, and brings the valuables back to the start at the end. |
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
@@ -302,30 +302,64 @@ more than one block.
 ## mine
 
 ```
-mine <length> <width> <height> [--here]
+mine <width> <height> [length] [--spacing N] [--here]
+mine --resume
+mine ... --new
 mine reset [--here]
 ```
 
-Digs a tunnel `length` blocks long, `width` blocks wide (to the right;
-negative: to the left) and `height` blocks tall (up; negative: down). The
-turtle's own column and row are part of the tunnel: put the turtle where one
-bottom corner of the tunnel should start (top corner, for a negative height),
-facing along it. The tunnel starts with the block in front of it. `mine 32 3 3`
-digs a 3x3 tunnel 32 long, up and to the right of the turtle.
+Digs a tunnel `width` blocks wide (to the right; negative: to the left) and
+`height` blocks tall (up; negative: down), `length` blocks long. Without a
+length, it keeps going until it can't. The turtle's own column and row are
+part of the tunnel: put the turtle where one bottom corner of the tunnel
+should start (top corner, for a negative height), facing along it. The tunnel
+starts with the block in front of it. `mine 3 3 32` digs a 3x3 tunnel 32
+long, up and to the right of the turtle; `mine 3 3` digs one as long as its
+supplies last.
 
 Put **two chests** at the start: one directly **above** the turtle for
-valuables and one directly **below** it for bulk. Bulk is stone, cobblestone,
-deepslate, andesite, diorite, granite, tuff, dirt, gravel, sand, netherrack
-and the like. Everything else counts as a valuable, including anything it
-doesn't recognise. Keep fuel in the valuables chest. Coal the turtle mines
-lands there too, so it fuels itself as it goes. Needs a pickaxe, equipped or
-in the inventory.
+valuables and supplies, and one directly **below** it for bulk. Stock the top
+one with **fuel and chests**. Bulk is stone, cobblestone, deepslate,
+andesite, diorite, granite, tuff, dirt, gravel, sand, netherrack and the
+like. Everything else counts as a valuable, including anything it doesn't
+recognise. Needs a pickaxe, equipped or in the inventory.
 
-- **Lanes:** the tunnel is dug in lanes along its length: every row of the
-  two side columns, and every third row plus the top and bottom ones in the
-  columns between. The rows in between are dug from above and below. So the
-  turtle touches every block of the walls, floor, ceiling and far end, and
-  looks at each one.
+- **Homes:** the tunnel is dug a segment at a time. At the end of each
+  segment the turtle builds a new home from two chests:
+  - one set into the wall beside its start column, for valuables and supplies;
+  - one under the floor (over the ceiling, for a downward tunnel) for bulk.
+
+  Its trips to unload or refuel only ever go back to the nearest home, never
+  all the way to the start. The spacing is chosen so a segment's bulk fits
+  in one chest, at most 64 blocks (64 for a 3x3 tunnel); `--spacing N`
+  overrides it.
+- **Supplies move forward:** building a home, the turtle carries the spare
+  chests and all the fuel from the old home to the new one, in as many trips
+  as it takes. Coal it mines goes into the home's chest and fuels it too.
+  Bulk stays in the home it was mined near. Valuables stay in their home's
+  chest until the end.
+- **Stopping:** it stops when:
+  - it runs out of chests for the next home;
+  - it doesn't have enough fuel to go on and still get back;
+  - a home's chest is full or missing;
+  - it reaches something it can't dig through (bedrock).
+
+  Then, or once the tunnel is as long as asked, it walks back to the start.
+  On the way it collects the valuables from every home: the most valuable
+  first when it can't carry them all (diamonds and netherite before gold
+  before iron, and so on), swapping out cheaper things for better ones. It
+  leaves what it brings in the top chest at the start, and says what it had
+  to leave behind and in which home. The tank always keeps enough fuel for
+  this walk back.
+- **Resume:** supplies left over stay in the last home. After a stop, top up
+  the start's top chest with chests and fuel and run `mine --resume`. It
+  carries the new supplies out to the last home and carries on from there.
+  To start a fresh tunnel somewhere else instead, add `--new`.
+- **Lanes:** each segment is dug in lanes along it: every row of the two side
+  columns, and every third row plus the top and bottom ones in the columns
+  between. The rows in between are dug from above and below. So the turtle
+  touches every block of the walls, floor, ceiling and far end, and looks at
+  each one.
 - **Veins:** an ore it touches is mined along with its whole vein. That means
   anything tagged as an ore (so modded ores too), any `*_ore` block, and
   ancient debris. The turtle follows the vein block by block, looking all round
@@ -339,21 +373,21 @@ in the inventory.
   tunnel is filled and dug out. Falling gravel and sand are dug until they
   stop coming.
 - **Trips home:** before a dig with fewer than 2 empty slots, or a move that
-  would leave too little fuel to get home, it goes home. There it sorts its
-  inventory into the two chests (tidying the valuables chest), refuels from
-  the valuables chest, and comes back to the same spot, up the vein if it was
-  in one. It only travels through blocks it has already dug, so nothing is
-  dug, and nothing can spill, on the way. With no fuel to be had, it waits at
-  home and says so. A full or missing chest makes it wait too: it never drops
-  items on the ground.
+  would leave too little fuel, it goes to its home. There it sorts its
+  inventory into the two chests (tidying the valuables chest), refuels, and
+  comes back to the same spot, up the vein if it was in one. It only travels
+  through blocks it has already dug, so nothing is dug, and nothing can
+  spill, on the way. It never drops items on the ground.
 - **Never dug:** chests, barrels, shulker boxes, spawners and ComputerCraft
-  blocks (other turtles, computers). An unbreakable block (bedrock) in the
-  tunnel ends the job. The turtle goes home and says where it got stuck.
+  blocks (other turtles, computers).
 - **Reset:** position is saved after every move. `mine reset` brings the
-  turtle home after a Ctrl+T or a server restart, even from inside a vein:
-  it digs straight back into the tunnel, then follows it out. Running the
-  same `mine` command again redoes the tunnel, passing quickly through the
-  part already dug.
+  turtle back to the start after a Ctrl+T or a server restart, even from
+  inside a vein: it digs straight back into the tunnel, then follows it out.
+  The tunnel can then be carried on with `mine --resume`.
+
+A second turtle working as a courier is planned: it would shuttle between
+the start and the newest home, bringing chests and fuel out and valuables
+back, so the miner can go on for as long as the start is kept stocked.
 
 ## autocompost
 

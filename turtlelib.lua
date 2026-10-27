@@ -999,9 +999,10 @@ end
 
 -- Move a stack of `name` into the container's first slot, where sucking
 -- from it takes from.  Whatever is in slot 1 goes to an empty slot, or,
--- with the container full, into an empty turtle slot that is returned so
--- the caller can put it back.  Returns found, held.
-local function frontStack(chest, name)
+-- with the container full, into an empty turtle slot (taken with `suck`,
+-- the turtle.suck for the container's side) that is returned so the
+-- caller can put it back.  Returns found, held.
+local function frontStack(chest, name, suck)
     local items = chest.list()
     local from
     for slot, it in pairs(items) do
@@ -1022,7 +1023,7 @@ local function frontStack(chest, name)
             held = findEmptySlot()
             if not held then return false end
             turtle.select(held)
-            turtle.suckDown(64)
+            suck(64)
         end
     end
     return chest.pushItems(self, from, 64, 1) > 0, held
@@ -1063,7 +1064,7 @@ function T.restockFrom(side, name, target, opts)
 
     local fronted = chest and chest.pushItems and chest.size and pcall(function()
         while T.countItem(name) < target and T.freeSlots() > room do
-            local found, held = frontStack(chest, name)
+            local found, held = frontStack(chest, name, suck)
             if not found then break end
             turtle.select(1)
             local got = suck(math.min(64, target - T.countItem(name)))
