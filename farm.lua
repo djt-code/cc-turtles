@@ -28,7 +28,8 @@
 -- Placement: put the turtle diagonally outside one corner of the farm,
 -- hovering TWO blocks above the farmland (one block above the crop tops).
 -- Put the output chest/barrel directly below the start position (up to 3
--- blocks down).  Keep in the chest: what each crop is planted with (wheat
+-- blocks down, air between; it's found afresh on every visit, so it can be
+-- moved up or down later without telling the turtle).  Keep in the chest: what each crop is planted with (wheat
 -- or beetroot seeds, carrots, potatoes, sugar cane), dirt, and a bucket or
 -- two (water buckets for clone); the turtle restocks from it.
 --

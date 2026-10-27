@@ -148,6 +148,15 @@ them from the chest at the start of every pass and whenever it runs out mid-pass
 (up to one per tile of that crop, max 256), so you never need to hand them to it
 directly.
 
+The chest (or barrel) can be anywhere from 1 to 3 blocks below the start
+position, with only air between it and the turtle. The turtle doesn't remember
+where the chest is. Each visit home, it moves down until it finds the chest, so
+you can raise or lower the chest on an existing farm without telling the turtle,
+even while it's running. Don't move the start position itself. The saved farm
+map is measured from it, and it must stay two blocks above the farmland. If no
+chest is found within 3 blocks, the turtle prints "No chest found below home;
+keeping items." and carries on.
+
 Farms can grow **wheat, carrots, potatoes, beetroot and sugar cane**, in any mix:
 strips of different crops, or crops mixed within a strip.
 
