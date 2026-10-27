@@ -853,16 +853,17 @@ end
 -- word of its id ("wheat_seeds" -> "seeds", "water_bucket" -> "bucket").
 local function itemKind(name) return name:match("([^_:]+)$") or name end
 
--- Lay the container out in order from its first slot: by kind, then by
--- item, fullest stack first, so every item's stacks sit together and
--- similar items (all the seeds, all the buckets) side by side, with the
--- empty slots at the end.  Each stack is given a slot (one already on a
--- slot meant for a stack just like it stays there), then stacks are moved
--- into empty slots meant for them, and when no empty slot is meant for
--- anything, a stack in another's way goes to an empty slot to make one.
--- A full container has no empty slot, so the turtle holds one of its
--- stacks meanwhile (if it has an empty slot itself) and drops it back
--- into the slot left for it at the end.
+-- Lay the container out in order, packed against its last slot: by kind,
+-- then by item, fullest stack first, so every item's stacks sit together
+-- and similar items (all the seeds, all the buckets) side by side.  The
+-- empty slots come first: slot 1 is where hoppers fill and the turtle
+-- sucks from, so it stays a working slot.  Each stack is given a slot
+-- (one already on a slot meant for a stack just like it stays there),
+-- then stacks are moved into empty slots meant for them, and when no
+-- empty slot is meant for anything, a stack in another's way goes to an
+-- empty slot to make one.  A full container has no empty slot, so the
+-- turtle holds one of its stacks meanwhile (if it has an empty slot
+-- itself) and drops it back into the slot left for it at the end.
 local function sortContainer(chest, self, side)
     local size = chest.size()
     local items = chest.list()
@@ -898,14 +899,17 @@ local function sortContainer(chest, self, side)
         if a.count ~= b.count then return a.count > b.count end
         return (a.slot or 0) < (b.slot or 0)
     end)
-    -- Give each stack its slot: slot t gets a stack like stacks[t].
+    -- Give each stack its slot: slot base+i gets a stack like stacks[i].
     local function like(s) return s.name .. "|" .. s.nbt .. "|" .. s.count end
+    local base = size - #stacks
     local home, wants = {}, {}              -- home[stack] = slot; wants[slot] = stack
-    for t, s in ipairs(stacks) do
+    for i, s in ipairs(stacks) do
+        local t = base + i
         local o = at[t]
         if o and like(o) == like(s) then home[o], wants[t] = t, o end
     end
-    for t, s in ipairs(stacks) do
+    for i, s in ipairs(stacks) do
+        local t = base + i
         if not wants[t] then
             for _, c in ipairs(stacks) do
                 if not home[c] and like(c) == like(s) then home[c], wants[t] = t, c; break end
@@ -928,7 +932,7 @@ local function sortContainer(chest, self, side)
             if not filled then
                 -- no empty slot is meant for anything: move a stack that's
                 -- in another's way to an empty slot (the held stack's, or
-                -- past the end), freeing the slot it was in
+                -- one before the sorted block), freeing the slot it was in
                 local blocker
                 for e = 1, size do
                     local s = at[e]
@@ -936,7 +940,7 @@ local function sortContainer(chest, self, side)
                 end
                 if not blocker then return end      -- all in place
                 local empty
-                for e = size, 1, -1 do
+                for e = 1, size do
                     if not at[e] then empty = e; break end
                 end
                 if not empty then error("chest sort: no room", 0) end

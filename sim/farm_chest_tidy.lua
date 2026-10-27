@@ -1,8 +1,9 @@
 -- sim/farm_chest_tidy.lua
 --
 -- The farm chest is tidied at every chest visit: part stacks scattered
--- through it are merged, then it's sorted, each item's stacks together
--- and like items side by side.  A chest already in order takes no moves;
+-- through it are merged, then it's sorted against the last slot, each
+-- item's stacks together and like items side by side, the empty slots
+-- first.  A chest already in order takes no moves;
 -- a full one is sorted with the turtle holding a stack meanwhile.
 --
 -- Minimal CC:Tweaked world + turtle mock for exercising farm.lua.
@@ -361,15 +362,16 @@ realPrint("chest before: " .. slots())
 run("5", "6", "0")
 realPrint("   chest after:  " .. slots())
 -- Sorted: each item's stacks side by side, items grouped by kind (the last
--- word of the id), no empty slot before the last stack.
+-- word of the id), packed against the last slot: the empty slots first.
 local function kind(n) return n:match("([^_:]+)$") end
 local function sorted()
-    local last, seen, gap = nil, {}, false
+    local last, seen, started = nil, {}, false
     for s = 1, 27 do
         local c = chest[s]
-        if not c then gap = true
+        if not c then
+            if started then return "an empty slot after the first stack (slot " .. s .. ")" end
         else
-            if gap then return "an empty slot before slot " .. s end
+            started = true
             if c.name ~= last then
                 if seen[c.name] then return c.name .. " split up (slot " .. s .. ")" end
                 if last and (kind(last) > kind(c.name) or (kind(last) == kind(c.name) and last > c.name)) then

@@ -266,10 +266,11 @@ fixes the lane first and then replants.
 - **Tidy chest.** At every visit, before taking or moving anything and again
   before leaving, the turtle merges part stacks of the same item in the chest
   (hoppers and its own partial takes leave them scattered), so each item fills as
-  few slots as possible. Then it sorts the chest from its first slot onward.
-  Each item's stacks sit together, fullest first. Similar items sit side by
-  side, grouped by the last word of the item's name: all the seeds, then all
-  the buckets. The empty slots end up at the end. Stacks already in place
+  few slots as possible. Then it sorts the chest, packed against its last
+  slot. Each item's stacks sit together, fullest first. Similar items sit side
+  by side, grouped by the last word of the item's name: all the seeds, then all
+  the buckets. The empty slots come first, because slot 1 is the working slot:
+  hoppers fill it and the turtle takes from it. Stacks already in place
   aren't moved, so a chest that's already in order costs nothing. A full chest
   gets sorted too: the turtle holds one stack while it shuffles the rest.
 - **Full inventory, full chest.** Before working each tile the turtle checks it
