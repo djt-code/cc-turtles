@@ -1070,6 +1070,15 @@ local function relative(blocks)
         table.sort(keys)
         return nil, "scan entries aren't {x, y, z, name, tags} (they have: " .. table.concat(keys, ", ") .. ")"
     end
+    -- whole numbers (they come as 3.0, which "3.0" .. keys wouldn't match),
+    -- with the turtle-relative r, u, f (right, up, forward) when given
+    local function round(v) return v and math.floor(v + 0.5) end
+    local whole = {}
+    for _, e in ipairs(blocks) do
+        whole[#whole + 1] = { x = round(e.x), y = round(e.y), z = round(e.z), name = e.name, tags = e.tags,
+                              r = round(e.r), u = round(e.u), f = round(e.f) }
+    end
+    blocks = whole
     local far = false
     for _, e in ipairs(blocks) do
         if math.abs(e.x) > SCAN_RADIUS or math.abs(e.y) > SCAN_RADIUS or math.abs(e.z) > SCAN_RADIUS then
@@ -1088,7 +1097,8 @@ local function relative(blocks)
     if not me then return nil, "scan gives world coordinates, and the turtle can't find itself in them" end
     local out = {}
     for _, e in ipairs(blocks) do
-        out[#out + 1] = { x = e.x - me.x, y = e.y - me.y, z = e.z - me.z, name = e.name, tags = e.tags }
+        out[#out + 1] = { x = e.x - me.x, y = e.y - me.y, z = e.z - me.z, name = e.name, tags = e.tags,
+                          r = e.r, u = e.u, f = e.f }
     end
     return out
 end
@@ -1132,12 +1142,12 @@ end
 -- File a scan: the blocks touching the tunnel's walls, floor and ceiling
 -- (absent ones are air), and ore further out for this segment.
 local scans = 0
-local function record(blocks, z1, z2)
+local function record(blocks, z1, z2, toCell)
     local seen = {}
     scans = scans + 1
     local from = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
     for _, e in ipairs(blocks) do
-        local p = toTunnel(facing, e)
+        local p = toCell(e)
         local k = key(p)
         seen[k] = true
         local kind = isOre({ name = e.name, tags = tagSet(e.tags) }) and "ore"
@@ -1259,12 +1269,41 @@ local function scanNow(z1, z2)
         warnedScan = false
         print("Geo scanner working again.")
     end
-    if not facing then
-        facing = lineUp(blocks)
-        if not facing then return end          -- try again further on
-        print("Geo scanner lined up with the tunnel.")
+    local toCell
+    if blocks[1] and blocks[1].f and blocks[1].r and blocks[1].u then
+        -- right, up, forward from the turtle (Advanced Peripherals 0.8):
+        -- straight into tunnel coordinates by its heading.  If that puts
+        -- blocks where it knows it has dug, its heading is off: skip it.
+        local ahead, right = DELTA[T.dir], DELTA[(T.dir + 1) % 4]
+        toCell = function(e)
+            return { x = T.pos.x + e.f * ahead[1] + e.r * right[1], y = T.pos.y + e.u,
+                     z = T.pos.z + e.f * ahead[3] + e.r * right[3] }
+        end
+        local hits = 0
+        for _, e in ipairs(blocks) do
+            if (e.r ~= 0 or e.u ~= 0 or e.f ~= 0) and knownAir(toCell(e)) then hits = hits + 1 end
+        end
+        if hits >= 4 then
+            if not warnedScan then
+                warnedScan = true
+                print("Geo scanner: the scan puts blocks where it has dug, so its heading looks off; skipping scans.")
+            end
+            return
+        end
+        if not facing then
+            facing = true
+            print("Geo scanner lined up with the tunnel.")
+        end
+    else
+        -- world axes only: line them up with the tunnel from what's dug
+        if not facing then
+            facing = lineUp(blocks)
+            if not facing then return end      -- try again further on
+            print("Geo scanner lined up with the tunnel.")
+        end
+        toCell = function(e) return toTunnel(facing, e) end
     end
-    record(blocks, z1, z2)
+    record(blocks, z1, z2, toCell)
     -- collect what this scan found (coal first, low on fuel), then go on
     -- with the tunnel
     local this = scans

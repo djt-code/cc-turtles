@@ -249,8 +249,16 @@ local function geoScanner()
                     local tags = {}
                     if b.tags then for t in pairs(b.tags) do tags[#tags + 1] = t end end
                     if b.name:find("_ore$") then tags[#tags + 1] = "c:ores" end
-                    local o = WORLD_COORDS and 1000 or 0    -- as world coordinates, not offsets
-                    out[#out + 1] = { x = tz + o, y = ty + o, z = tx + o, name = b.name, tags = tags }
+                    -- as AP 0.8.2a gives them: offsets along the world's axes, as
+                    -- decimals, and right/up/forward from the turtle's real facing;
+                    -- the variant gives world coordinates and no r/u/f
+                    if WORLD_COORDS then
+                        out[#out + 1] = { x = tz + 1000, y = ty + 1000, z = tx + 1000, name = b.name, tags = tags }
+                    else
+                        out[#out + 1] = { x = tz + 0.0, y = ty + 0.0, z = tx + 0.0, name = b.name, tags = tags,
+                            f = tx * DX[P.d] + tz * DZ[P.d] + 0.0, u = ty + 0.0,
+                            r = tx * DX[(P.d + 1) % 4] + tz * DZ[(P.d + 1) % 4] + 0.0 }
+                    end
                 end
             end end end
             return out
@@ -792,7 +800,8 @@ end
 local without = scanWorld(false)
 WORLD_COORDS = true                     -- a scanner that gives world coordinates
 scanWorld(true)
-check("made sense of a scan in world coordinates", logHas("lined up") and not logHas("Geo scanner:"))
+check("made sense of a scan in world coordinates, with no r/u/f (lined up from what's dug)",
+    logHas("lined up") and not logHas("Geo scanner:"))
 WORLD_COORDS = false
 local withIt = scanWorld(true)
 local function oreGone(x, y, z) return not isOreBlock(get(x, y, z)) end
