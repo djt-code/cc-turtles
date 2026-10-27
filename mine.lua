@@ -58,9 +58,11 @@
 --    segment it swaps the scanner in for its pickaxe (a chunk controller
 --    on the other side stays put), scans (radius 8, no fuel), and swaps
 --    back.  It only turns to look at wall blocks the scan says are ore,
---    lava or water, and after each segment it tunnels out to ore up to
---    SCAN_REACH (6) from the tunnel.  Low on fuel, it goes for coal a scan
---    finds at once.  See the Geo Scanner section for how it lines the
+--    lava or water, and right after each scan it tunnels out to the ore it
+--    found, up to SCAN_REACH (6) from the tunnel, and diamonds however far
+--    out as long as the scan saw them, then goes on with the tunnel.  It
+--    never goes further than the scan reached.  Low on fuel, it fetches
+--    the coal first.  See the Geo Scanner section for how it lines the
 --    scan's world directions up with the tunnel.
 --  * Veins: an ore it touches (anything tagged as an ore, *_ore blocks,
 --    ancient debris) is mined along with its whole vein: the turtle
@@ -292,9 +294,23 @@ local hasScanner = false   -- a Geo Scanner on board: ore is fetched from furthe
 
 -- Within reach of the tunnel dug so far (VEIN_REACH; SCAN_REACH with a
 -- scanner), and not back past its start.
-local function inReach(p)
-    return p.z >= 1 and outside(p) <= (hasScanner and SCAN_REACH or VEIN_REACH)
+-- While ore a scan found is being fetched: the spot in the tunnel the
+-- scan was taken from.  The turtle goes no further from it than the
+-- scan reached (SCAN_RADIUS, along each axis).
+local bound
+
+local function inScan(p)
+    return not bound or math.max(math.abs(p.x - bound.x), math.abs(p.y - bound.y),
+        math.abs(p.z - bound.z)) <= SCAN_RADIUS
 end
+
+local function inReach(p)
+    return p.z >= 1 and outside(p) <= (hasScanner and SCAN_REACH or VEIN_REACH) and inScan(p)
+end
+
+-- Diamonds a scan shows are mined however far out, as long as they're in
+-- the scan.
+local function isDiamond(name) return name:find("diamond") ~= nil end
 
 --------------------------------------------------------------------------
 -- Homes.  Home 0 is the start: valuables chest above, bulk below.  Home
@@ -549,10 +565,13 @@ function mineVein(d)
     trail[#trail + 1] = d
     for _, e in ipairs(around()) do
         local m = neighbour(e)
-        if not opened[key(m)] and inReach(m) then
+        -- fetching what a scan found, look past the usual reach for more
+        -- diamond, but never past the scan
+        local near = inReach(m)
+        if not opened[key(m)] and (near or (bound and m.z >= 1 and inScan(m))) then
             local ok, data = look(e)
             if not ok then opened[key(m)] = true
-            elseif isOre(data) then mineVein(e)
+            elseif isOre(data) and (near or isDiamond(data.name)) then mineVein(e)
             elseif FLUID[data.name] then seal(e)
             end
         end
@@ -947,9 +966,11 @@ end
 -- the tunnel by finding the one way round that puts none of them where it
 -- knows there's air (what it has dug).  From then on it knows what's in
 -- the walls without turning to look at them, and where ore lies further
--- out: after each segment's lanes it tunnels out to that, up to
--- SCAN_REACH from the tunnel, and mines it.  Low on fuel, it goes for the
--- coal a scan finds straight away, and burns it.
+-- out: right after each scan it tunnels out to what that scan found, up to
+-- SCAN_REACH from the tunnel (diamonds however far, as long as the scan
+-- saw them), mines it, and goes on with the tunnel; it never goes further
+-- than the scan reached from where it was taken.  Low on fuel, it fetches
+-- the coal first, and burns it.
 --------------------------------------------------------------------------
 local warnedScan = false
 
@@ -1028,8 +1049,11 @@ end
 
 -- File a scan: the blocks touching the tunnel's walls, floor and ceiling
 -- (absent ones are air), and ore further out for this segment.
+local scans = 0
 local function record(blocks, z1, z2)
     local seen = {}
+    scans = scans + 1
+    local from = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
     for _, e in ipairs(blocks) do
         local p = toTunnel(facing, e)
         local k = key(p)
@@ -1039,8 +1063,10 @@ local function record(blocks, z1, z2)
         local out = outside(p)
         if out == 1 then known[k] = kind end
         local zTop = z2 == LENGTH and z2 + SCAN_REACH or z2
-        if kind == "ore" and out >= 1 and inReach(p) and p.z >= z1 and p.z <= zTop and not opened[k] then
-            targets[k] = { x = p.x, y = p.y, z = p.z, coal = e.name:find("coal") ~= nil }
+        if kind == "ore" and out >= 1 and p.z >= z1 and p.z <= zTop and not opened[k]
+                and (inReach(p) or isDiamond(e.name)) then
+            targets[k] = { x = p.x, y = p.y, z = p.z, coal = e.name:find("coal") ~= nil,
+                           from = from, scan = scans }
         end
     end
     -- the blocks touching the tunnel that the scan saw no block in: air
@@ -1103,8 +1129,9 @@ end
 
 -- Fetch ore found by the scanner: from the tunnel block nearest each,
 -- through the tunnel (dug already, or dug now: it's tunnel), and back to
--- where the turtle was.  `which` picks them (nil: all); coal first when
--- fuel is low, then along the tunnel.
+-- where the turtle was.  `which` picks them (nil: all, which mops up any
+-- a stop for room or fuel left); coal first when fuel is low, then along
+-- the tunnel.
 local function fetchTargets(which)
     local list = {}
     for _, t in pairs(targets) do
@@ -1124,7 +1151,9 @@ local function fetchTargets(which)
             alongAxis("z", math.max(1, math.min(segEnd, t.z)))
             alongAxis("x", math.max(X0, math.min(X1, t.x)))
             alongAxis("y", math.max(Y0, math.min(Y1, t.y)))
+            bound = t.from
             fetch(t)
+            bound = nil
             if t.coal and fuelLow() then T.refuelTo(home.z + fuelGoal) end
         end
         targets[key(t)] = nil
@@ -1149,15 +1178,19 @@ local function scanNow(z1, z2)
         print("Geo scanner lined up with the tunnel.")
     end
     record(blocks, z1, z2)
+    -- collect what this scan found (coal first, low on fuel), then go on
+    -- with the tunnel
+    local this = scans
     if fuelLow() then
-        local any = false
-        for _, t in pairs(targets) do if t.coal then any = true; break end end
-        if any then
-            print(string.format("Low on fuel (%s): going for the coal the scanner found.",
-                tostring(turtle.getFuelLevel())))
-            fetchTargets(function(t) return t.coal end)
+        for _, t in pairs(targets) do
+            if t.coal and t.scan == this then
+                print(string.format("Low on fuel (%s): going for the coal the scanner found first.",
+                    tostring(turtle.getFuelLevel())))
+                break
+            end
         end
     end
+    fetchTargets(function(t) return t.scan == this end)
 end
 
 -- Mine the segment from z1 to z2, starting and ending at the home.
@@ -1245,7 +1278,7 @@ local function collect(side)
 end
 
 local function returnToStart()
-    inTrip, T.fuelTrip = true, nil
+    inTrip, T.fuelTrip, bound = true, nil, nil
     T.cfg.lowFuel = 1                       -- the tank was kept for this
     for i = #trail, 1, -1 do go(OPP[trail[i]]) end
     trail = {}

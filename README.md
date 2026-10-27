@@ -390,11 +390,16 @@ recognise. Needs a pickaxe, equipped or in the inventory.
     where it knows it has already dug.
   - **Walls:** it only turns to look at wall blocks the scan says are ore,
     lava or water. In tests it turned about a fifth as often.
-  - **Ore further out:** after each stretch between homes, it tunnels out to
-    ore up to 6 blocks from the tunnel (`SCAN_REACH`) and mines the whole
-    vein. It refills any floor it dug through, and seals lava on the way.
-  - **Coal first when fuel is low:** when its fuel gets low, it goes for
-    the coal a scan finds straight away and burns it.
+  - **Ore further out:** right after each scan, it collects what that scan
+    found. It tunnels out to ore up to 6 blocks from the tunnel
+    (`SCAN_REACH`) and mines the whole vein, then goes on with the tunnel.
+    It refills any floor it dug through, and seals lava on the way.
+  - **Diamonds:** it always mines any diamond a scan shows, however far
+    out, but never goes further from the tunnel than the scan reached (8
+    blocks along any direction from where the scan was taken), even
+    following a vein.
+  - **Coal first when fuel is low:** when its fuel gets low, it fetches the
+    coal a scan found first, and burns it.
   - **Cost:** scans are radius 8, which costs no fuel (Advanced Peripherals'
     defaults: free up to 8, 2 seconds between scans).
 
