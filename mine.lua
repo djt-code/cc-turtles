@@ -5,7 +5,7 @@
 -- afterwards.  Optional: Advanced Peripherals Chunky Turtle upgrade so it
 -- keeps running unattended.
 --
--- Usage:  mine <width> <height> [length] [--spacing N] [--here]
+-- Usage:  mine <width> <height> [length] [--spacing N] [--no-lights] [--here]
 --         mine --resume          keep digging the tunnel it stopped in
 --         mine ... --new         start a fresh tunnel, forgetting the old one
 --         mine reset             return to the start after a Ctrl+T or restart
@@ -25,7 +25,7 @@
 -- one directly BELOW it for bulk (stone, cobblestone, deepslate, dirt,
 -- gravel, sand...).  Stock the top chest with fuel and with CHESTS: the
 -- turtle builds a new home out of two of them every `spacing` blocks.
--- Torches in it too, and it lights the tunnel.
+-- Torches in it too, and it lights the tunnel (unless --no-lights).
 --
 -- How it works:
 --  * Homes: the tunnel is dug a segment at a time.  At the end of each
@@ -73,8 +73,11 @@
 --    that takes: one in a niche dug into the wall at floor level every
 --    19 blocks or so for a 3-wide tunnel (fewer the narrower), on both
 --    walls when it's wider than 8.  In the niche the torch is out of the
---    tunnel, so the turtle never digs it up again.  Torches are supplies:
---    they move forward with the homes, and it keeps up to 64 on board.
+--    tunnel, so the turtle never digs it up again; a niche that opens into
+--    a cave gets a bulk block under it to stand the torch on.  Torches are
+--    supplies: they move forward with the homes, and it keeps up to 64 on
+--    board.  Lighting is optional: with no torches it just keeps mining,
+--    and --no-lights turns it off (torches are then just valuables).
 --  * Never digs chests, barrels, shulker boxes, spawners or ComputerCraft
 --    blocks (other turtles, computers).
 --  * Position is saved after every move, so `mine reset` can bring it
@@ -96,6 +99,7 @@ local args = { ... }
 local forceHere = T.popFlag(args, "--here")
 local resume = T.popFlag(args, "--resume")
 local fresh = T.popFlag(args, "--new")
+local lights = not T.popFlag(args, "--no-lights")
 local spacingArg
 for i = #args - 1, 1, -1 do
     if args[i] == "--spacing" then
@@ -107,7 +111,7 @@ local doReset = args[1] == "reset"
 local WIDTH, HEIGHT, LENGTH = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
 
 local function usage()
-    print("Usage: mine <width> <height> [length] [--spacing N] [--here]")
+    print("Usage: mine <width> <height> [length] [--spacing N] [--no-lights] [--here]")
     print("       mine --resume | mine reset [--here]")
     print("width: + right / - left; height: + up / - down;")
     print("no length: dig until out of chests, fuel or room")
@@ -185,7 +189,7 @@ end
 -- forward.
 local CHEST_ITEMS = { ["minecraft:chest"] = true, ["minecraft:barrel"] = true }
 local TORCHES = { ["minecraft:torch"] = true, ["minecraft:soul_torch"] = true }
-local function isSupply(name) return CHEST_ITEMS[name] or T.fuel[name] or TORCHES[name] end
+local function isSupply(name) return CHEST_ITEMS[name] or T.fuel[name] or (lights and TORCHES[name]) end
 
 -- What's worth carrying back first when the turtle can't carry it all.
 -- Anything not listed: 40 if it looks like an ore's drop, else 10.
@@ -219,7 +223,7 @@ local segEnd = 0           -- last block of the segment being mined
 -- blocks, and on both walls when the tunnel is too wide to light from
 -- one.  LIGHT_REACH leaves a margin: every floor block gets light 2.
 local LIGHT_REACH = 12
-local TORCH_KEEP = 64      -- torches carried
+local TORCH_KEEP = lights and 64 or 0    -- torches carried (--no-lights: none)
 local torchEvery, torchWalls, torchAlong
 
 local function setBox()
@@ -845,12 +849,30 @@ local function scanHere()
     end
 end
 
+-- The niche in direction d has nothing to hang a torch on or stand it on
+-- (it opens into a cave): step into it, put a bulk block under it, and
+-- step back.
+local function supportNiche(d)
+    if not go(d) then return false end
+    trail[#trail + 1] = d                  -- out of the tunnel, as in a vein
+    local ok, data = look("down")
+    local put = false
+    if not ok or FLUID[data.name] or SOFT[data.name] then
+        if ok and SOFT[data.name] then digDir("down") end
+        put = putFiller("down")
+    end
+    go(OPP[d])
+    trail[#trail] = nil
+    return put
+end
+
 -- Light the tunnel from here, if this is a floor-level block by a wall
 -- and z is where a torch goes: dig a niche in the wall and put a torch
--- in it, against the block behind or on the one below.
+-- in it, against the block behind or on the one below (one put there if
+-- there's neither).  No torches, or --no-lights: it just keeps mining.
 local warnedTorch = false
 local function lightHere()
-    if T.pos.y ~= Y0 or not torchAt(T.pos.z) then return end
+    if not lights or T.pos.y ~= Y0 or not torchAt(T.pos.z) then return end
     local d
     if T.pos.x == 0 then d = WALL
     elseif torchWalls == 2 and T.pos.x == (WIDTH > 0 and X1 or X0) then d = (WALL + 2) % 4
@@ -876,11 +898,12 @@ local function lightHere()
             if not (isSource(data) and seal(d)) then break end
         elseif not digDir(d) then return end
     end
-    if selectItem(isTorch) and placeDir(d) then
+    local placed = selectItem(isTorch) and placeDir(d)
+    if not placed and supportNiche(d) then placed = selectItem(isTorch) and placeDir(d) end
+    if placed then
         stats.torches = stats.torches + 1
-    elseif not warnedTorch then
-        warnedTorch = true
-        print("Couldn't place a torch at " .. T.posString() .. " (nothing to hang it on).")
+    else
+        print("Couldn't place a torch at " .. T.posString() .. "; carrying on.")
     end
     turtle.select(1)
 end
@@ -1107,8 +1130,9 @@ T.withTool(pickaxe, function()
     returnToStart()
 end)
 saveJob(stopped and "active" or "done")
-print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled, %d torches placed.",
-    stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled, stats.torches))
+print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled%s.",
+    stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled,
+    lights and (", " .. stats.torches .. " torches placed") or ""))
 for k, n in pairs(leftBehind) do
     print(string.format("No room to bring back %d items from home %d (z=%d).", n, k, homeAt(k).z))
 end

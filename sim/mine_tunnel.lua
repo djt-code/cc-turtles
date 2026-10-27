@@ -9,7 +9,8 @@
 -- homes, and it never moves on an empty tank.  Then homes along a longer
 -- tunnel (supplies carried forward, valuables collected on the way
 -- back), lit by torches in wall niches with no floor block dark enough
--- for mobs; a crevasse across the tunnel, which it bridges so a player can
+-- for mobs (one niche opening into a cave gets a block to stand its torch
+-- on); --no-lights; a crevasse across the tunnel, which it bridges so a player can
 -- walk the floor; a tunnel with no length that runs out of chests, then
 -- `mine --resume` once more chests are added (twice: the second time a
 -- home holds more valuables than fit, and the most valuable come back);
@@ -524,6 +525,7 @@ check("job done", jobState() == "done", tostring(jobState()))
 setup(stock(8, 128, 64)); features()
 set(-1, 1, 20, ore("minecraft:diamond_ore"))       -- in the wall near home 1
 set(3, 0, 40, ore("minecraft:emerald_ore"))        -- in the wall near home 2
+set(-2, 0, 10, nil); set(-1, -1, 10, nil)          -- a cave behind and under the niche at z=10
 remember()
 startAt(); inv, files = {}, {}
 FUEL, LOWEST, DRY, SPILLED, TRAVEL_DIGS = 200, 200, 0, 0, 0
@@ -542,6 +544,8 @@ for z = 1, 50 do
 end
 check("torches in wall niches every 19, none on a home", table.concat(niches, ",") == "10,29,49",
     "at z=" .. table.concat(niches, ","))
+check("the niche over the cave got a block to stand the torch on", get(-1, -1, 10) ~= nil,
+    tostring((get(-1, -1, 10) or {}).name))
 check("back at the start", atStart())
 check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
@@ -654,4 +658,20 @@ for z = 1, 30 do
     if (get(10, 0, z) or {}).name == "minecraft:torch" then right = right + 1 end
 end
 check("torches on both walls", left > 0 and left == right, left .. " left, " .. right .. " right")
+check("back at the start", atStart())
+
+-- 10. --no-lights: torches in the chest, but it leaves them there and
+--     says nothing about lighting
+setup(stock(4, 64, 16))
+startAt(); inv, files = {}, {}
+FUEL, DRY = 1000, 0
+run("3", "3", "20", "--no-lights")
+local placed = 0
+for x = -2, 4 do for z = 1, 20 do
+    if (get(x, 0, z) or {}).name == "minecraft:torch" then placed = placed + 1 end
+end end
+local _, top = contents(chestAt(0, 1, 0))
+check("no torches placed, all 16 still in the chest", placed == 0 and (top["minecraft:torch"] or 0) == 16,
+    placed .. " placed, " .. (top["minecraft:torch"] or 0) .. " in the chest")
+check("nothing said about lighting", not logHas("torch"))
 check("back at the start", atStart())

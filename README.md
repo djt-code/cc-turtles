@@ -302,7 +302,7 @@ more than one block.
 ## mine
 
 ```
-mine <width> <height> [length] [--spacing N] [--here]
+mine <width> <height> [length] [--spacing N] [--no-lights] [--here]
 mine --resume
 mine ... --new
 mine reset [--here]
@@ -398,8 +398,14 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   - A 3-wide tunnel gets one every 19 blocks; narrower tunnels need fewer.
   - Wider than 8, both walls get them.
   - A torch that would land on a home's wall chest moves one block along.
+  - If a niche opens into a cave, with nothing behind or under it to hold a
+    torch, the turtle steps into the niche, puts a bulk block under it, and
+    stands the torch on that.
   - Torches are supplies: they move forward with the homes, and it keeps up to
     64 on board.
+  - Lighting is optional. With no torches it says so once and keeps mining.
+    `--no-lights` turns it off altogether; torches are then treated like any
+    other valuable.
   - Light doesn't stop slimes, which spawn in slime chunks at any light level.
 
   Torches *you* place inside the tunnel get dug up wherever the turtle's path
