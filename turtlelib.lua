@@ -542,9 +542,28 @@ function T.goTo(tx, tz)
     return false
 end
 
+-- Stretch the routing area (cfg.width/length) so it takes in column
+-- (x,z) too: a turtle stopped outside it, on a farm bigger than the
+-- defaults or one lying left of or behind home, would otherwise have no
+-- route at all.
+function T.coverColumn(x, z)
+    local function cover(dim, p)
+        if p == 0 then return dim end
+        if (p > 0) ~= (dim > 0) then return p end      -- on the other side of home
+        local s = p > 0 and 1 or -1
+        return s * math.max(math.abs(dim), math.abs(p))
+    end
+    T.cfg.width = cover(T.cfg.width, x)
+    T.cfg.length = cover(T.cfg.length, z)
+end
+
 -- Return to the start from wherever the saved position says we are.
--- Used by the `reset` subcommands and home.lua.  Returns true if home.
-function T.goHome()
+-- Used by the `reset` subcommands and home.lua.  In flat mode the trip is
+-- made at height opts.travelY (default 0, the start height), e.g. above
+-- tall crops.  The routing area is cfg.width/length, stretched to take in
+-- the turtle's position.  Returns true if home.
+function T.goHome(opts)
+    opts = opts or {}
     local saved = T.loadPos()
     if not saved then
         print("No saved position; the turtle has not moved since its last job, or is already home.")
@@ -554,9 +573,10 @@ function T.goHome()
     T.mode = saved.mode or "flat"
     T.step = (T.mode == "terrain") and T.stepTerrain or T.stepFlat
     T.clearBlocked()
+    T.coverColumn(T.pos.x, T.pos.z)
     print(string.format("Last position %s facing %d (%s). Heading home.", T.posString(), T.dir, T.mode))
 
-    if T.mode == "flat" then T.toStartHeight() end
+    if T.mode == "flat" then T.toY(opts.travelY or 0) end
     local ok = T.goTo(0, 0)
     if T.mode == "flat" then T.toStartHeight() else T.settle() end
     T.face(0)

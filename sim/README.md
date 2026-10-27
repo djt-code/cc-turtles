@@ -88,6 +88,7 @@ reading: compare the numbers before and after a change (`git stash`, run,
 | `farm_repair` | farm | learn with existing damage; holes, dry/flowing lane water, dirt in a lane, a block over a lane, untilled dirt; what a farming pass fixes vs. what triggers a full repair; `farm repair` |
 | `farm_full_chest` | farm | a turtle full of coal, a nearly full chest, a full chest: nothing spills, the turtle waits for room |
 | `farm_mixed_crops` | farm | wheat, carrots, potatoes and beetroot learned per tile; a wrong crop planted on a tile |
+| `farm_reset` | farm | `farm reset` after a stop out on a 5x22 farm with cane: past the default routing area, over cane, down in a lane, at travel height, with no map yet, left of home |
 | `farm_sugar_cane` | farm | a cane strip: harvest above the bottom block, replant a cane lost when its lane dried up |
 | `farm_bone_meal` | farm | grow passes with bone meal from the chest |
 | `farm_compost_while_waiting` | farm | surplus seeds go into the compost hopper during the wait between runs; a short wait runs out of time |

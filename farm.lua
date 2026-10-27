@@ -88,14 +88,14 @@ local MAP_FILE = T.dataPath("farm.map")
 -- Arguments
 --------------------------------------------------------------------------
 local args = { ... }
-local forceLearn, doClone, doRepair = false, false, false
+local forceLearn, doClone, doRepair, doReset = false, false, false, false
 local forceHere = T.popFlag(args, "--here")
 if args[1] == "learn" then forceLearn = true; table.remove(args, 1)
 elseif args[1] == "repair" then doRepair = true; table.remove(args, 1)
 elseif args[1] == "clone" then doClone = true; forceHere = true; table.remove(args, 1)
 elseif args[1] == "reset" then
-    if forceHere then T.setHomeHere() else T.goHome() end
-    return
+    if forceHere then T.setHomeHere(); return end
+    doReset = true                       -- once the map can be read (below)
 end
 
 local WIDTH, LENGTH, REPEAT
@@ -1529,6 +1529,16 @@ end
 --------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------
+-- `farm reset`: home from wherever the saved position says, routing over
+-- the saved farm's area at its travel height (above any cane).  With no
+-- map yet (stopped while learning) it climbs to cane height to be safe.
+if doReset then
+    local haveMap = loadMap()
+    if haveMap then T.cfg.width, T.cfg.length = WIDTH, LENGTH end
+    T.goHome({ travelY = (not haveMap or countKind("cane") > 0) and CANE_TRAVEL_Y or 0 })
+    return
+end
+
 local haveMap = (not forceLearn) and loadMap()
 if haveMap and resolveLayout() + assignCrops() > 0 then saveMap() end   -- older maps
 if haveMap and countKind("cane") > 0 then travelY = CANE_TRAVEL_Y end

@@ -45,7 +45,10 @@ behind. A lawn to the left and behind is `mow -70 -40`.
 
 Position is saved to `.turtlepos` after every move. If a job is interrupted
 (Ctrl+T, reboot, server restart), `home`, `mow reset` or `farm reset` navigates
-back to the start. Starting a job while the saved position isn't home prints a
+back to the start, from anywhere: a farm or lawn of any size or direction, or
+past its edge. `farm reset` routes over the saved farm, flying above sugar cane
+when the farm has some (or when it stopped while still learning, before a map
+was saved). Starting a job while the saved position isn't home prints a
 warning and stops; add `--here` to declare the current spot as the new home.
 If you carried the turtle back yourself, `farm reset --here` / `mow reset --here`
 just marks where it is as home without moving it or starting a job (the saved
