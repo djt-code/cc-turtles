@@ -1021,13 +1021,15 @@ local function scanBlocks()
     -- once equipped, the scanner can take a moment to show up as a
     -- peripheral: ask again until its scan method does (called by name,
     -- not through a wrapped table)
-    local methods
+    -- The method is scan in Advanced Peripherals' docs, scanBlocks in
+    -- some versions: whichever this one has.
+    local methods, method
     local function canScan()
         methods = peripheral.getMethods(side) or {}
         for _, m in ipairs(methods) do
-            if m == "scan" then return true end
+            if m == "scanBlocks" or (m == "scan" and not method) then method = m end
         end
-        return false
+        return method ~= nil
     end
     local found = false
     for _ = 1, 20 do
@@ -1038,7 +1040,7 @@ local function scanBlocks()
     local blocks, err
     if found then
         for _ = 1, 3 do
-            local ok, a, b = pcall(peripheral.call, side, "scan", SCAN_RADIUS)
+            local ok, a, b = pcall(peripheral.call, side, method, SCAN_RADIUS)
             if ok then blocks, err = a, b else err = a end
             if blocks then break end
             sleep(1)                       -- the scanner's cooldown
@@ -1053,6 +1055,42 @@ local function scanBlocks()
         turtle.select(1)
     end
     return blocks, err
+end
+
+-- A scan's blocks at offsets from the turtle: as they come, or, if they
+-- come as world coordinates (any further off than the scan reaches),
+-- less the turtle's own (the one turtle in the scan).  nil and why if
+-- they can't be made sense of.
+local function relative(blocks)
+    local first = blocks[1]
+    if first and not (type(first.x) == "number" and type(first.y) == "number"
+            and type(first.z) == "number" and type(first.name) == "string") then
+        local keys = {}
+        for k in pairs(first) do keys[#keys + 1] = tostring(k) end
+        table.sort(keys)
+        return nil, "scan entries aren't {x, y, z, name, tags} (they have: " .. table.concat(keys, ", ") .. ")"
+    end
+    local far = false
+    for _, e in ipairs(blocks) do
+        if math.abs(e.x) > SCAN_RADIUS or math.abs(e.y) > SCAN_RADIUS or math.abs(e.z) > SCAN_RADIUS then
+            far = true
+            break
+        end
+    end
+    if not far then return blocks end
+    local me
+    for _, e in ipairs(blocks) do
+        if e.name:find("^computercraft:turtle") then
+            if me then return nil, "scan gives world coordinates, and there's more than one turtle in range" end
+            me = e
+        end
+    end
+    if not me then return nil, "scan gives world coordinates, and the turtle can't find itself in them" end
+    local out = {}
+    for _, e in ipairs(blocks) do
+        out[#out + 1] = { x = e.x - me.x, y = e.y - me.y, z = e.z - me.z, name = e.name, tags = e.tags }
+    end
+    return out
 end
 
 -- Tags as a set, whichever way round they come.
@@ -1209,6 +1247,7 @@ end
 -- low on fuel, go for the coal in it now.
 local function scanNow(z1, z2)
     local blocks, err = scanBlocks()
+    if blocks then blocks, err = relative(blocks) end
     if not blocks then
         if not warnedScan then
             warnedScan = true

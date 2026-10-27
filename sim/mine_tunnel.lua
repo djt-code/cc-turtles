@@ -239,7 +239,7 @@ end
 SCANS = 0
 local function geoScanner()
     return {
-        scan = function(r)
+        scanBlocks = function(r)                -- `scan` in AP's docs; this on the user's server
             SCANS = SCANS + 1
             local out = {}
             for tx = -r, r do for ty = -r, r do for tz = -r, r do
@@ -249,7 +249,8 @@ local function geoScanner()
                     local tags = {}
                     if b.tags then for t in pairs(b.tags) do tags[#tags + 1] = t end end
                     if b.name:find("_ore$") then tags[#tags + 1] = "c:ores" end
-                    out[#out + 1] = { x = tz, y = ty, z = tx, name = b.name, tags = tags }
+                    local o = WORLD_COORDS and 1000 or 0    -- as world coordinates, not offsets
+                    out[#out + 1] = { x = tz + o, y = ty + o, z = tx + o, name = b.name, tags = tags }
                 end
             end end end
             return out
@@ -789,6 +790,10 @@ local function scanWorld(withScanner)
     return turns
 end
 local without = scanWorld(false)
+WORLD_COORDS = true                     -- a scanner that gives world coordinates
+scanWorld(true)
+check("made sense of a scan in world coordinates", logHas("lined up") and not logHas("Geo scanner:"))
+WORLD_COORDS = false
 local withIt = scanWorld(true)
 local function oreGone(x, y, z) return not isOreBlock(get(x, y, z)) end
 check("lined the scan up with the tunnel", logHas("lined up"), SCANS .. " scans")
