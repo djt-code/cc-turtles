@@ -1019,23 +1019,33 @@ local function scanBlocks()
         if not equip() then turtle.select(1); return nil, "couldn't equip it" end
     end
     -- once equipped, the scanner can take a moment to show up as a
-    -- peripheral: ask again until it does
-    local scanner
+    -- peripheral: ask again until its scan method does (called by name,
+    -- not through a wrapped table)
+    local methods
+    local function canScan()
+        methods = peripheral.getMethods(side) or {}
+        for _, m in ipairs(methods) do
+            if m == "scan" then return true end
+        end
+        return false
+    end
+    local found = false
     for _ = 1, 20 do
-        scanner = peripheral.wrap(side)
-        if scanner and scanner.scan then break end
+        found = canScan()
+        if found then break end
         sleep(0.1)
     end
     local blocks, err
-    if scanner and scanner.scan then
+    if found then
         for _ = 1, 3 do
-            blocks, err = scanner.scan(SCAN_RADIUS)
+            local ok, a, b = pcall(peripheral.call, side, "scan", SCAN_RADIUS)
+            if ok then blocks, err = a, b else err = a end
             if blocks then break end
             sleep(1)                       -- the scanner's cooldown
         end
     else
-        err = string.format("no scanner showed up on the %s side once equipped (found: %s)",
-            side, tostring(peripheral.getType and peripheral.getType(side) or nil))
+        err = string.format("the %s side has a %s but no scan method (its methods: %s)",
+            side, tostring(peripheral.getType(side)), #methods > 0 and table.concat(methods, ", ") or "none")
     end
     if equip then
         turtle.select(slot)

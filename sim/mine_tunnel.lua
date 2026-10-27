@@ -344,7 +344,21 @@ peripheral = {
         }
     end,
     getName = function(p) return p._side end,
+    getType = function(side) return (side == "left" or side == "right") and EQ[side] == SCANNER and "geo_scanner" or nil end,
 }
+-- methods by name, as CC has them: through wrap, as the scanner shows up
+peripheral.getMethods = function(side)
+    local p = peripheral.wrap(side)
+    if not p then return nil end
+    local m = {}
+    for name, f in pairs(p) do if type(f) == "function" then m[#m + 1] = name end end
+    return m
+end
+peripheral.call = function(side, name, ...)
+    local p = peripheral.wrap(side)
+    if not (p and p[name]) then error("No such method " .. name, 0) end
+    return p[name](...)
+end
 
 local files = {}
 fs = {
