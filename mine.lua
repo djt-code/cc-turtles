@@ -53,6 +53,15 @@
 --    in the middle columns, digging the rows in between up and down.  So
 --    the turtle touches every block of the walls, floor and ceiling, and
 --    looks at each one.
+--  * Geo Scanner (Advanced Peripherals): put one in the start's top chest
+--    and the turtle takes it along and uses it: every 15 blocks along a
+--    segment it swaps the scanner in for its pickaxe (a chunk controller
+--    on the other side stays put), scans (radius 8, no fuel), and swaps
+--    back.  It only turns to look at wall blocks the scan says are ore,
+--    lava or water, and after each segment it tunnels out to ore up to
+--    SCAN_REACH (6) from the tunnel.  Low on fuel, it goes for coal a scan
+--    finds at once.  See the Geo Scanner section for how it lines the
+--    scan's world directions up with the tunnel.
 --  * Veins: an ore it touches (anything tagged as an ore, *_ore blocks,
 --    ancient debris) is mined along with its whole vein: the turtle
 --    follows it block by block, looking all round each one, up to
@@ -87,6 +96,9 @@ local T = require("turtlelib")
 
 local JOB_FILE = T.dataPath("mine.job")
 local VEIN_REACH = 4       -- how far a vein is followed out from the tunnel
+local SCAN_RADIUS = 8      -- Geo Scanner radius (free of fuel up to 8)
+local SCAN_REACH = 6       -- with a scanner: how far out from the tunnel ore is fetched
+local SCAN_EVERY = 15      -- blocks between scans along a segment's first lane
 local ROOM = 2             -- empty slots wanted before each dig
 local FILLER_KEEP = 64     -- bulk blocks kept on board for sealing
 local FUEL_WORK = 100      -- fuel for some work after a trip back out
@@ -189,6 +201,8 @@ end
 -- forward.
 local CHEST_ITEMS = { ["minecraft:chest"] = true, ["minecraft:barrel"] = true }
 local TORCHES = { ["minecraft:torch"] = true, ["minecraft:soul_torch"] = true }
+-- The Advanced Peripherals Geo Scanner: kept on board, never unloaded.
+local function isScanner(name) return name:find("geo_scanner") ~= nil end
 local function isSupply(name) return CHEST_ITEMS[name] or T.fuel[name] or (lights and TORCHES[name]) end
 
 -- What's worth carrying back first when the turtle can't carry it all.
@@ -266,13 +280,20 @@ local function inBox(p)
     return p.x >= X0 and p.x <= X1 and p.y >= Y0 and p.y <= Y1 and p.z >= 1 and p.z <= LENGTH
 end
 
--- Within VEIN_REACH of the tunnel dug so far, and not back past its start.
-local function inReach(p)
-    if p.z < 1 then return false end
+-- How far a block is outside the tunnel dug so far (0: in it).
+local function outside(p)
     local dx = math.max(X0 - p.x, 0, p.x - X1)
     local dy = math.max(Y0 - p.y, 0, p.y - Y1)
     local dz = math.max(0, p.z - math.min(LENGTH, segEnd))
-    return math.max(dx, dy, dz) <= VEIN_REACH
+    return math.max(dx, dy, dz)
+end
+
+local hasScanner = false   -- a Geo Scanner on board: ore is fetched from further out
+
+-- Within reach of the tunnel dug so far (VEIN_REACH; SCAN_REACH with a
+-- scanner), and not back past its start.
+local function inReach(p)
+    return p.z >= 1 and outside(p) <= (hasScanner and SCAN_REACH or VEIN_REACH)
 end
 
 --------------------------------------------------------------------------
@@ -375,7 +396,13 @@ local opened = {}          -- key(p) = true: known to be air (dug or visited)
 local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
-local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes = 0 }
+local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes = 0, fetched = 0 }
+-- From the Geo Scanner (see there): the world direction of the tunnel's +z
+-- once lined up, this segment's blocks touching the tunnel ("rock",
+-- "ore", "fluid" or "air"), and its ore further out.
+local facing
+local known, targets = {}, {}
+local pickaxe              -- the pickaxe mined with (found at the start)
 
 -- Stop the job: unwinds to the top, which walks back to the start.
 local function stop(reason) error({ stop = reason }, 0) end
@@ -644,6 +671,8 @@ local function unload(only)
             elseif TORCHES[it.name] and torches < TORCH_KEEP and only ~= "everything" then
                 keep = math.min(it.count, TORCH_KEEP - torches)
                 torches = torches + keep
+            elseif isScanner(it.name) and only ~= "everything" then
+                keep = it.count
             end
             local bulk = isBulk(it)
             if it.count > keep and (bulk or only == nil or only == "everything") then
@@ -845,7 +874,10 @@ local function scanHere()
     end
     for _, d in ipairs({ 1, 3, 0 }) do
         local n = neighbour(d)
-        if not inBox(n) then examine(d) end
+        local k = known[key(n)]
+        -- turning to look is only worth it for what the scanner hasn't
+        -- seen, or says is ore, lava or water
+        if not inBox(n) and (not k or k == "ore" or k == "fluid") then examine(d) end
     end
 end
 
@@ -908,11 +940,233 @@ local function lightHere()
     turtle.select(1)
 end
 
+--------------------------------------------------------------------------
+-- Geo Scanner (Advanced Peripherals), when there's one on board.  A scan
+-- lists every block that isn't air within SCAN_RADIUS, at offsets along
+-- the world's axes, which the turtle doesn't know: it lines them up with
+-- the tunnel by finding the one way round that puts none of them where it
+-- knows there's air (what it has dug).  From then on it knows what's in
+-- the walls without turning to look at them, and where ore lies further
+-- out: after each segment's lanes it tunnels out to that, up to
+-- SCAN_REACH from the tunnel, and mines it.  Low on fuel, it goes for the
+-- coal a scan finds straight away, and burns it.
+--------------------------------------------------------------------------
+local warnedScan = false
+
+-- Swap the scanner in for the pickaxe (the other side keeps its chunk
+-- controller or whatever it has), scan, and swap back.  If it's
+-- equipped already, just scan.
+local function scanBlocks()
+    local side, slot
+    for _, sd in ipairs({ "left", "right" }) do
+        local name = T.equipped(sd)
+        if name and isScanner(name) then side = sd end
+    end
+    local equip
+    if not side then
+        for s = 1, 16 do
+            local it = turtle.getItemDetail(s)
+            if it and isScanner(it.name) then slot = s; break end
+        end
+        if not slot then return nil, "no scanner on board" end
+        side = (T.equipped("left") == pickaxe and "left") or (T.equipped("right") == pickaxe and "right")
+        if not side then return nil, "no pickaxe equipped to swap it with" end
+        equip = side == "left" and turtle.equipLeft or turtle.equipRight
+        turtle.select(slot)
+        if not equip() then turtle.select(1); return nil, "couldn't equip it" end
+    end
+    local scanner = peripheral.wrap(side)
+    local blocks, err = nil, "not a scanner"
+    for _ = 1, 3 do
+        if scanner and scanner.scan then blocks, err = scanner.scan(SCAN_RADIUS) end
+        if blocks then break end
+        sleep(1)                           -- the scanner's cooldown
+    end
+    if equip then
+        turtle.select(slot)
+        equip()                            -- the pickaxe back
+        turtle.select(1)
+    end
+    return blocks, err
+end
+
+-- Tags as a set, whichever way round they come.
+local function tagSet(list)
+    local t = {}
+    for k, v in pairs(list or {}) do
+        if type(k) == "number" then t[v] = true else t[k] = true end
+    end
+    return t
+end
+
+-- Where a scanned block is in the tunnel's coordinates, if the tunnel's
+-- +z points along world direction f (its +x is f turned right).
+local function toTunnel(f, e)
+    local rx, rz = -f.z, f.x
+    return { x = T.pos.x + e.x * rx + e.z * rz, y = T.pos.y + e.y, z = T.pos.z + e.x * f.x + e.z * f.z }
+end
+
+local function knownAir(p)
+    return opened[key(p)] or (inBox(p) and p.z <= home.z)
+end
+
+-- The one way round the scan fits what's been dug, or nil if it can't
+-- tell yet (too little dug, or caves everywhere).
+local WORLD_DIRS = { { x = 0, z = 1 }, { x = 1, z = 0 }, { x = 0, z = -1 }, { x = -1, z = 0 } }
+local function lineUp(blocks)
+    local best, bestHits, nextHits = nil, math.huge, math.huge
+    for _, f in ipairs(WORLD_DIRS) do
+        local hits = 0
+        for _, e in ipairs(blocks) do
+            if (e.x ~= 0 or e.y ~= 0 or e.z ~= 0) and knownAir(toTunnel(f, e)) then hits = hits + 1 end
+        end
+        if hits < bestHits then best, nextHits, bestHits = f, bestHits, hits
+        elseif hits < nextHits then nextHits = hits end
+    end
+    if bestHits <= 1 and nextHits >= bestHits + 4 then return best end
+end
+
+-- File a scan: the blocks touching the tunnel's walls, floor and ceiling
+-- (absent ones are air), and ore further out for this segment.
+local function record(blocks, z1, z2)
+    local seen = {}
+    for _, e in ipairs(blocks) do
+        local p = toTunnel(facing, e)
+        local k = key(p)
+        seen[k] = true
+        local kind = isOre({ name = e.name, tags = tagSet(e.tags) }) and "ore"
+            or (FLUID[e.name] and "fluid") or "rock"
+        local out = outside(p)
+        if out == 1 then known[k] = kind end
+        local zTop = z2 == LENGTH and z2 + SCAN_REACH or z2
+        if kind == "ore" and out >= 1 and inReach(p) and p.z >= z1 and p.z <= zTop and not opened[k] then
+            targets[k] = { x = p.x, y = p.y, z = p.z, coal = e.name:find("coal") ~= nil }
+        end
+    end
+    -- the blocks touching the tunnel that the scan saw no block in: air
+    local function air(x, y, z)
+        if math.abs(x - T.pos.x) > SCAN_RADIUS or math.abs(y - T.pos.y) > SCAN_RADIUS then return end
+        local k = key({ x = x, y = y, z = z })
+        if not seen[k] then known[k] = "air" end
+    end
+    for z = math.max(z1, T.pos.z - SCAN_RADIUS), math.min(z2, T.pos.z + SCAN_RADIUS) do
+        for y = Y0, Y1 do air(X0 - 1, y, z); air(X1 + 1, y, z) end
+        for x = X0, X1 do air(x, Y0 - 1, z); air(x, Y1 + 1, z) end
+    end
+end
+
+local function fuelLow()
+    local level = turtle.getFuelLevel()
+    return level ~= "unlimited" and level < home.z + fuelGoal / 2
+end
+
+-- The direction from the turtle to the block next to it at p.
+local function dirTo(p)
+    if p.x > T.pos.x then return 1 elseif p.x < T.pos.x then return 3
+    elseif p.y > T.pos.y then return "up" elseif p.y < T.pos.y then return "down"
+    elseif p.z > T.pos.z then return 0 else return 2 end
+end
+
+-- Tunnel from here out to the ore at t, mine its vein, and come back the
+-- same way, filling any floor it dug through.  Ore met on the way is
+-- mined too; lava and water are sealed.  Gives up on what it can't dig.
+local function fetch(t)
+    local base, ore = #trail, stats.ore
+    for _ = 1, 3 * SCAN_RADIUS do
+        if opened[key(t)] then break end
+        local dist = math.abs(t.x - T.pos.x) + math.abs(t.y - T.pos.y) + math.abs(t.z - T.pos.z)
+        if dist <= 1 then
+            local ok, data = look(dirTo(t))
+            if ok and isOre(data) then mineVein(dirTo(t)) end
+            break
+        end
+        local step = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
+        if t.x ~= T.pos.x then step.x = step.x + (t.x > T.pos.x and 1 or -1)
+        elseif t.y ~= T.pos.y then step.y = step.y + (t.y > T.pos.y and 1 or -1)
+        else step.z = step.z + (t.z > T.pos.z and 1 or -1) end
+        local d = dirTo(step)
+        local ok, data = look(d)
+        if ok and isOre(data) then mineVein(d)
+        elseif ok and FLUID[data.name] and not seal(d) then break end
+        if not go(d) then break end
+        trail[#trail + 1] = d
+    end
+    while #trail > base do
+        local d = trail[#trail]
+        local here = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
+        go(OPP[d])
+        trail[#trail] = nil
+        if isFloor(here) then fill(d) end
+    end
+    if stats.ore > ore then stats.fetched = stats.fetched + 1 end
+end
+
+-- Fetch ore found by the scanner: from the tunnel block nearest each,
+-- through the tunnel (dug already, or dug now: it's tunnel), and back to
+-- where the turtle was.  `which` picks them (nil: all); coal first when
+-- fuel is low, then along the tunnel.
+local function fetchTargets(which)
+    local list = {}
+    for _, t in pairs(targets) do
+        if not opened[key(t)] and (not which or which(t)) then list[#list + 1] = t end
+    end
+    if #list == 0 then return end
+    local low = fuelLow()
+    table.sort(list, function(a, b)
+        if low and a.coal ~= b.coal then return a.coal end
+        if a.z ~= b.z then return a.z < b.z end
+        if a.x ~= b.x then return a.x < b.x end
+        return a.y < b.y
+    end)
+    local back = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
+    for _, t in ipairs(list) do
+        if not opened[key(t)] then
+            alongAxis("z", math.max(1, math.min(segEnd, t.z)))
+            alongAxis("x", math.max(X0, math.min(X1, t.x)))
+            alongAxis("y", math.max(Y0, math.min(Y1, t.y)))
+            fetch(t)
+            if t.coal and fuelLow() then T.refuelTo(home.z + fuelGoal) end
+        end
+        targets[key(t)] = nil
+    end
+    alongAxis("y", back.y); alongAxis("x", back.x); alongAxis("z", back.z)
+end
+
+-- Scan from here (on the segment's first lane) and file what it finds;
+-- low on fuel, go for the coal in it now.
+local function scanNow(z1, z2)
+    local blocks, err = scanBlocks()
+    if not blocks then
+        if not warnedScan then
+            warnedScan = true
+            print("Geo scanner: " .. tostring(err) .. "; checking the walls by hand.")
+        end
+        return
+    end
+    if not facing then
+        facing = lineUp(blocks)
+        if not facing then return end          -- try again further on
+        print("Geo scanner lined up with the tunnel.")
+    end
+    record(blocks, z1, z2)
+    if fuelLow() then
+        local any = false
+        for _, t in pairs(targets) do if t.coal then any = true; break end end
+        if any then
+            print(string.format("Low on fuel (%s): going for the coal the scanner found.",
+                tostring(turtle.getFuelLevel())))
+            fetchTargets(function(t) return t.coal end)
+        end
+    end
+end
+
 -- Mine the segment from z1 to z2, starting and ending at the home.
 local function mineSegment(z1, z2)
     local lanes = planLanes()
     print(string.format("Segment z=%d..%d from home %d: %d lanes, fuel %s.", z1, z2, home.k, #lanes,
         tostring(turtle.getFuelLevel())))
+    known, targets = {}, {}
+    local lastScan = nil
     for i, lane in ipairs(lanes) do
         local ahead = i % 2 == 1
         local from, to, dz = z1, z2, 1
@@ -927,6 +1181,11 @@ local function mineSegment(z1, z2)
         if ahead then via = nil end        -- this lane is dug back to the segment's start
         for z = from, to, dz do
             if not ok then break end
+            if hasScanner and i == 1 and ((z - z1) % SCAN_EVERY == math.floor(SCAN_EVERY / 2)
+                    or (z == z2 and (not lastScan or z - lastScan > SCAN_RADIUS))) then
+                scanNow(z1, z2)
+                lastScan = z
+            end
             scanHere()
             lightHere()
             if z ~= to then ok, what = go(ahead and 0 or 2) end
@@ -934,6 +1193,7 @@ local function mineSegment(z1, z2)
         if not ok then stop(string.format("Can't get through at %s (%s).", T.posString(), tostring(what))) end
     end
     via = nil
+    fetchTargets()                         -- the scanner's ore further out
     tunnelHome()
 end
 
@@ -948,7 +1208,7 @@ local function cheapestSlot(than)
     local slot, low
     for s = 1, 16 do
         local it = turtle.getItemDetail(s)
-        if it and not T.isTool(it.name) and not isSupply(it.name) then
+        if it and not T.isTool(it.name) and not isSupply(it.name) and not isScanner(it.name) then
             local v = isBulk(it) and 0 or value(it.name)
             if v < than and (not low or v < low) then slot, low = s, v end
         end
@@ -1032,7 +1292,7 @@ local function useJob(job)
 end
 
 if doReset and forceHere then T.setHomeHere(); return end
-local pickaxe = findPickaxe()
+pickaxe = findPickaxe()
 if not pickaxe then print("Needs a pickaxe, equipped or in the inventory."); return end
 local job = loadJob()
 
@@ -1089,6 +1349,17 @@ T.withTool(pickaxe, function()
         unloadOrStop()
         refuel()
         if not fuelToGoOn() then stop("Not enough fuel to start: put fuel in the top chest.") end
+        -- a Geo Scanner in the top chest (or on board): use it
+        for name in pairs(chestCounts("top")) do
+            if isScanner(name) and carried(isScanner) == 0 then
+                T.restockFrom("top", name, 1, { quiet = true, room = 1 })
+            end
+        end
+        hasScanner = carried(isScanner) > 0 or (T.equipped("left") or ""):find("geo_scanner") ~= nil
+            or (T.equipped("right") or ""):find("geo_scanner") ~= nil
+        if hasScanner then
+            print("Geo scanner on board: scanning instead of checking every wall block.")
+        end
         T.fuelTrip = function() trip("Low on fuel") end
         print(string.format("Mining a %dx%d tunnel, %s, homes every %d blocks.", math.abs(WIDTH),
             math.abs(HEIGHT), LENGTH == math.huge and "as long as it can" or (LENGTH .. " long"), SPACING))
@@ -1130,9 +1401,10 @@ T.withTool(pickaxe, function()
     returnToStart()
 end)
 saveJob(stopped and "active" or "done")
-print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled%s.",
+print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled%s%s.",
     stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled,
-    lights and (", " .. stats.torches .. " torches placed") or ""))
+    lights and (", " .. stats.torches .. " torches placed") or "",
+    hasScanner and (", " .. stats.fetched .. " deposits fetched from further out") or ""))
 for k, n in pairs(leftBehind) do
     print(string.format("No room to bring back %d items from home %d (z=%d).", n, k, homeAt(k).z))
 end

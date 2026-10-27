@@ -10,7 +10,9 @@
 -- tunnel (supplies carried forward, valuables collected on the way
 -- back), lit by torches in wall niches with no floor block dark enough
 -- for mobs (one niche opening into a cave gets a block to stand its torch
--- on); --no-lights; a crevasse across the tunnel, which it bridges so a player can
+-- on); --no-lights; a Geo Scanner (lined up with the tunnel from the scan,
+-- fetching ore further out, far fewer turns, coal first when low on
+-- fuel); a crevasse across the tunnel, which it bridges so a player can
 -- walk the floor; a tunnel with no length that runs out of chests, then
 -- `mine --resume` once more chests are added (twice: the second time a
 -- home holds more valuables than fit, and the most valuable come back);
@@ -216,6 +218,41 @@ local function suckFrom(c, n)
     return false
 end
 local function front() return P.x + DX[P.d], P.y, P.z + DZ[P.d] end
+
+-- Upgrades on each side; equipping swaps the selected slot with one.
+EQ = { right = "minecraft:diamond_pickaxe" }
+SCANNER = "advancedperipherals:geo_scanner"
+function equip(side)
+    local it = inv[sel]
+    inv[sel] = EQ[side] and { name = EQ[side], count = 1 } or nil
+    EQ[side] = it and it.name
+    return true
+end
+-- The Geo Scanner: every block that isn't air within the radius (the
+-- turtle itself included), at offsets along the WORLD's axes.  The sim's
+-- world is turned so the tunnel's +z runs east: world x = the tunnel's
+-- z, world z = its x.
+SCANS = 0
+local function geoScanner()
+    return {
+        scan = function(r)
+            SCANS = SCANS + 1
+            local out = {}
+            for tx = -r, r do for ty = -r, r do for tz = -r, r do
+                local b = (tx == 0 and ty == 0 and tz == 0) and { name = "computercraft:turtle_normal" }
+                    or get(P.x + tx, P.y + ty, P.z + tz)
+                if b then
+                    local tags = {}
+                    if b.tags then for t in pairs(b.tags) do tags[#tags + 1] = t end end
+                    if b.name:find("_ore$") then tags[#tags + 1] = "c:ores" end
+                    out[#out + 1] = { x = tz, y = ty, z = tx, name = b.name, tags = tags }
+                end
+            end end end
+            return out
+        end,
+        cost = function() return 0 end,
+    }
+end
 local function above() return P.x, P.y + 1, P.z end
 local function below() return P.x, P.y - 1, P.z end
 
@@ -270,11 +307,16 @@ turtle = {
     end,
     getFuelLevel = function() return FUEL end,
     getFuelLimit = function() return 20000 end,
-    getEquippedLeft = function() return nil end,
-    getEquippedRight = function() return { name = "minecraft:diamond_pickaxe" } end,
+    getEquippedLeft = function() return EQ.left and { name = EQ.left } end,
+    getEquippedRight = function() return EQ.right and { name = EQ.right } end,
+    equipLeft = function() return equip("left") end,
+    equipRight = function() return equip("right") end,
 }
 peripheral = {
     wrap = function(side)
+        if (side == "left" or side == "right") then
+            return EQ[side] == SCANNER and geoScanner() or nil
+        end
         local c
         if side == "front" then c = chestAt(front())
         elseif side == "top" then c = chestAt(above())
@@ -674,4 +716,54 @@ local _, top = contents(chestAt(0, 1, 0))
 check("no torches placed, all 16 still in the chest", placed == 0 and (top["minecraft:torch"] or 0) == 16,
     placed .. " placed, " .. (top["minecraft:torch"] or 0) .. " in the chest")
 check("nothing said about lighting", not logHas("torch"))
+check("back at the start", atStart())
+
+-- 11. a Geo Scanner in the start chest (and a chunk controller on the
+--     other side): the turtle swaps it in to scan, lines the scan up with
+--     the tunnel, and fetches ore that doesn't touch the walls, up to 6
+--     out; it turns far less than the same tunnel without one
+local function scanWorld(withScanner)
+    local st = stock(4, 64)
+    if withScanner then st[#st + 1] = { name = SCANNER, count = 1 } end
+    setup(st)
+    set(-1, 1, 5, ore("minecraft:iron_ore"))                   -- touching the left wall
+    set(-5, 1, 12, ore("minecraft:deepslate_gold_ore")); set(-5, 2, 12, ore("minecraft:deepslate_gold_ore"))
+    set(7, 0, 20, ore("minecraft:coal_ore")); set(8, 0, 20, ore("minecraft:coal_ore"))
+    set(-9, 1, 25, ore("minecraft:diamond_ore"))               -- 9 out: beyond reach
+    set(3, 1, 15, { name = "minecraft:lava", level = 0 })       -- in the right wall
+    set(-1, 0, 18, nil); set(-2, 0, 18, nil)                    -- a cave opening in the left wall
+    startAt(); inv, files = {}, {}
+    EQ = { left = "advancedperipherals:chunk_controller", right = "minecraft:diamond_pickaxe" }
+    FUEL, DRY, SCANS = 2000, 0, 0
+    run("3", "3", "30")
+    return turns
+end
+local without = scanWorld(false)
+local withIt = scanWorld(true)
+local function oreGone(x, y, z) return not isOreBlock(get(x, y, z)) end
+check("lined the scan up with the tunnel", logHas("lined up"), SCANS .. " scans")
+check("iron touching the wall mined", oreGone(-1, 1, 5))
+check("gold 5 out and coal 5-6 out fetched", oreGone(-5, 1, 12) and oreGone(-5, 2, 12) and oreGone(7, 0, 20) and oreGone(8, 0, 20))
+check("diamond 9 out left", not oreGone(-9, 1, 25))
+checkLava(30)
+check("tunnel clear", leftIn(0, 2, 0, 2, 1, 30) == 0, leftIn(0, 2, 0, 2, 1, 30) .. " blocks left")
+checkFloor(0, 2, -1, 1, 30)
+check("far fewer turns with the scanner", withIt < without * 0.6, withIt .. " turns, " .. without .. " without")
+check("chunk controller still on, pickaxe back", EQ.left == "advancedperipherals:chunk_controller" and EQ.right == "minecraft:diamond_pickaxe")
+local _, top = contents(chestAt(0, 1, 0))
+check("scanner back in the start chest", (top[SCANNER] or 0) == 1)
+check("back at the start", atStart())
+
+-- 12. low on fuel with a scanner: the only fuel is coal 5 out from the
+--     tunnel, which it goes for as soon as a scan finds it, and burns
+setup({ { name = SCANNER, count = 1 }, { name = "minecraft:chest", count = 4 } })
+for x = -5, -6, -1 do for y = 0, 1 do set(x, y, 10, ore("minecraft:coal_ore")) end end
+startAt(); inv, files = {}, {}
+EQ = { right = "minecraft:diamond_pickaxe" }
+FUEL, LOWEST, DRY = 250, math.huge, 0
+run("3", "3", "40")
+check("went for the coal when low", logHas("going for the coal"))
+check("mined all 4 coal ore", oreGone(-5, 0, 10) and oreGone(-6, 0, 10) and oreGone(-5, 1, 10) and oreGone(-6, 1, 10))
+check("finished the tunnel on it", logHas("^Done"), logHas("Stopped") and "stopped" or "")
+check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("back at the start", atStart())

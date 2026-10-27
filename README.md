@@ -378,6 +378,27 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   comes back to the same spot, up the vein if it was in one. It only travels
   through blocks it has already dug, so nothing is dug, and nothing can
   spill, on the way. It never drops items on the ground.
+- **Geo Scanner:** put an Advanced Peripherals Geo Scanner in the start's
+  top chest and the turtle takes it along and uses it instead of checking
+  every wall block by hand. There's no slot to spare for it: one side holds
+  the pickaxe, the other the chunk controller. So every 15 blocks it swaps
+  the scanner in for the pickaxe, scans, and swaps back. The chunk
+  controller never moves, so its chunk stays loaded. With the scanner:
+  - **Lining up:** a scan reports blocks along the world's directions
+    (north, east...), which a turtle doesn't know. So the turtle tries all
+    four ways round, and keeps the one that puts none of the scanned blocks
+    where it knows it has already dug.
+  - **Walls:** it only turns to look at wall blocks the scan says are ore,
+    lava or water. In tests it turned about a fifth as often.
+  - **Ore further out:** after each stretch between homes, it tunnels out to
+    ore up to 6 blocks from the tunnel (`SCAN_REACH`) and mines the whole
+    vein. It refills any floor it dug through, and seals lava on the way.
+  - **Coal first when fuel is low:** when its fuel gets low, it goes for
+    the coal a scan finds straight away and burns it.
+  - **Cost:** scans are radius 8, which costs no fuel (Advanced Peripherals'
+    defaults: free up to 8, 2 seconds between scans).
+
+  At the end the scanner goes back into the start chest with the valuables.
 - **A floor you can walk on:** the turtle doesn't need a floor, but you do.
   Every block under the tunnel's bottom row is filled with a bulk block if
   it's any of these:
