@@ -1,7 +1,9 @@
--- sim/farm_chest_merge_stacks.lua
+-- sim/farm_chest_tidy.lua
 --
--- Part stacks scattered through the farm chest are merged at every
--- chest visit.
+-- The farm chest is tidied at every chest visit: part stacks scattered
+-- through it are merged, then it's sorted, each item's stacks together
+-- and like items side by side.  A chest already in order takes no moves;
+-- a full one is sorted with the turtle holding a stack meanwhile.
 --
 -- Minimal CC:Tweaked world + turtle mock for exercising farm.lua.
 -- Turtle starts at (0,0,0) facing +z; farmland at y=-2, crops at y=-1.
@@ -358,3 +360,40 @@ chest[16] = { name = "minecraft:beetroot_seeds", count = 40 }
 realPrint("chest before: " .. slots())
 run("5", "6", "0")
 realPrint("   chest after:  " .. slots())
+-- Sorted: each item's stacks side by side, items grouped by kind (the last
+-- word of the id), no empty slot before the last stack.
+local function kind(n) return n:match("([^_:]+)$") end
+local function sorted()
+    local last, seen, gap = nil, {}, false
+    for s = 1, 27 do
+        local c = chest[s]
+        if not c then gap = true
+        else
+            if gap then return "an empty slot before slot " .. s end
+            if c.name ~= last then
+                if seen[c.name] then return c.name .. " split up (slot " .. s .. ")" end
+                if last and (kind(last) > kind(c.name) or (kind(last) == kind(c.name) and last > c.name)) then
+                    return "out of order at slot " .. s
+                end
+                seen[c.name], last = true, c.name
+            end
+        end
+    end
+    return "yes"
+end
+realPrint("   sorted: " .. sorted() .. "  (pushes: " .. tostring(PUSHES) .. ")")
+-- the next visit finds it in order already: no moves to sort it
+PUSHES = 0
+run("0")
+realPrint("   chest after a second run:  " .. slots())
+realPrint("   sorted: " .. sorted() .. "  (pushes: " .. tostring(PUSHES) .. ")")
+-- a full chest, out of order: merged where it can be, but no room to sort
+chest = {}
+for s = 1, 27 do
+    chest[s] = { name = s % 2 == 0 and "minecraft:wheat" or "minecraft:carrot", count = 64 }
+end
+chest[27] = { name = "minecraft:wheat_seeds", count = 64 }
+PUSHES = 0
+run("0")
+realPrint("   full chest after:  " .. slots())
+realPrint("   sorted: " .. sorted() .. "  (pushes: " .. tostring(PUSHES) .. ")")

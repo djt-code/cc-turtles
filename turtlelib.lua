@@ -849,10 +849,116 @@ function T.countContainer(side, name)
     return n
 end
 
--- Merge part stacks of the same item in the container on `side`, so
--- everything sits in as few slots as it can.  Hoppers and the turtle's
--- own partial takes leave small stacks scattered about.  Uses the
--- container's pushItems, filling the earliest part stack from the latest.
+-- What kind of thing an item is, for grouping like with like: the last
+-- word of its id ("wheat_seeds" -> "seeds", "water_bucket" -> "bucket").
+local function itemKind(name) return name:match("([^_:]+)$") or name end
+
+-- Lay the container out in order from its first slot: by kind, then by
+-- item, fullest stack first, so every item's stacks sit together and
+-- similar items (all the seeds, all the buckets) side by side, with the
+-- empty slots at the end.  Each stack is given a slot (one already on a
+-- slot meant for a stack just like it stays there), then stacks are moved
+-- into empty slots meant for them, and when no empty slot is meant for
+-- anything, a stack in another's way goes to an empty slot to make one.
+-- A full container has no empty slot, so the turtle holds one of its
+-- stacks meanwhile (if it has an empty slot itself) and drops it back
+-- into the slot left for it at the end.
+local function sortContainer(chest, self, side)
+    local size = chest.size()
+    local items = chest.list()
+    local n = 0
+    for _ in pairs(items) do n = n + 1 end
+    local held, heldSlot
+    if n >= size then
+        for s = 1, 16 do
+            if turtle.getItemCount(s) == 0 then heldSlot = s; break end
+        end
+        if not heldSlot then return end
+        local suck = sideFuncs(side)
+        local sel = turtle.getSelectedSlot()
+        turtle.select(heldSlot)
+        local took = suck()
+        turtle.select(sel)
+        if not took then return end
+        local d = turtle.getItemDetail(heldSlot)
+        held = { name = d.name, nbt = d.nbt or "", count = d.count }
+        items = chest.list()
+    end
+    local stacks, at = { held }, {}         -- at[slot] = the stack in it
+    for slot, it in pairs(items) do
+        local s = { slot = slot, name = it.name, nbt = it.nbt or "", count = it.count }
+        stacks[#stacks + 1] = s
+        at[slot] = s
+    end
+    table.sort(stacks, function(a, b)
+        local ka, kb = itemKind(a.name), itemKind(b.name)
+        if ka ~= kb then return ka < kb end
+        if a.name ~= b.name then return a.name < b.name end
+        if a.nbt ~= b.nbt then return a.nbt < b.nbt end
+        if a.count ~= b.count then return a.count > b.count end
+        return (a.slot or 0) < (b.slot or 0)
+    end)
+    -- Give each stack its slot: slot t gets a stack like stacks[t].
+    local function like(s) return s.name .. "|" .. s.nbt .. "|" .. s.count end
+    local home, wants = {}, {}              -- home[stack] = slot; wants[slot] = stack
+    for t, s in ipairs(stacks) do
+        local o = at[t]
+        if o and like(o) == like(s) then home[o], wants[t] = t, o end
+    end
+    for t, s in ipairs(stacks) do
+        if not wants[t] then
+            for _, c in ipairs(stacks) do
+                if not home[c] and like(c) == like(s) then home[c], wants[t] = t, c; break end
+            end
+        end
+    end
+    local function move(s, to)
+        if chest.pushItems(self, s.slot, s.count, to) ~= s.count then error("chest sort: move failed", 0) end
+        at[s.slot] = nil
+        s.slot = to
+        at[to] = s
+    end
+    local ok, err = pcall(function()
+        while true do
+            local filled = false
+            for e = 1, size do
+                local w = wants[e]
+                if not at[e] and w and w ~= held then move(w, e); filled = true; break end
+            end
+            if not filled then
+                -- no empty slot is meant for anything: move a stack that's
+                -- in another's way to an empty slot (the held stack's, or
+                -- past the end), freeing the slot it was in
+                local blocker
+                for e = 1, size do
+                    local s = at[e]
+                    if s and home[s] ~= e and wants[e] then blocker = s; break end
+                end
+                if not blocker then return end      -- all in place
+                local empty
+                for e = size, 1, -1 do
+                    if not at[e] then empty = e; break end
+                end
+                if not empty then error("chest sort: no room", 0) end
+                move(blocker, empty)
+            end
+        end
+    end)
+    if heldSlot then
+        local _, drop = sideFuncs(side)
+        local sel = turtle.getSelectedSlot()
+        turtle.select(heldSlot)
+        drop()
+        turtle.select(sel)
+    end
+    if not ok then error(err, 0) end
+end
+
+-- Tidy the container on `side`: merge part stacks of the same item, so
+-- everything sits in as few slots as it can (hoppers and the turtle's own
+-- partial takes leave small stacks scattered about), filling the earliest
+-- part stack from the latest; then sort it (sortContainer).  Uses the
+-- container's pushItems.
 function T.compactContainer(side)
     local chest = peripheral and peripheral.wrap(side)
     if not (chest and chest.list and chest.pushItems and chest.getItemDetail) then return end
@@ -883,6 +989,7 @@ function T.compactContainer(side)
                 end
             end
         end
+        sortContainer(chest, self, side)
     end)
 end
 

@@ -93,7 +93,7 @@ reading: compare the numbers before and after a change (`git stash`, run,
 | `farm_sugar_cane` | farm | a cane strip: harvest above the bottom block, replant a cane lost when its lane dried up |
 | `farm_bone_meal` | farm | grow passes with bone meal from the chest |
 | `farm_compost_while_waiting` | farm | surplus seeds go into the compost hopper during the wait between runs; a short wait runs out of time |
-| `farm_chest_merge_stacks` | farm | part stacks in the farm chest are merged on every visit |
+| `farm_chest_tidy` | farm | the farm chest tidied on every visit: part stacks merged, then sorted with like items together; no moves when already in order; a full chest |
 | `farm_clone` | farm | `farm clone` of a 7x16 farm with two lanes; moves, buckets scooped/poured, lane tiles that aren't sources |
 | `farm_clone_lane_fallback` | farm | as `farm_clone`, but two lane tiles never fill on their own and must be poured |
 | `farm_fuel` | farm | real fuel levels: learn and clone starting nearly empty with little coal in the chest; trips home to refuel and back, waiting at home for the "player" to add coal; never a move on an empty tank; a farming pass 5 min apart that waits longer than that for fuel starts over, a short wait carries on |
