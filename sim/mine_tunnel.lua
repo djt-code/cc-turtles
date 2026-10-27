@@ -222,10 +222,13 @@ local function front() return P.x + DX[P.d], P.y, P.z + DZ[P.d] end
 -- Upgrades on each side; equipping swaps the selected slot with one.
 EQ = { right = "minecraft:diamond_pickaxe" }
 SCANNER = "advancedperipherals:geo_scanner"
+-- (as in game, a freshly equipped scanner may not show up as a
+-- peripheral at once: here not until it's been asked for once)
 function equip(side)
     local it = inv[sel]
     inv[sel] = EQ[side] and { name = EQ[side], count = 1 } or nil
     EQ[side] = it and it.name
+    if EQ[side] == SCANNER then ATTACHING = side end
     return true
 end
 -- The Geo Scanner: every block that isn't air within the radius (the
@@ -315,6 +318,7 @@ turtle = {
 peripheral = {
     wrap = function(side)
         if (side == "left" or side == "right") then
+            if ATTACHING == side then ATTACHING = nil; return nil end
             return EQ[side] == SCANNER and geoScanner() or nil
         end
         local c
@@ -749,6 +753,7 @@ local without = scanWorld(false)
 local withIt = scanWorld(true)
 local function oreGone(x, y, z) return not isOreBlock(get(x, y, z)) end
 check("lined the scan up with the tunnel", logHas("lined up"), SCANS .. " scans")
+check("waited for the scanner to show up after equipping it", not logHas("Geo scanner:"))
 check("iron touching the wall mined", oreGone(-1, 1, 5))
 check("gold 5 out and coal 5-6 out fetched", oreGone(-5, 1, 12) and oreGone(-5, 2, 12) and oreGone(7, 0, 20) and oreGone(8, 0, 20))
 check("diamond 9 out left", not oreGone(-9, 1, 25))

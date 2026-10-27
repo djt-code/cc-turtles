@@ -1010,12 +1010,24 @@ local function scanBlocks()
         turtle.select(slot)
         if not equip() then turtle.select(1); return nil, "couldn't equip it" end
     end
-    local scanner = peripheral.wrap(side)
-    local blocks, err = nil, "not a scanner"
-    for _ = 1, 3 do
-        if scanner and scanner.scan then blocks, err = scanner.scan(SCAN_RADIUS) end
-        if blocks then break end
-        sleep(1)                           -- the scanner's cooldown
+    -- once equipped, the scanner can take a moment to show up as a
+    -- peripheral: ask again until it does
+    local scanner
+    for _ = 1, 20 do
+        scanner = peripheral.wrap(side)
+        if scanner and scanner.scan then break end
+        sleep(0.1)
+    end
+    local blocks, err
+    if scanner and scanner.scan then
+        for _ = 1, 3 do
+            blocks, err = scanner.scan(SCAN_RADIUS)
+            if blocks then break end
+            sleep(1)                       -- the scanner's cooldown
+        end
+    else
+        err = string.format("no scanner showed up on the %s side once equipped (found: %s)",
+            side, tostring(peripheral.getType and peripheral.getType(side) or nil))
     end
     if equip then
         turtle.select(slot)
@@ -1182,9 +1194,13 @@ local function scanNow(z1, z2)
     if not blocks then
         if not warnedScan then
             warnedScan = true
-            print("Geo scanner: " .. tostring(err) .. "; checking the walls by hand.")
+            print("Geo scanner: " .. tostring(err) .. "; checking the walls by hand until it works.")
         end
         return
+    end
+    if warnedScan then
+        warnedScan = false
+        print("Geo scanner working again.")
     end
     if not facing then
         facing = lineUp(blocks)
