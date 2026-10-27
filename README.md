@@ -386,7 +386,9 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   inventory into the two chests (tidying the valuables chest), refuels, and
   comes back to the same spot, up the vein if it was in one. It only travels
   through blocks it has already dug, so nothing is dug, and nothing can
-  spill, on the way. It never drops items on the ground.
+  spill, on the way. It never drops items on the ground. Whenever a slot
+  fills, it first merges part stacks of the same item, which often saves
+  the trip (see [Library](#library)).
 - **Geo Scanner:** put an Advanced Peripherals Geo Scanner in the start's
   top chest and the turtle takes it along and uses it instead of checking
   every wall block by hand. There's no slot to spare for it: one side holds
@@ -397,12 +399,18 @@ recognise. Needs a pickaxe, equipped or in the inventory.
     (north, east...), which a turtle doesn't know. So the turtle tries all
     four ways round, and keeps the one that puts none of the scanned blocks
     where it knows it has already dug.
-  - **Walls:** it only turns to look at wall blocks the scan says are ore,
-    lava or water. In tests it turned about a fifth as often.
+  - **Walls and veins:** it only turns to look at blocks the scan says are
+    ore, lava or water, both in the walls and round each block of a vein.
+    In tests it turned about a fifth as often.
   - **Ore further out:** right after each scan, it collects what that scan
     found. It tunnels out to ore up to 6 blocks from the tunnel
     (`SCAN_REACH`) and mines the whole vein, then goes on with the tunnel.
-    It refills any floor it dug through, and seals lava on the way.
+    It goes from one deposit straight to the nearest one left, rather than
+    back to the tunnel between them. It goes back only part of the way it
+    came, or back to the tunnel, when that's shorter (digging counts double,
+    since a step through what's dug is quicker). It steps the way it already
+    faces where it can, and backs out of dead ends without turning round. It
+    refills any floor it dug through, and seals lava on the way.
   - **Diamonds:** it always mines any diamond a scan shows, however far out.
     Otherwise it goes no further than the scan reached (8 blocks along any
     direction from where the scan was taken). The exception is a diamond
@@ -537,6 +545,16 @@ T.goTo(0, 0)
 ```
 
 Everything is relative to the start: `(0,0,0)` facing `+z`, `+x` to the right.
+
+A turtle puts what it picks up into the first slot, counting on from the
+selected one, that is empty *or* holds the same item. So an empty slot ahead
+of a part stack starts a second stack of that item. `T.tidyInventory()`
+merges part stacks of the same item, moves part stacks into empty slots
+ahead of them, and selects slot 1, so the next pickup joins its stack. It
+costs nothing when there's nothing to do. `T.ensureRoom` and `T.dumpDown`
+call it, so mow and farm tidy before every tile and after emptying, and the
+miner does whenever a slot fills. Each move between slots takes as long as a
+step (moves, turns, digs and transfers all take 8 ticks).
 `T.goTo` learns obstacles as it bumps into them and re-plans with BFS; it returns
 `false` only when no route exists through the known map.
 

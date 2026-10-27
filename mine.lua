@@ -429,6 +429,20 @@ local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes =
 -- "ore", "fluid" or "air"), and its ore further out.
 local facing
 local known, targets = {}, {}
+-- And, for following veins without turning to look: where this
+-- segment's scans were taken, and the ore and fluid they saw.
+local scanFrom, scanned = {}, {}
+-- What this segment's scans say is at p: "ore" or "fluid", "clear" (a
+-- scan covered it and saw neither), or nil (none covered it).
+local function scanSays(p)
+    local k = scanned[p.x .. "," .. p.y .. "," .. p.z]
+    if k then return k end
+    for _, o in ipairs(scanFrom) do
+        if math.max(math.abs(p.x - o.x), math.abs(p.y - o.y), math.abs(p.z - o.z)) <= SCAN_RADIUS then
+            return "clear"
+        end
+    end
+end
 local pickaxe              -- the pickaxe mined with (found at the start)
 
 -- Stop the job: unwinds to the top, which walks back to the start.
@@ -446,9 +460,18 @@ end
 --------------------------------------------------------------------------
 local trip                 -- defined below
 
--- Make room before a dig: a trip home if fewer than ROOM slots are free.
+-- Make room before a dig: when a slot has filled since the last look (a
+-- new stack started, maybe one that could have joined another), tidy the
+-- inventory; then a trip home if fewer than ROOM slots are free.
+local freeBefore = 0
 local function room()
-    if not inTrip and T.freeSlots() < ROOM then trip("Inventory nearly full") end
+    local free = T.freeSlots()
+    if free < freeBefore or free < ROOM then
+        T.tidyInventory()
+        free = T.freeSlots()
+    end
+    freeBefore = free
+    if not inTrip and free < ROOM then trip("Inventory nearly full") end
 end
 
 local function isSource(data)
@@ -484,6 +507,19 @@ local function go(d)
         end
     end
     return false, "something in the way"
+end
+
+-- Step back the way it came in direction d: backwards, if it still faces
+-- that way (no turning round), else turning to go.
+local function retreat(d)
+    if d == T.dir and T.back() then return true end
+    return go(OPP[d])
+end
+
+-- Turns it takes to face direction d (none for up or down).
+local function turnsTo(d)
+    if d == "up" or d == "down" or d == T.dir then return 0 end
+    return (d - T.dir) % 4 == 2 and 2 or 1
 end
 
 local function selectItem(test)
@@ -567,12 +603,6 @@ local function examine(d)
     end
 end
 
--- Directions to look round a block, the cheapest turns first.
-local function around()
-    local f = T.dir
-    return { "up", "down", f, (f + 1) % 4, (f + 3) % 4, (f + 2) % 4 }
-end
-
 -- The block in direction d is ore: dig into it, look all round, follow
 -- any more ore, then come back.  Ore is followed within reach (and
 -- within the scan, fetching what one found); diamond further: anywhere
@@ -585,20 +615,29 @@ function mineVein(d)
     if not go(d) then return end
     stats.ore = stats.ore + 1
     trail[#trail + 1] = d
-    for _, e in ipairs(around()) do
-        local m = neighbour(e)
-        local near = inReach(m)
-        local further = m.z >= 1 and (diamond or (bound and inScan(m)))
-        if not opened[key(m)] and (near or further) then
-            local ok, data = look(e)
-            if not ok then opened[key(m)] = true
-            elseif isOre(data) and (near or isDiamond(data.name)) then mineVein(e)
-            elseif FLUID[data.name] then seal(e)
+    -- Look round, the fewest turns away first; not where a scan saw
+    -- neither ore nor fluid (no turning to look at plain rock).
+    local todo = { "up", "down", 0, 1, 2, 3 }
+    while true do
+        local best, near
+        for i, e in ipairs(todo) do
+            local m = neighbour(e)
+            local n = inReach(m)
+            if not opened[key(m)] and (n or (m.z >= 1 and (diamond or (bound and inScan(m)))))
+                    and scanSays(m) ~= "clear" and (not best or turnsTo(e) < turnsTo(todo[best])) then
+                best, near = i, n
             end
+        end
+        if not best then break end
+        local e = table.remove(todo, best)
+        local ok, data = look(e)
+        if not ok then opened[key(neighbour(e))] = true
+        elseif isOre(data) and (near or isDiamond(data.name)) then mineVein(e)
+        elseif FLUID[data.name] then seal(e)
         end
     end
     local here = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
-    go(OPP[d])
+    retreat(d)
     trail[#trail] = nil
     if isFloor(here) then fill(d) end      -- ore out of the floor: fill the hole
 end
@@ -722,7 +761,7 @@ local function unload(only)
             end
         end
     end
-    turtle.select(1)
+    T.tidyInventory()
     if home.val ~= "front" or home.face == T.dir then T.compactContainer(home.val) end
     if only == nil then restockKit() end
     return fits, "full"
@@ -757,7 +796,7 @@ function trip(why)
     local facing = T.dir
     local path = trail
     print(string.format("%s at %s: back to home %d.", why, T.posString(), home.k))
-    for i = #path, 1, -1 do go(OPP[path[i]]) end
+    for i = #path, 1, -1 do retreat(path[i]) end
     trail = {}                     -- out of the vein (also if the job stops here)
     local spot = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
     if not tunnelHome() then stop("Couldn't get back to home " .. home.k .. " from " .. T.posString()) end
@@ -933,7 +972,7 @@ local function supportNiche(d)
         if ok and SOFT[data.name] then digDir("down") end
         put = putFiller("down")
     end
-    go(OPP[d])
+    retreat(d)
     trail[#trail] = nil
     return put
 end
@@ -1146,12 +1185,14 @@ local function record(blocks, z1, z2, toCell)
     local seen = {}
     scans = scans + 1
     local from = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
+    scanFrom[#scanFrom + 1] = from
     for _, e in ipairs(blocks) do
         local p = toCell(e)
         local k = key(p)
         seen[k] = true
         local kind = isOre({ name = e.name, tags = tagSet(e.tags) }) and "ore"
             or (FLUID[e.name] and "fluid") or "rock"
+        if kind ~= "rock" then scanned[k] = kind end
         local out = outside(p)
         if out == 1 then known[k] = kind end
         local zTop = z2 == LENGTH and z2 + SCAN_REACH or z2
@@ -1185,72 +1226,105 @@ local function dirTo(p)
     elseif p.z > T.pos.z then return 0 else return 2 end
 end
 
--- Tunnel from here out to the ore at t, mine its vein, and come back the
--- same way, filling any floor it dug through.  Ore met on the way is
--- mined too; lava and water are sealed.  Gives up on what it can't dig.
-local function fetch(t)
-    local base, ore = #trail, stats.ore
-    for _ = 1, 3 * SCAN_RADIUS do
-        if opened[key(t)] then break end
-        local dist = math.abs(t.x - T.pos.x) + math.abs(t.y - T.pos.y) + math.abs(t.z - T.pos.z)
-        if dist <= 1 then
-            local ok, data = look(dirTo(t))
-            if ok and isOre(data) then mineVein(dirTo(t)) end
-            break
-        end
-        local step = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
-        if t.x ~= T.pos.x then step.x = step.x + (t.x > T.pos.x and 1 or -1)
-        elseif t.y ~= T.pos.y then step.y = step.y + (t.y > T.pos.y and 1 or -1)
-        else step.z = step.z + (t.z > T.pos.z and 1 or -1) end
-        local d = dirTo(step)
-        local ok, data = look(d)
-        if ok and isOre(data) then mineVein(d)
-        elseif ok and FLUID[data.name] and not seal(d) then break end
-        if not go(d) then break end
-        trail[#trail + 1] = d
+local function here() return { x = T.pos.x, y = T.pos.y, z = T.pos.z } end
+local function dist(a, b) return math.abs(a.x - b.x) + math.abs(a.y - b.y) + math.abs(a.z - b.z) end
+
+-- A step toward p, the one needing the fewest turns.
+local function stepToward(p)
+    local best
+    for _, d in ipairs({ T.dir, "up", "down", 0, 1, 2, 3 }) do
+        local v = DELTA[d]
+        local n = { x = T.pos.x + v[1], y = T.pos.y + v[2], z = T.pos.z + v[3] }
+        if dist(n, p) < dist(T.pos, p) and (not best or turnsTo(d) < turnsTo(best)) then best = d end
     end
-    while #trail > base do
-        local d = trail[#trail]
-        local here = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
-        go(OPP[d])
-        trail[#trail] = nil
-        if isFloor(here) then fill(d) end
-    end
-    if stats.ore > ore then stats.fetched = stats.fetched + 1 end
+    return best
 end
 
--- Fetch ore found by the scanner: from the tunnel block nearest each,
--- through the tunnel (dug already, or dug now: it's tunnel), and back to
--- where the turtle was.  `which` picks them (nil: all, which mops up any
--- a stop for room or fuel left); coal first when fuel is low, then along
--- the tunnel.
+-- Fetch ore found by the scanner, `which` picking it (nil: all, which
+-- mops up any a stop for room or fuel left).  It goes from each deposit
+-- to the nearest one left (coal first when fuel is low), by whichever is
+-- shorter: back part of the way it came and digging on from there, or
+-- back to the tunnel and along it (through what's dug, or dug now: it's
+-- tunnel) to the block nearest it.  Ore met on the way is mined too;
+-- lava and water are sealed; floor it dug through is filled on the way
+-- back.  It gives up on what it can't dig to, and ends where it started.
 local function fetchTargets(which)
     local list = {}
     for _, t in pairs(targets) do
         if not opened[key(t)] and (not which or which(t)) then list[#list + 1] = t end
     end
     if #list == 0 then return end
-    local low = fuelLow()
-    table.sort(list, function(a, b)
-        if low and a.coal ~= b.coal then return a.coal end
-        if a.z ~= b.z then return a.z < b.z end
-        if a.x ~= b.x then return a.x < b.x end
-        return a.y < b.y
-    end)
-    local back = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
-    for _, t in ipairs(list) do
-        if not opened[key(t)] then
-            alongAxis("z", math.max(1, math.min(segEnd, t.z)))
-            alongAxis("x", math.max(X0, math.min(X1, t.x)))
-            alongAxis("y", math.max(Y0, math.min(Y1, t.y)))
-            bound = t.from
-            fetch(t)
-            bound = nil
-            if t.coal and fuelLow() then T.refuelTo(home.z + fuelGoal) end
-        end
-        targets[key(t)] = nil
+    local start, base = here(), #trail
+    -- where it has been since leaving the tunnel: way[i] after trail[base + i]
+    local way = { [0] = start }
+    local function out() return #trail - base end
+    local function stepBack()
+        local d, from = trail[#trail], here()
+        retreat(d)
+        trail[#trail] = nil
+        way[out() + 1] = nil
+        if isFloor(from) then fill(d) end
     end
-    alongAxis("y", back.y); alongAxis("x", back.x); alongAxis("z", back.z)
+    local function nearest(t)
+        return { x = math.max(X0, math.min(X1, t.x)), y = math.max(Y0, math.min(Y1, t.y)),
+                 z = math.max(1, math.min(segEnd, t.z)) }
+    end
+    -- the cheapest way to t, as how far back along the way to go first (0:
+    -- to the tunnel, and along it); digging costs twice a step through
+    -- what's dug
+    local function plan(t)
+        local q = nearest(t)
+        local cost, at = out() + dist(way[0], q) + 2 * dist(q, t), 0
+        for i = 1, out() do
+            local c = out() - i + 2 * dist(way[i], t)
+            if c < cost then cost, at = c, i end
+        end
+        return cost, at
+    end
+    local left = {}
+    for _, t in ipairs(list) do left[#left + 1] = t end
+    while true do
+        local coal = fuelLow()
+        local pick, pickCost, pickAt
+        for i, t in ipairs(left) do
+            if not opened[key(t)] then
+                local c, at = plan(t)
+                if coal and t.coal then c = c - 1000 end
+                if not pick or c < pickCost then pick, pickCost, pickAt = i, c, at end
+            end
+        end
+        if not pick then break end
+        local t = table.remove(left, pick)
+        while out() > pickAt do stepBack() end
+        if pickAt == 0 then
+            local q = nearest(t)
+            alongAxis("z", q.z); alongAxis("x", q.x); alongAxis("y", q.y)
+            way = { [0] = here() }
+        end
+        bound = t.from
+        local ore = stats.ore
+        for _ = 1, 3 * SCAN_RADIUS do
+            if opened[key(t)] then break end
+            if dist(T.pos, t) <= 1 then
+                local ok, data = look(dirTo(t))
+                if ok and isOre(data) then mineVein(dirTo(t)) end
+                break
+            end
+            local d = stepToward(t)
+            local ok, data = look(d)
+            if ok and isOre(data) then mineVein(d)
+            elseif ok and FLUID[data.name] and not seal(d) then break end
+            if not go(d) then break end
+            trail[#trail + 1] = d
+            way[out()] = here()
+        end
+        bound = nil
+        if stats.ore > ore then stats.fetched = stats.fetched + 1 end
+        if t.coal and fuelLow() then T.refuelTo(home.z + fuelGoal) end
+    end
+    while out() > 0 do stepBack() end
+    for _, t in ipairs(list) do targets[key(t)] = nil end
+    alongAxis("y", start.y); alongAxis("x", start.x); alongAxis("z", start.z)
 end
 
 -- Scan from here (on the segment's first lane) and file what it finds;
@@ -1324,7 +1398,7 @@ local function mineSegment(z1, z2)
     local lanes = planLanes()
     print(string.format("Segment z=%d..%d from home %d: %d lanes, fuel %s.", z1, z2, home.k, #lanes,
         tostring(turtle.getFuelLevel())))
-    known, targets = {}, {}
+    known, targets, scanFrom, scanned = {}, {}, {}, {}
     local lastScan = nil
     for i, lane in ipairs(lanes) do
         local ahead = i % 2 == 1
@@ -1432,7 +1506,7 @@ end
 local function returnToStart()
     inTrip, T.fuelTrip, bound = true, nil, nil
     T.cfg.lowFuel = 1                       -- the tank was kept for this
-    for i = #trail, 1, -1 do go(OPP[trail[i]]) end
+    for i = #trail, 1, -1 do retreat(trail[i]) end
     trail = {}
     tunnelHome()
     return walkBackCollecting()

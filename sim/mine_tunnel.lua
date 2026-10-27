@@ -26,6 +26,7 @@ package.path = PROJ .. "/?.lua;" .. package.path
 -- World: W[key] = block, false = air; unset = the default rock
 --------------------------------------------------------------------------
 local W = {}
+local function T_ONE(name) return name:find("_pickaxe$") or name:find("_hoe$") or name:find("_axe$") or name:find("_shovel$") or name:find("_sword$") or name:find("bucket$") end
 local function k(x, y, z) return x .. "," .. y .. "," .. z end
 local ROCK = { "minecraft:stone", "minecraft:stone", "minecraft:deepslate", "minecraft:andesite",
                "minecraft:diorite", "minecraft:granite", "minecraft:tuff" }
@@ -100,17 +101,25 @@ FUEL, LOWEST, DRY = 0, 0, 0
 local FUEL_VALUE = { ["minecraft:coal"] = 80, ["minecraft:charcoal"] = 80 }
 local SIZE = 27
 
+-- As CC:Tweaked stores what a turtle picks up: into the first slot,
+-- counting on from the selected one, that is empty or holds the same item
+-- (so an empty slot ahead of a part stack starts a second stack).
+-- SPLIT counts the pickups that left two part stacks of one item.
 local function addItem(name, n)
-    for s = 1, 16 do
-        if inv[s] and inv[s].name == name and inv[s].count < 64 then
-            local take = math.min(n, 64 - inv[s].count); inv[s].count = inv[s].count + take; n = n - take
+    for i = 0, 15 do
+        local s = (sel - 1 + i) % 16 + 1
+        local it = inv[s]
+        if not it then
+            inv[s] = { name = name, count = math.min(n, 64) }; n = n - inv[s].count
+        elseif it.name == name and it.count < 64 then
+            local take = math.min(n, 64 - it.count); it.count = it.count + take; n = n - take
         end
-        if n == 0 then return true end
+        if n == 0 then break end
     end
-    for s = 1, 16 do
-        if not inv[s] then inv[s] = { name = name, count = math.min(n, 64) }; n = n - inv[s].count end
-        if n == 0 then return true end
-    end
+    local part = 0
+    for s = 1, 16 do if inv[s] and inv[s].name == name and inv[s].count < 64 then part = part + 1 end end
+    if part > 1 then SPLIT = (SPLIT or 0) + 1 end
+    if n == 0 then return true end
     SPILLED = (SPILLED or 0) + n
     return false
 end
@@ -135,6 +144,7 @@ local function move(dx, dy, dz)
     if FUEL <= 0 then DRY = DRY + 1; return false end
     local nx, ny, nz = P.x + dx, P.y + dy, P.z + dz
     if not passable(get(nx, ny, nz)) then return false end
+    if ONMOVE then ONMOVE(P.x, P.y, P.z, nx, ny, nz) end
     P.x, P.y, P.z = nx, ny, nz; moves = moves + 1
     FUEL = FUEL - 1; LOWEST = math.min(LOWEST, FUEL)
     if TRAVELLING then                  -- a trip ends back where it started
@@ -152,6 +162,7 @@ local function digAt(x, y, z)
     if not b or passable(b) or b.inv or b.name == "minecraft:bedrock" then return false end
     set(x, y, z, nil)
     if TRAVELLING then TRAVEL_DIGS = (TRAVEL_DIGS or 0) + 1 end
+    DIGS = (DIGS or 0) + 1
     addItem(DROP[b.name] or b.name, 1)
     gravity(x, y, z)
     return true
@@ -302,6 +313,20 @@ turtle = {
     getSelectedSlot = function() return sel end,
     getItemCount = function(s) return inv[s or sel] and inv[s or sel].count or 0 end,
     getItemDetail = function(s) local it = inv[s or sel]; return it and { name = it.name, count = it.count } end,
+    -- as in the game: room left in the stack, and moving items between slots
+    getItemSpace = function(s) local it = inv[s or sel]; return it and (T_ONE(it.name) and 1 or 64) - it.count or 64 end,
+    transferTo = function(to, n)
+        local it, dst = inv[sel], inv[to]
+        if not it or to == sel then return false end
+        if dst and dst.name ~= it.name then return false end
+        local max = (T_ONE(it.name) and 1 or 64)
+        local k = math.min(n or it.count, it.count, max - (dst and dst.count or 0))
+        if k <= 0 then return false end
+        inv[to] = { name = it.name, count = (dst and dst.count or 0) + k }
+        it.count = it.count - k
+        if it.count == 0 then inv[sel] = nil end
+        return true
+    end,
     drop = function(n) return dropInto(chestAt(front()), n) end,
     dropUp = function(n) return dropInto(chestAt(above()), n) end,
     dropDown = function(n) return dropInto(chestAt(below()), n) end,
@@ -402,11 +427,11 @@ print = function(...)
 end
 
 local function run(...)
-    log, moves, turns = {}, 0, 0
+    log, moves, turns, SPLIT, DIGS = {}, 0, 0, 0, 0
     package.loaded.turtlelib = nil
     local chunk = assert(loadfile(PROJ .. "/mine.lua"))
     local ok, err = pcall(chunk, ...)
-    realPrint("== mine " .. table.concat({ ... }, " ") .. "  (moves: " .. moves .. ", turns: " .. turns .. ")")
+    realPrint("== mine " .. table.concat({ ... }, " ") .. "  (moves: " .. moves .. ", turns: " .. turns .. ", digs: " .. DIGS .. ", split stacks: " .. SPLIT .. ")")
     for _, l in ipairs(log) do
         if not l:find("^Segment ") then realPrint("   " .. l) end
     end
@@ -601,6 +626,8 @@ startAt(); inv, files = {}, {}
 FUEL, LOWEST, DRY, SPILLED, TRAVEL_DIGS = 200, 200, 0, 0, 0
 run("3", "3", "50", "--spacing", "16")
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 50) == 0, leftIn(0, 2, 0, 2, 1, 50) .. " blocks left")
+check("what it picked up joined its stack (it keeps its slots tidy)", SPLIT <= 2,
+    SPLIT .. " pickups left a second part stack")
 checkOres(); checkLava(50); checkFloor(0, 2, -1, 1, 50)
 local tn = checkStart()
 check("diamonds and emerald brought back", (tn["minecraft:diamond"] or 0) == 3 and (tn["minecraft:emerald"] or 0) == 1,
@@ -820,6 +847,29 @@ check("far fewer turns with the scanner", withIt < without * 0.6, withIt .. " tu
 check("chunk controller still on, pickaxe back", EQ.left == "advancedperipherals:chunk_controller" and EQ.right == "minecraft:diamond_pickaxe")
 local _, top = contents(chestAt(0, 1, 0))
 check("scanner back in the start chest", (top[SCANNER] or 0) == 1)
+check("back at the start", atStart())
+
+-- 11c. a field of small deposits off the left wall, all in one scan:
+--      it goes from one to the next where that's shorter than going back
+--      to the tunnel in between, and picked-up items join their stacks
+setup({ { name = SCANNER, count = 1 }, { name = "minecraft:chest", count = 4 }, { name = "minecraft:coal", count = 64 } })
+local FIELD = { { -4, 1, 6 }, { -5, 1, 8 }, { -4, 0, 10 }, { -6, 2, 11 }, { -5, 1, 13 }, { -3, 2, 14 }, { -6, 0, 15 } }
+for _, o in ipairs(FIELD) do set(o[1], o[2], o[3], ore("minecraft:iron_ore")) end
+startAt(); inv, files = {}, {}
+EQ = { right = "minecraft:diamond_pickaxe" }
+FUEL, DRY, SCANS = 2000, 0, 0
+local entries = 0
+ONMOVE = function(x, y, z, nx, ny, nz)
+    if x < 0 and nx >= 0 and nz >= 1 then entries = entries + 1 end
+end
+run("3", "3", "16")
+ONMOVE = nil
+local all = true
+for _, o in ipairs(FIELD) do all = all and oreGone(o[1], o[2], o[3]) end
+check("mined every deposit in the field", all)
+check("went back into the tunnel from the field at most twice", entries <= 2, entries .. " times")
+check("tunnel clear", leftIn(0, 2, 0, 2, 1, 16) == 0, leftIn(0, 2, 0, 2, 1, 16) .. " blocks left")
+checkFloor(0, 2, -1, 1, 16)
 check("back at the start", atStart())
 
 -- 12. low on fuel with a scanner: the only fuel is coal 5 out from the
