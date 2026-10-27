@@ -378,6 +378,17 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   comes back to the same spot, up the vein if it was in one. It only travels
   through blocks it has already dug, so nothing is dug, and nothing can
   spill, on the way. It never drops items on the ground.
+- **A floor you can walk on:** the turtle doesn't need a floor, but you do.
+  Every block under the tunnel's bottom row is filled with a bulk block if
+  it's any of these:
+  - a hole: a crevasse, a cave, or where ore in the floor was mined out;
+  - lava or water;
+  - something you shouldn't stand on: grass, snow, cobwebs, pointed dripstone.
+
+  A crevasse across the tunnel gets a bridge one block thick. The turtle tops
+  its stack of bulk blocks up from each home's bulk chest, and goes back for
+  more if it runs out halfway across. Openings in the walls and ceiling (into
+  caves) are left open, apart from lava and water.
 - **Never dug:** chests, barrels, shulker boxes, spawners and ComputerCraft
   blocks (other turtles, computers).
 - **Reset:** position is saved after every move. `mine reset` brings the

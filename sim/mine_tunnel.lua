@@ -8,7 +8,8 @@
 -- touches open space, valuables end up at the start and bulk in the
 -- homes, and it never moves on an empty tank.  Then homes along a longer
 -- tunnel (supplies carried forward, valuables collected on the way
--- back); a tunnel with no length that runs out of chests, then
+-- back); a crevasse across the tunnel, which it bridges so a player can
+-- walk the floor; a tunnel with no length that runs out of chests, then
 -- `mine --resume` once more chests are added (twice: the second time a
 -- home holds more valuables than fit, and the most valuable come back);
 -- bedrock; running short of fuel; `mine reset` from inside a vein; and a
@@ -372,6 +373,21 @@ local function leftIn(x0, x1, y0, y1, z1, z2)
     return n
 end
 
+-- Holes in the floor y = fy under x0..x1, z1..z2: blocks a player can't
+-- stand on (air, fluid).
+local function floorHoles(x0, x1, fy, z1, z2)
+    local holes = {}
+    for x = x0, x1 do for z = z1, z2 do
+        local b = get(x, fy, z)
+        if not b or passable(b) then holes[#holes + 1] = k(x, fy, z) end
+    end end
+    return holes
+end
+local function checkFloor(x0, x1, fy, z1, z2)
+    local holes = floorHoles(x0, x1, fy, z1, z2)
+    check("floor solid all along", #holes == 0, #holes .. " holes" .. (#holes > 0 and (": " .. table.concat(holes, " ", 1, math.min(#holes, 6))) or ""))
+end
+
 local function checkOres()
     local mined, kept, wrong = 0, 0, {}
     for _, o in ipairs(ORES) do
@@ -447,6 +463,7 @@ FUEL, LOWEST, DRY, SPILLED = 1000, 1000, 0, 0
 run("3", "3", "12")
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 12) == 0, leftIn(0, 2, 0, 2, 1, 12) .. " blocks left")
 checkOres(); checkLava(12); checkStart()
+checkFloor(0, 2, -1, 1, 12)                         -- the gold ore was in it, at (2,-1,10)
 check("back at the start", atStart())
 check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
@@ -461,7 +478,7 @@ startAt(); inv, files = {}, {}
 FUEL, LOWEST, DRY, SPILLED, TRAVEL_DIGS = 200, 200, 0, 0, 0
 run("3", "3", "50", "--spacing", "16")
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 50) == 0, leftIn(0, 2, 0, 2, 1, 50) .. " blocks left")
-checkOres(); checkLava(50)
+checkOres(); checkLava(50); checkFloor(0, 2, -1, 1, 50)
 local tn = checkStart()
 check("diamonds and emerald brought back", (tn["minecraft:diamond"] or 0) == 3 and (tn["minecraft:emerald"] or 0) == 1,
     (tn["minecraft:diamond"] or 0) .. " diamond, " .. (tn["minecraft:emerald"] or 0) .. " emerald")
@@ -533,6 +550,19 @@ check("back at the start", atStart())
 check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("got back with its margin of 30 left", LOWEST >= 30, "lowest after a move " .. LOWEST)
 
+-- 6b. a crevasse 11 blocks across cuts through the tunnel, 20 deep and
+--     open above: the turtle bridges it with bulk so a player can walk
+--     across, and a cave pocket under the floor further on is filled too
+setup(stock(6, 64))
+for x = -6, 8 do for y = -20, 10 do for z = 20, 30 do set(x, y, z, nil) end end end
+for x = 0, 2 do set(x, -1, 34, nil); set(x, -2, 34, nil) end
+startAt(); inv, files = {}, {}
+FUEL, DRY = 1000, 0
+run("3", "3", "36", "--spacing", "16")
+checkFloor(0, 2, -1, 1, 36)
+check("back at the start", atStart())
+check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
+
 -- 7. stopped inside a vein (a server restart): `mine reset` digs back to
 --    the tunnel and goes home
 files["mine.job"] = "3 3 12 64 0 active"
@@ -548,5 +578,6 @@ startAt(); inv, files = {}, {}
 FUEL, DRY = 1000, 0
 run("-2", "-2", "6")
 check("left-and-down tunnel clear", leftIn(-1, 0, -1, 0, 1, 6) == 0, leftIn(-1, 0, -1, 0, 1, 6) .. " blocks left")
+checkFloor(-1, 0, -2, 1, 6)
 check("nothing dug right of or above it", get(1, 0, 3) ~= nil and get(0, 1, 3) ~= nil)
 check("back at the start", atStart())

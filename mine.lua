@@ -61,6 +61,12 @@
 --    no harm from lava, but lava burns any item that falls in it and
 --    makes the tunnel deadly for players.  Lava or water inside the
 --    tunnel is filled and dug out.
+--  * Floor: the turtle doesn't need one, but a player does.  Every block
+--    under the tunnel's bottom row that's a hole (a crevasse, a cave, where
+--    floor ore was), a fluid, or something not to stand on (grass, snow,
+--    cobwebs, dripstone) is filled with a bulk block; a crevasse across the
+--    tunnel gets a bridge.  The turtle tops its stack of bulk up from each
+--    home's bulk chest, and fetches more if it runs out mid-crevasse.
 --  * Never digs chests, barrels, shulker boxes, spawners or ComputerCraft
 --    blocks (other turtles, computers).
 --  * Position is saved after every move, so `mine reset` can bring it
@@ -156,6 +162,15 @@ for _, n in ipairs({ "cobblestone", "cobbled_deepslate", "netherrack", "dirt", "
         "diorite", "granite", "tuff", "calcite", "blackstone", "basalt", "end_stone",
         "stone", "deepslate" }) do
     FILLER["minecraft:" .. n] = true
+end
+
+-- Blocks a player can't stand on (or shouldn't): a floor of these is
+-- dug out and filled like a hole.
+local SOFT = {}
+for _, n in ipairs({ "short_grass", "grass", "tall_grass", "fern", "large_fern", "dead_bush",
+        "vine", "glow_lichen", "snow", "moss_carpet", "sculk_vein", "cobweb",
+        "pointed_dripstone", "hanging_roots", "cave_vines", "cave_vines_plant" }) do
+    SOFT["minecraft:" .. n] = true
 end
 
 -- Supplies: what homes are built from, and fuel.  They travel forward.
@@ -310,7 +325,7 @@ local opened = {}          -- key(p) = true: known to be air (dug or visited)
 local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
-local stats = { veins = 0, ore = 0, sealed = 0, homes = 0 }
+local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, homes = 0 }
 
 -- Stop the job: unwinds to the top, which walks back to the start.
 local function stop(reason) error({ stop = reason }, 0) end
@@ -369,13 +384,46 @@ local function selectItem(test)
     return false
 end
 
--- Seal lava or water in direction d with a bulk block.
-function seal(d)
+-- Put a bulk block in direction d (into air or a fluid; with nothing to
+-- place it against, a turtle places it against itself).
+local function putFiller(d)
     if not selectItem(function(n) return FILLER[n] end) then return false end
     local ok = placeDir(d)
     turtle.select(1)
+    return ok
+end
+
+-- Seal lava or water in direction d with a bulk block.
+function seal(d)
+    local ok = putFiller(d)
     if ok then stats.sealed = stats.sealed + 1 end
     return ok
+end
+
+-- The tunnel's floor: the blocks under its bottom row.
+local function isFloor(p)
+    return p.y == Y0 - 1 and p.x >= X0 and p.x <= X1 and p.z >= 1 and p.z <= LENGTH
+end
+
+-- Make the floor block in direction d something a player can walk on:
+-- fill a hole (a crevasse, a cave, where floor ore was) or a fluid with a
+-- bulk block, digging out grass, cobwebs and the like first.  Out of
+-- bulk blocks, it fetches more from its home.
+local warnedFloor = false
+local function fill(d)
+    local ok, data = look(d)
+    if ok and not FLUID[data.name] and not SOFT[data.name] then return true end
+    if ok and SOFT[data.name] then room(); digDir(d) end
+    if not selectItem(function(n) return FILLER[n] end) then trip("Out of blocks to fill the floor") end
+    if putFiller(d) then
+        stats.filled = stats.filled + 1
+        return true
+    end
+    if not warnedFloor then
+        warnedFloor = true
+        print("Couldn't fill a hole in the floor at (" .. key(neighbour(d)) .. "); no bulk blocks left.")
+    end
+    return false
 end
 
 local mineVein
@@ -432,8 +480,10 @@ function mineVein(d)
             end
         end
     end
+    local here = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
     go(OPP[d])
     trail[#trail] = nil
+    if isFloor(here) then fill(d) end      -- ore out of the floor: fill the hole
 end
 
 --------------------------------------------------------------------------
@@ -489,6 +539,15 @@ end
 --------------------------------------------------------------------------
 -- At a home
 --------------------------------------------------------------------------
+-- How many of each item the chest on `side` holds.
+local function chestCounts(side)
+    local chest = peripheral.wrap(side)
+    local n = {}
+    if not (chest and chest.list) then return n end
+    for _, it in pairs(chest.list()) do n[it.name] = (n[it.name] or 0) + it.count end
+    return n
+end
+
 -- Put what the turtle carries in the home's chests: bulk in the bulk
 -- chest, the rest (supplies included) in the valuables chest, keeping
 -- tools and a stack of filler.  `only` limits it to "bulk".  Returns
@@ -514,6 +573,18 @@ local function unload(only)
     end
     turtle.select(1)
     if home.val ~= "front" or home.face == T.dir then T.compactContainer(home.val) end
+    if only == nil then
+        -- top the filler back up from the bulk chest, for floors and seals
+        for name, n in pairs(chestCounts(home.bulk)) do
+            local have = 0
+            for f in pairs(FILLER) do have = have + T.countItem(f) end
+            if have >= FILLER_KEEP then break end
+            if FILLER[name] then
+                T.restockFrom(home.bulk, name, T.countItem(name) + math.min(n, FILLER_KEEP - have),
+                    { quiet = true, room = ROOM })
+            end
+        end
+    end
     return fits, "full"
 end
 
@@ -561,15 +632,6 @@ function trip(why)
         print("Couldn't get back to (" .. key(back) .. "); carrying on from " .. T.posString())
     end
     inTrip = false
-end
-
--- How many of each item the chest on `side` holds.
-local function chestCounts(side)
-    local chest = peripheral.wrap(side)
-    local n = {}
-    if not (chest and chest.list) then return n end
-    for _, it in pairs(chest.list()) do n[it.name] = (n[it.name] or 0) + it.count end
-    return n
 end
 
 -- Take supplies (chests and fuel) from the home's valuables chest while
@@ -698,14 +760,16 @@ local function planLanes()
     return lanes
 end
 
--- At a lane block: clear the tunnel blocks above and below, and look at
--- every block outside the tunnel that this one touches.
+-- At a lane block: clear the tunnel blocks above and below, look at every
+-- block outside the tunnel that this one touches, and make sure the floor
+-- under it is solid.
 local function scanHere()
     for _, d in ipairs({ "up", "down" }) do
         local n = neighbour(d)
         if not opened[key(n)] then
             if inBox(n) then clearCell(d) else examine(d) end
         end
+        if isFloor(n) then fill(d) end    -- something to walk on
     end
     for _, d in ipairs({ 1, 3, 0 }) do
         local n = neighbour(d)
@@ -933,8 +997,8 @@ T.withTool(pickaxe, function()
     returnToStart()
 end)
 saveJob(stopped and "active" or "done")
-print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed.",
-    stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed))
+print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled.",
+    stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled))
 for k, n in pairs(leftBehind) do
     print(string.format("No room to bring back %d items from home %d (z=%d).", n, k, homeAt(k).z))
 end
