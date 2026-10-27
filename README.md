@@ -8,8 +8,9 @@ upgrade in software.
 |---|---|
 | `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
 | `farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot, sugar cane) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
+| `mine.lua` | Digs a tunnel of any width and height, following every ore vein it touches (a few blocks out at most), sealing lava and water, and sorting what it mines into a valuables chest and a bulk chest. |
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
-| `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`). |
+| `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
@@ -41,7 +42,8 @@ at the turtle, count `width` blocks to its right and `length` blocks ahead, and
 that is the box. The turtle's own row and column are not part of it, so it parks
 diagonally outside one corner (over its chest) and never mows or farms the tile
 it sits on. Negative width means the area is on its left; negative length means
-behind. A lawn to the left and behind is `mow -70 -40`.
+behind. A lawn to the left and behind is `mow -70 -40`. The exception is `mine`:
+a tunnel includes the turtle's own column and row (see [mine](#mine)).
 
 Position is saved to `.turtlepos` after every move. If a job is interrupted
 (Ctrl+T, reboot, server restart), `home`, `mow reset` or `farm reset` navigates
@@ -296,6 +298,62 @@ from that regenerating tile, so two buckets build any number of lanes; only
 every other tile needs pouring. The site
 should be roughly level with the turtle's starting height; it won't terraform
 more than one block.
+
+## mine
+
+```
+mine <length> <width> <height> [--here]
+mine reset [--here]
+```
+
+Digs a tunnel `length` blocks long, `width` blocks wide (to the right;
+negative: to the left) and `height` blocks tall (up; negative: down). The
+turtle's own column and row are part of the tunnel: put the turtle where one
+bottom corner of the tunnel should start (top corner, for a negative height),
+facing along it. The tunnel starts with the block in front of it. `mine 32 3 3`
+digs a 3x3 tunnel 32 long, up and to the right of the turtle.
+
+Put **two chests** at the start: one directly **above** the turtle for
+valuables and one directly **below** it for bulk. Bulk is stone, cobblestone,
+deepslate, andesite, diorite, granite, tuff, dirt, gravel, sand, netherrack
+and the like. Everything else counts as a valuable, including anything it
+doesn't recognise. Keep fuel in the valuables chest. Coal the turtle mines
+lands there too, so it fuels itself as it goes. Needs a pickaxe, equipped or
+in the inventory.
+
+- **Lanes:** the tunnel is dug in lanes along its length: every row of the
+  two side columns, and every third row plus the top and bottom ones in the
+  columns between. The rows in between are dug from above and below. So the
+  turtle touches every block of the walls, floor, ceiling and far end, and
+  looks at each one.
+- **Veins:** an ore it touches is mined along with its whole vein. That means
+  anything tagged as an ore (so modded ores too), any `*_ore` block, and
+  ancient debris. The turtle follows the vein block by block, looking all round
+  each one. It goes at most 4 blocks (`VEIN_REACH`) out from the tunnel, and
+  never back past its start.
+- **Lava and water:** a turtle can't be hurt by lava, and only by explosions
+  that aren't caused by mobs (TNT, beds in the Nether) if it's a normal turtle.
+  But lava burns any item that falls into it, and it makes the tunnel deadly
+  for you later. So lava or water touching the tunnel or a vein is sealed with
+  a bulk block (the turtle keeps a stack for this), and a source inside the
+  tunnel is filled and dug out. Falling gravel and sand are dug until they
+  stop coming.
+- **Trips home:** before a dig with fewer than 2 empty slots, or a move that
+  would leave too little fuel to get home, it goes home. There it sorts its
+  inventory into the two chests (tidying the valuables chest), refuels from
+  the valuables chest, and comes back to the same spot, up the vein if it was
+  in one. It only travels through blocks it has already dug, so nothing is
+  dug, and nothing can spill, on the way. With no fuel to be had, it waits at
+  home and says so. A full or missing chest makes it wait too: it never drops
+  items on the ground.
+- **Never dug:** chests, barrels, shulker boxes, spawners and ComputerCraft
+  blocks (other turtles, computers). An unbreakable block (bedrock) in the
+  tunnel ends the job. The turtle goes home and says where it got stuck.
+- **Reset:** position is saved after every move. `mine reset` brings the
+  turtle home after a Ctrl+T or a server restart, even from inside a vein:
+  it digs straight back into the tunnel, then follows it out. Running the
+  same `mine` command again redoes the tunnel, passing quickly through the
+  part already dug.
 
 ## autocompost
 

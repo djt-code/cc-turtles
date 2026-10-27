@@ -98,6 +98,7 @@ reading: compare the numbers before and after a change (`git stash`, run,
 | `farm_clone_lane_fallback` | farm | as `farm_clone`, but two lane tiles never fill on their own and must be poured |
 | `farm_fuel` | farm | real fuel levels: learn and clone starting nearly empty with little coal in the chest; trips home to refuel and back, waiting at home for the "player" to add coal; never a move on an empty tank; a farming pass 5 min apart that waits longer than that for fuel starts over, a short wait carries on |
 | `farm_pass_moves` | farm | moves for one plain farming pass on a 9x8 farm (`ALONGX=1`: lane along x) |
+| `mine_tunnel` | mine | 12x3x3 and 60x3x3 tunnels through mixed rock: veins out of the walls, floor and ceiling (part of one beyond reach), ore inside the tunnel, a tag-only modded ore, lava in a wall and in the tunnel, falling gravel; tunnel clear, ore in reach all mined, no lava touching open space, valuables and bulk in the right chests; trips home to unload and refuel that dig nothing on the way; `mine reset` from inside a vein; a tunnel to the left and down |
 | `turtlelib_restock` | turtlelib | `T.restockFrom` reaching items behind other stacks in a chest |
 | `autocompost_with_chest` | autocompost | composts what it can, rejects the rest into the chest in front |
 | `autocompost_no_chest` | autocompost | no chest and a backed-up composter: ends idle instead of spinning |
