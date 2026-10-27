@@ -10,6 +10,7 @@ local inv, sel = {}, 1
 local comp = { level = 0, ripeAt = nil }
 local tick, bonemeal, front = 0, 0, {}
 local rng = 12345
+local function T_ONE(name) return name:find("_pickaxe$") or name:find("_hoe$") or name:find("_axe$") or name:find("_shovel$") or name:find("_sword$") or name:find("bucket$") end
 local function rand() rng = (rng * 1103515245 + 12345) % 2147483648; return rng / 2147483648 end
 local HAS_CHEST = true
 
@@ -24,6 +25,20 @@ end
 turtle = {
     select = function(s) sel = s; return true end,
     getItemDetail = function(s) local it = inv[s or sel]; return it and { name = it.name, count = it.count } end,
+    -- as in the game: room left in the stack, and moving items between slots
+    getItemSpace = function(s) local it = inv[s or sel]; return it and (T_ONE(it.name) and 1 or 64) - it.count or 64 end,
+    transferTo = function(to, n)
+        local it, dst = inv[sel], inv[to]
+        if not it or to == sel then return false end
+        if dst and dst.name ~= it.name then return false end
+        local max = (T_ONE(it.name) and 1 or 64)
+        local k = math.min(n or it.count, it.count, max - (dst and dst.count or 0))
+        if k <= 0 then return false end
+        inv[to] = { name = it.name, count = (dst and dst.count or 0) + k }
+        it.count = it.count - k
+        if it.count == 0 then inv[sel] = nil end
+        return true
+    end,
     inspectDown = function() advance(1); return true, { name = "minecraft:composter", state = { level = comp.level } } end,
     dropDown = function(n)
         advance(1)

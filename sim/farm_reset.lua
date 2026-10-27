@@ -14,6 +14,7 @@ local PROJ = ...
 package.path = PROJ .. "/?.lua;" .. package.path
 
 local W = {}                         -- world["x,y,z"] = { name=, age= }
+local function T_ONE(name) return name:find("_pickaxe$") or name:find("_hoe$") or name:find("_axe$") or name:find("_shovel$") or name:find("_sword$") or name:find("bucket$") end
 local function k(x, y, z) return x .. "," .. y .. "," .. z end
 function W.get(x, y, z) return W[k(x, y, z)] end
 function W.set(x, y, z, b) W[k(x, y, z)] = b end
@@ -192,6 +193,20 @@ turtle = {
     getSelectedSlot = function() return sel end,
     getItemCount = function(s) return inv[s or sel] and inv[s or sel].count or 0 end,
     getItemDetail = function(s) local it = inv[s or sel]; return it and { name = it.name, count = it.count } end,
+    -- as in the game: room left in the stack, and moving items between slots
+    getItemSpace = function(s) local it = inv[s or sel]; return it and (T_ONE(it.name) and 1 or 64) - it.count or 64 end,
+    transferTo = function(to, n)
+        local it, dst = inv[sel], inv[to]
+        if not it or to == sel then return false end
+        if dst and dst.name ~= it.name then return false end
+        local max = (T_ONE(it.name) and 1 or 64)
+        local k = math.min(n or it.count, it.count, max - (dst and dst.count or 0))
+        if k <= 0 then return false end
+        inv[to] = { name = it.name, count = (dst and dst.count or 0) + k }
+        it.count = it.count - k
+        if it.count == 0 then inv[sel] = nil end
+        return true
+    end,
     suckDown = function(n)
         if not (P.x == 0 and P.z == 0 and P.y == 0) then return false end
         local c = chest[1]; if not c then return false end; n = math.min(n or 64, c.count); c.count = c.count - n; if c.count == 0 then table.remove(chest, 1) end; c = { name = c.name, count = n }

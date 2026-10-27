@@ -440,6 +440,17 @@ function T.forward()
     return false
 end
 
+-- Back up a block without turning (saves turning round to go back the
+-- way it came).  It can't see or dig behind it: false if anything is
+-- there.
+function T.back()
+    T.ensureFuel()
+    if not turtle.back() then return false end
+    T.pos.x = T.pos.x - DX[T.dir]; T.pos.z = T.pos.z - DZ[T.dir]
+    T.savePos()
+    return true
+end
+
 -- Sink until resting on something solid.
 function T.settle()
     while T.down() do end
@@ -737,6 +748,42 @@ function T.countItem(name)
     return n
 end
 
+-- Picked-up items go into the first slot, counting on from the selected
+-- one, that is empty or holds the same item (CC:Tweaked's InventoryUtil),
+-- so an empty slot ahead of a part stack starts a second stack of it.
+-- Merge part stacks of the same item, move part stacks into the empty
+-- slots ahead of them, and select slot 1: what's picked up next then
+-- joins its stack.  A move takes as long as a step (a failed one hardly
+-- any); with nothing to do it only reads the slots.  Returns how many
+-- slots it freed.
+function T.tidyInventory()
+    local items = {}
+    for s = 1, 16 do items[s] = turtle.getItemDetail(s) end
+    local before = T.freeSlots()
+    local function part(s) return items[s] ~= nil and turtle.getItemSpace(s) > 0 end
+    local function move(from, to)
+        turtle.select(from)
+        turtle.transferTo(to)
+        items[from], items[to] = turtle.getItemDetail(from), turtle.getItemDetail(to)
+    end
+    for a = 1, 15 do
+        for b = a + 1, 16 do
+            if part(a) and part(b) and items[a].name == items[b].name and items[a].nbt == items[b].nbt then
+                move(b, a)
+            end
+        end
+    end
+    for e = 1, 15 do
+        if not items[e] then
+            for p = 16, e + 1, -1 do
+                if part(p) then move(p, e); break end
+            end
+        end
+    end
+    turtle.select(1)
+    return T.freeSlots() - before
+end
+
 function T.inventoryFull()
     for slot = 1, 16 do
         if turtle.getItemCount(slot) == 0 then return false end
@@ -801,7 +848,7 @@ function T.dumpDown(keepCount)
         turtle.dropDown(d.n)
         left = left + d.n - (before - turtle.getItemCount(d.slot))
     end
-    turtle.select(1)
+    T.tidyInventory()
     return true, left
 end
 
@@ -845,6 +892,7 @@ end
 -- nothing (no chest) until slots open up again.
 local warnedRoom, dumpFreesNothing = false, false
 function T.ensureRoom(need, keepCount, goDump, warning)
+    T.tidyInventory()
     if T.freeSlots() >= need then dumpFreesNothing = false; return true end
     if not dumpFreesNothing and T.wouldDump(keepCount) then
         local before = T.freeSlots()

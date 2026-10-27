@@ -169,6 +169,20 @@ turtle = {
     getSelectedSlot = function() return sel end,
     getItemCount = function(s) return inv[s or sel] and inv[s or sel].count or 0 end,
     getItemDetail = function(s) local it = inv[s or sel]; return it and { name = it.name, count = it.count } end,
+    -- as in the game: room left in the stack, and moving items between slots
+    getItemSpace = function(s) local it = inv[s or sel]; return it and STACK(it.name) - it.count or 64 end,
+    transferTo = function(to, n)
+        local it, dst = inv[sel], inv[to]
+        if not it or to == sel then return false end
+        if dst and dst.name ~= it.name then return false end
+        local max = STACK(it.name)
+        local k = math.min(n or it.count, it.count, max - (dst and dst.count or 0))
+        if k <= 0 then return false end
+        inv[to] = { name = it.name, count = (dst and dst.count or 0) + k }
+        it.count = it.count - k
+        if it.count == 0 then inv[sel] = nil end
+        return true
+    end,
     suckDown = function(n)
         if not (P.x == 0 and P.z == 0 and P.y == 0) then return false end
         local slot
