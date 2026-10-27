@@ -58,12 +58,13 @@ What to build:
 
   | Simulators | Needs (characters) | Smallest monitor |
   |---|---|---|
+  | `farm_reset` (5x22) | 65x27 | 4 wide x 3 tall |
   | `farm_clone`, `farm_clone_lane_fallback`, `farm_fuel` (7x16) | 57x21 | 3 wide x 2 tall |
   | `farm_pass_moves` (9x8) | 45x15 | 3 wide x 2 tall |
   | every other `farm_*` (5x6) | 33x15 | 2 wide x 2 tall |
 
-  **3x2 shows all of them; 4x3 (78x38) leaves room for many more of the
-  farm's messages.** A monitor that's too small gets a message naming the
+  **4x3 (78x38) shows all of them, with room for plenty of the farm's
+  messages; 3x2 shows all but `farm_reset`.** A monitor that's too small gets a message naming the
   size to build.
 - Put the monitor against any side of the computer, or connect it with
   wired modems (right-click each modem to connect it). With more than one
