@@ -618,6 +618,13 @@ local function waitForFuel(enough)
     print("Fuel: " .. turtle.getFuelLevel())
 end
 
+-- During a farming pass: if a fuel trip takes longer than this many
+-- seconds, the rest of the pass is stale (crops behind the turtle have
+-- ripened again meanwhile), so the trip raises RESTART_PASS instead of
+-- going back, and the pass starts over from home.
+local restartAfter = nil
+local RESTART_PASS = {}
+
 -- T.ensureFuel calls this before a move that would leave too little fuel
 -- to get home: go home, empty out and refuel, then come back to the exact
 -- spot and facing so whatever was under way carries on.  With no fuel to
@@ -625,9 +632,16 @@ end
 local function fuelTrip()
     local x, y, z, d = T.pos.x, T.pos.y, T.pos.z, T.dir
     print(string.format("Low on fuel (%d) at %s: going home to refuel.", turtle.getFuelLevel(), T.posString()))
+    local started = os.clock()
     dumpAtHome()
     local back = math.abs(x) + math.abs(z) + math.abs(travelY - y) + travelY
     waitForFuel(2 * back + T.cfg.fuelMargin + FUEL_WORK)
+    local away = os.clock() - started
+    if restartAfter and away >= restartAfter then
+        print(string.format("Without fuel for %d min, longer than the %d min between passes: starting the pass over.",
+            math.floor(away / 60), math.floor(restartAfter / 60)))
+        error(RESTART_PASS, 0)
+    end
     T.toY(travelY)
     T.goTo(x, z)
     T.toY(y)
@@ -1732,18 +1746,23 @@ T.withTool(HOE, function()
     end
     while true do
         T.clearBlocked()
-        local damaged = farmPass(true, false)
-        dumpAtHome()
-        if #damaged > 0 then
-            -- missing ground: check the whole farm, lanes included
-            T.clearBlocked()
-            fullRepair()
+        restartAfter = REPEAT > 0 and REPEAT * 60 or nil
+        local ok, damaged = pcall(farmPass, true, false)
+        restartAfter = nil
+        if not ok and damaged ~= RESTART_PASS then error(damaged, 0) end
+        if ok then                           -- (else: start over, right away)
+            dumpAtHome()
+            if #damaged > 0 then
+                -- missing ground: check the whole farm, lanes included
+                T.clearBlocked()
+                fullRepair()
+            end
+            growPasses()
+            print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()))
+            T.inventoryLine("Kept on board")
+            if REPEAT <= 0 then break end
+            print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")
+            waitAndCompost(REPEAT * 60)
         end
-        growPasses()
-        print("Pass complete. Fuel: " .. tostring(turtle.getFuelLevel()))
-        T.inventoryLine("Kept on board")
-        if REPEAT <= 0 then break end
-        print("Sleeping " .. REPEAT .. " min (Ctrl+T to stop)")
-        waitAndCompost(REPEAT * 60)
     end
 end)

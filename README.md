@@ -227,7 +227,10 @@ fixes the lane first and then replants.
   what it's doing, flies home, empties out, refuels from the chest, flies back
   to the exact spot and carries on, mid-learn, mid-clone or mid-pass. If the
   chest has no fuel either, it waits **at home** and says so, checking again
-  whenever you put fuel in the chest or the turtle (or every 10 seconds). A run
+  whenever you put fuel in the chest or the turtle (or every 10 seconds). If a
+  trip home in the middle of a farming pass took longer than the time between
+  passes, the crops it already did have had time to ripen again, so it starts
+  the pass over from the beginning instead of going back. A run
   starts with whatever fuel it can get, as long as it has enough to make
   headway.
 - **Compost hopper (optional).** Put a hopper **directly behind the turtle's start

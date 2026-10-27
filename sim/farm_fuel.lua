@@ -6,7 +6,9 @@
 -- refuels from the chest and returns to the same spot; with the chest out
 -- of coal it waits at home until the "player" adds more.  Reports moves
 -- tried on an empty tank (must be 0), trips home, waits and the lowest
--- fuel level seen.  The world is the farm_clone one.
+-- fuel level seen.  The world is the farm_clone one.  Then farming passes
+-- 5 min apart, where a wait for fuel longer than that starts the pass
+-- over and a short one carries on.
 --
 -- Minimal CC:Tweaked world + turtle mock for exercising farm.lua.
 -- Turtle starts at (0,0,0) facing +z; farmland at y=-2, crops at y=-1.
@@ -326,13 +328,15 @@ sleep = function(t)
     HOPPER = math.max(0, HOPPER - 2.5 * t)          -- the composter drains it
     if STOP_AT and CLOCK > STOP_AT then error("STOP", 0) end
 end
--- waiting for fuel: the first time, the "player" puts 16 coal in the chest
-WAITS = 0
+-- waiting for fuel: on wait COAL_AT (the first, unless set), the "player"
+-- puts 16 coal in the chest; each wait takes WAIT_SECONDS
+WAITS, COAL_AT, WAIT_SECONDS = 0, 1, 0
 os.startTimer = function() return 1 end
 os.pullEvent = function()
     WAITS = WAITS + 1
+    CLOCK = CLOCK + WAIT_SECONDS
     if WAITS > 50 then error("waited for fuel forever") end
-    if WAITS == 1 then
+    if WAITS == COAL_AT then
         for s = 1, 27 do if not chest[s] then chest[s] = { name = "minecraft:coal", count = 16 }; break end end
     end
     return "turtle_inventory"
@@ -368,7 +372,8 @@ local function run(...)
         realPrint("   " .. l)
         if l:find("going home to refuel") then TRIPS = TRIPS + 1 end
     end
-    if not ok then realPrint("   ERROR: " .. tostring(err)) end
+    if err == "STOP" then realPrint("   (stopped by the simulator)")
+    elseif not ok then realPrint("   ERROR: " .. tostring(err)) end
     realPrint(string.format("   ends at (%d,%d,%d) facing %d", P.x, P.y, P.z, P.d))
 end
 
@@ -449,3 +454,39 @@ for s = 1, 16 do if inv[s] and inv[s].name == "minecraft:coal" then inv[s] = nil
 FUEL, LOWEST, DRY, WAITS = 30, 30, 0, 0
 run("clone", "0")
 report("CLONE")
+-- 3-4. farming passes 5 min apart on the cloned farm, every crop ripe, with
+--    fuel for about half a pass (130: just what it needs to set off) and no coal in the chest: the trip home
+--    waits for the "player".  Waiting longer than the 5 min between passes
+--    starts the pass over (the crops it already did have ripened again);
+--    a short wait goes back to where it left off.
+local function ripen()
+    for x = 1, WIDTH do for z = 1, LENGTH do
+        local b = W.get(x, -1, z); if b and RIPE[b.name] then b.age = RIPE[b.name] end
+    end end
+end
+local function ripeLeft()
+    local n = 0
+    for x = 1, WIDTH do for z = 1, LENGTH do
+        local b = W.get(x, -1, z); if b and RIPE[b.name] and b.age >= RIPE[b.name] then n = n + 1 end
+    end end
+    return n
+end
+local function passWithWait(label, coalAt)
+    ripen()
+    for s = 1, 27 do if chest[s] and chest[s].name == "minecraft:coal" then chest[s] = nil end end
+    for s = 1, 16 do if inv[s] and inv[s].name == "minecraft:coal" then inv[s] = nil end end
+    FUEL, LOWEST, DRY, WAITS, COAL_AT, WAIT_SECONDS = 130, 130, 0, 0, coalAt, 10
+    STOP_AT = CLOCK + coalAt * 10 + 60             -- stop in the first sleep after a pass
+    run("5")
+    STOP_AT, WAIT_SECONDS = nil, 0
+    local over, passes = 0, 0
+    for _, l in ipairs(log) do
+        if l:find("starting the pass over") then over = over + 1 end
+        if l:find("Pass complete") then passes = passes + 1 end
+    end
+    report(label)
+    realPrint(string.format("%s: waited %d s, started over %d, passes completed %d, ripe crops left %d",
+        label, coalAt * 10, over, passes, ripeLeft()))
+end
+passWithWait("LONG WAIT", 40)
+passWithWait("SHORT WAIT", 2)
