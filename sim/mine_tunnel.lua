@@ -131,7 +131,7 @@ local function inspectAt(x, y, z)
     local tags = {}
     if b.tags then for t in pairs(b.tags) do tags[t] = true end end
     if b.name:find("_ore$") then tags["c:ores"] = true end
-    return true, { name = b.name, state = { level = b.level }, tags = tags }
+    return true, { name = b.name, state = { level = b.level, waterlogged = b.waterlogged }, tags = tags }
 end
 -- gravel and sand above (x,y,z) fall into it once it's empty
 local function gravity(x, y, z)
@@ -151,13 +151,21 @@ end
 -- when it moves on.  Torches the water reaches are washed away.
 local WATER_NAME = "minecraft:water"
 local function isWater(b) return b and b.name == WATER_NAME end
+-- Water a block holds, as a level: 0 for a source (a waterlogged block is
+-- one), nil for none.
+local function wlevel(b)
+    if not b then return nil end
+    if b.waterlogged then return 0 end
+    if b.name == WATER_NAME then return b.level end
+end
 local function waterFor(x, y, z)
     local sources, feed = 0, nil
     for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
         local b = get(x + d[1], y, z + d[2])
-        if isWater(b) then
-            if b.level == 0 then sources = sources + 1 end
-            local l = b.level >= 8 and 0 or b.level
+        local lv = wlevel(b)
+        if lv then
+            if lv == 0 then sources = sources + 1 end
+            local l = lv >= 8 and 0 or lv
             if l < 7 then feed = math.min(feed or 99, l + 1) end
         end
     end
@@ -166,7 +174,7 @@ local function waterFor(x, y, z)
             and below.name ~= "minecraft:lava" then
         return { name = WATER_NAME, level = 0 }
     end
-    if isWater(get(x, y + 1, z)) then return { name = WATER_NAME, level = 8 } end
+    if wlevel(get(x, y + 1, z)) then return { name = WATER_NAME, level = 8 } end
     if feed then return { name = WATER_NAME, level = feed } end
     return nil
 end
@@ -174,7 +182,7 @@ local pending = {}         -- key -> { due tick, x, y, z }: water blocks due a t
 local clock = 0            -- ticks
 local SIDES6 = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }
 local function due(a, b, c, t)
-    if not isWater(get(a, b, c)) then return end
+    if not wlevel(get(a, b, c)) then return end
     local key = k(a, b, c)
     local q = pending[key]
     if not q or q[1] > t then pending[key] = { t, a, b, c } end
@@ -216,15 +224,15 @@ local function waterStep(ticks)
         local t, a, b, c = first[1], first[2], first[3], first[4]
         pending[k(a, b, c)] = nil
         local cur = get(a, b, c)
-        if isWater(cur) and not (a == P.x and b == P.y and c == P.z) then
-            if cur.level ~= 0 then
+        if wlevel(cur) and not (a == P.x and b == P.y and c == P.z) then
+            if wlevel(cur) ~= 0 then
                 local new = waterFor(a, b, c)
                 if (new and new.level) ~= cur.level then
                     set(a, b, c, new)
                     for _, d in ipairs(SIDES6) do due(a + d[1], b + d[2], c + d[3], t + 5) end
                 end
             end
-            if isWater(get(a, b, c)) then
+            if wlevel(get(a, b, c)) then
                 for _, d in ipairs(SIDES6) do fillAt(a + d[1], b + d[2], c + d[3], t) end
             end
         end
@@ -270,11 +278,11 @@ local function digAt(x, y, z)
     end
     local b = get(x, y, z)
     if not b or passable(b) or b.inv or b.name == "minecraft:bedrock" then return false end
-    set(x, y, z, nil)
+    set(x, y, z, b.waterlogged and { name = WATER_NAME, level = 0 } or nil)
     LAST_DUG = k(x, y, z)
     if TRAVELLING then TRAVEL_DIGS = (TRAVEL_DIGS or 0) + 1 end
     DIGS = (DIGS or 0) + 1
-    addItem(DROP[b.name] or b.name, 1)
+    if b.name ~= "minecraft:glow_lichen" then addItem(DROP[b.name] or b.name, 1) end   -- (lichen needs shears)
     gravity(x, y, z)
     if WATERY then flow(x, y, z); waterStep() end
     return true
@@ -382,6 +390,7 @@ local function geoScanner()
                         out[#out + 1] = { x = tz + 1000, y = ty + 1000, z = tx + 1000, name = b.name, tags = tags }
                     else
                         out[#out + 1] = { x = tz + 0.0, y = ty + 0.0, z = tx + 0.0, name = b.name, tags = tags,
+                            state = { waterlogged = b.waterlogged, level = b.level },
                             -- SCAN_TURN: a scanner whose idea of forward is turned
                             f = tx * DX[(P.d + SCAN_TURN) % 4] + tz * DZ[(P.d + SCAN_TURN) % 4] + 0.0, u = ty + 0.0,
                             r = tx * DX[(P.d + SCAN_TURN + 1) % 4] + tz * DZ[(P.d + SCAN_TURN + 1) % 4] + 0.0 }
@@ -1075,6 +1084,44 @@ local function wetWalls(withScanner)
 end
 wetWalls(false)
 wetWalls(true)
+
+-- 11g. glow lichen in the walls and ceiling, waterlogged, with water
+--      behind it: it looks like a block, but it's a water source.  The
+--      turtle replaces it with a bulk block (dry lichen too, as it isn't
+--      solid), so no water gets in; with and without a scanner
+local function lichenWorld(withScanner)
+    setup(stock(4, 64, 64))
+    if withScanner then table.insert(chestAt(0, 1, 0), { name = SCANNER, count = 1 }) end
+    table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 })
+    local LICHEN = { name = "minecraft:glow_lichen", waterlogged = true }
+    set(3, 1, 10, LICHEN); set(4, 1, 10, { name = "minecraft:water", level = 0 })
+    set(4, 0, 10, { name = "minecraft:water", level = 0 }); set(4, 2, 10, { name = "minecraft:water", level = 0 })
+    set(-1, 0, 16, { name = "minecraft:glow_lichen", waterlogged = true })     -- in the left wall at floor level
+    set(1, 3, 22, { name = "minecraft:glow_lichen", waterlogged = true })      -- in the ceiling, water above
+    set(1, 4, 22, { name = "minecraft:water", level = 0 }); set(1, 5, 22, { name = "minecraft:water", level = 0 })
+    set(3, 0, 26, { name = "minecraft:glow_lichen" })                          -- dry, in the right wall
+    startAt(); inv, files = {}, {}
+    EQ = { right = "minecraft:diamond_pickaxe" }
+    FUEL, DRY, WASHED, INGRESS, SCANS = 3000, 0, 0, 0, 0
+    WATERY, BOX = true, { 0, 2, 0, 2 }
+    run("3", "3", "30")
+    WATERY, BOX = false, nil
+    local wet, lichen = 0, 0
+    for x = -2, 4 do for y = -1, 3 do for z = 1, 30 do
+        local b = get(x, y, z)
+        local touching = (x == -1 or x == 3 or y == -1 or y == 3) and (x >= -1 and x <= 3 and y >= -1 and y <= 3)
+        if x >= 0 and x <= 2 and y >= 0 and y <= 2 and isWater(b) then wet = wet + 1 end
+        if touching and b and b.name == "minecraft:glow_lichen" then lichen = lichen + 1 end
+    end end end
+    check("no lichen left in the walls, floor or ceiling", lichen == 0, lichen .. " left")
+    check("no water got into the tunnel past the block being dug, and none's in it",
+        INGRESS <= 3 and wet == 0, INGRESS .. " times water flowed in, " .. wet .. " blocks wet")
+    check("no torch washed away", WASHED == 0)
+    check("tunnel clear", leftIn(0, 2, 0, 2, 1, 30) == 0, leftIn(0, 2, 0, 2, 1, 30) .. " blocks left")
+    check("back at the start", atStart())
+end
+lichenWorld(false)
+lichenWorld(true)
 
 -- 12. low on fuel with a scanner: the only fuel is coal 5 out from the
 --     tunnel, which it goes for as soon as a scan finds it, and burns

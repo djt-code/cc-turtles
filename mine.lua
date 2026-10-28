@@ -74,7 +74,12 @@
 --    follows it block by block, looking all round each one, up to
 --    VEIN_REACH blocks out from the tunnel, never back past the start.
 --  * Lava and water touching the tunnel or a vein are sealed with a bulk
---    block from the inventory (it keeps a stack for this).  Turtles take
+--    block, and so is anything that lets them through: waterlogged blocks
+--    (glow lichen, dripstone... with water in them, which look like blocks
+--    but are water sources), water plants, and thin things that aren't
+--    solid (lichen, vines, grass) in the walls, floor or ceiling: those are
+--    dug out first.  The bulk comes from the inventory (it keeps a stack
+--    for this).  Turtles take
 --    no harm from lava, but lava burns any item that falls in it and
 --    makes the tunnel deadly for players.  Lava or water inside the
 --    tunnel is dried out (see dry): filled and dug out, and if it comes
@@ -213,8 +218,28 @@ end
 local SOFT = {}
 for _, n in ipairs({ "short_grass", "grass", "tall_grass", "fern", "large_fern", "dead_bush",
         "vine", "glow_lichen", "snow", "moss_carpet", "sculk_vein", "cobweb",
-        "pointed_dripstone", "hanging_roots", "cave_vines", "cave_vines_plant" }) do
+        "pointed_dripstone", "hanging_roots", "cave_vines", "cave_vines_plant",
+        "spore_blossom", "small_dripleaf", "big_dripleaf", "big_dripleaf_stem", "sea_pickle",
+        "seagrass", "tall_seagrass", "kelp", "kelp_plant" }) do
     SOFT["minecraft:" .. n] = true
+end
+-- Water plants: water blocks with something growing in them.
+local WATER_PLANTS = {}
+for _, n in ipairs({ "seagrass", "tall_seagrass", "kelp", "kelp_plant", "bubble_column" }) do
+    WATER_PLANTS["minecraft:" .. n] = true
+end
+
+-- Thin or soft things (glow lichen, vines, grass, dripstone...): not solid,
+-- so in the tunnel's walls, floor or ceiling they're replaced with bulk.
+local function soft(data)
+    return SOFT[data.name] or (data.tags and data.tags["minecraft:replaceable"]) or false
+end
+
+-- Holding water without being water: a waterlogged block (glow lichen,
+-- dripstone, roots... with water in it: as good as a water source, but it
+-- doesn't look like one) or a water plant.
+local function waterIn(data)
+    return WATER_PLANTS[data.name] or (data.state and data.state.waterlogged == true) or false
 end
 
 -- Supplies: what homes are built from, fuel and torches.  They travel
@@ -506,7 +531,13 @@ local function room()
 end
 
 local function isSource(data)
-    return FLUID[data.name] and data.state and tonumber(data.state.level) == 0
+    return (FLUID[data.name] and data.state and tonumber(data.state.level) == 0) or waterIn(data)
+end
+
+-- Fluid, or anything that lets it through: what the tunnel's walls, floor
+-- and ceiling mustn't have in them.
+local function leaky(data)
+    return FLUID[data.name] or waterIn(data) or soft(data)
 end
 
 local seal
@@ -599,6 +630,8 @@ end
 
 -- Seal lava or water in direction d with a bulk block.
 function seal(d)
+    local okb, b = look(d)
+    if okb and not FLUID[b.name] and (soft(b) or waterIn(b)) and not protected(b.name) then digDir(d) end
     local ok = putFiller(d)
     if ok then
         stats.sealed = stats.sealed + 1
@@ -636,7 +669,7 @@ end
 function cutOff(e)
     local m = neighbour(e)
     local ok, data = look(e)
-    if not (ok and FLUID[data.name] and (isSource(data) or not inBox(m))) then return false, ok and data end
+    if not (ok and leaky(data) and (isSource(data) or not inBox(m))) then return false, ok and data end
     local was = opened[key(m)]
     if not seal(e) then return false end
     if inBox(m) and (was or repairing) then plugs[key(m)] = m end
@@ -678,7 +711,7 @@ local function stopFlow(level)
         eachAround(nil, function(e)
             local m = neighbour(e)
             local ok, data = look(e)
-            if not (ok and FLUID[data.name]) then return end
+            if not (ok and (FLUID[data.name] or waterIn(data))) then return end
             if not inBox(m) then
                 if seal(e) then sealed = true end
                 return
@@ -767,8 +800,8 @@ end
 local warnedFloor = false
 local function fill(d)
     local ok, data = look(d)
-    if ok and not FLUID[data.name] and not SOFT[data.name] then return true end
-    if ok and SOFT[data.name] then room(); digDir(d) end
+    if ok and not leaky(data) then return true end
+    if ok and not FLUID[data.name] then room(); digDir(d) end
     if not selectItem(function(n) return FILLER[n] end) then trip("Out of blocks to fill the floor") end
     if putFiller(d) then
         stats.filled = stats.filled + 1
@@ -814,7 +847,7 @@ local function examine(d)
     local ok, data = look(d)
     if not ok then opened[key(n)] = true
     elseif isOre(data) then mineVein(d)
-    elseif FLUID[data.name] then seal(d)
+    elseif leaky(data) then seal(d)
     end
 end
 
@@ -850,7 +883,7 @@ function mineVein(d)
         local ok, data = look(e)
         if not ok then opened[key(neighbour(e))] = true
         elseif isOre(data) and (near or isDiamond(data.name)) then mineVein(e)
-        elseif FLUID[data.name] then seal(e); wet = true
+        elseif FLUID[data.name] or waterIn(data) then seal(e); wet = true
         end
     end
     local here = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
@@ -1454,8 +1487,8 @@ local function record(blocks, z1, z2, toCell)
         local p = toCell(e)
         local k = key(p)
         seen[k] = true
-        local kind = isOre({ name = e.name, tags = tagSet(e.tags) }) and "ore"
-            or (FLUID[e.name] and "fluid") or "rock"
+        local data = { name = e.name, tags = tagSet(e.tags), state = e.state }
+        local kind = isOre(data) and "ore" or (leaky(data) and "fluid") or "rock"
         if kind ~= "rock" then scanned[k] = kind end
         local out = outside(p)
         if out == 1 then known[k] = kind end

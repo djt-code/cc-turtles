@@ -412,6 +412,15 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   so it follows that at once. It doesn't put a torch where it has just
   stepped through water until it has stopped the water, so the torch isn't
   washed away.
+- **Hidden water:** a waterlogged block holds water but doesn't look like
+  it. Glow lichen, pointed dripstone, hanging roots and sculk veins are
+  examples. To the turtle it's just a block, but it's a water source that
+  never stops. Water plants (seagrass, kelp) are water too. Thin blocks
+  that aren't solid (glow lichen, vines, grass, snow layers) don't keep
+  water out either. So any of these in the tunnel's walls, floor or
+  ceiling is dug out and replaced with a bulk block, waterlogged or not.
+  A scan reports them, so with a scanner it turns to them as it does to
+  water.
 - **Keeping fluid out as it digs:** a turtle in a block keeps fluid out of
   it, and only a block touching the walls, floor or ceiling can let fluid
   in. Every such block is on one of its lanes, and it only opens them from
