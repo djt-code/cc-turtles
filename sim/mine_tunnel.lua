@@ -236,8 +236,8 @@ check("back at the start", atStart())
 -- 11. a Geo Scanner in the start chest (and a chunk controller on the
 --     other side): the turtle swaps it in to scan, lines the scan up with
 --     the tunnel, and fetches ore that doesn't touch the walls, up to 6
---     out, diamonds as far as a scan reaches and their veins on from
---     there however far they go; it turns
+--     out, diamonds and coal as far as a scan reaches and their veins on
+--     from there however far they go; it turns
 --     far less than the same tunnel without one
 local function scanWorld(withScanner)
     local st = stock(4, 64)
@@ -252,6 +252,11 @@ local function scanWorld(withScanner)
     set(-10, 1, 22, ore("minecraft:deepslate_diamond_ore"))
     set(-10, 2, 22, ore("minecraft:deepslate_diamond_ore"))
     set(-8, 1, 8, ore("minecraft:deepslate_gold_ore"))         -- 8 out, not diamond: too far
+    set(-9, 1, 3, ore("minecraft:coal_ore"))                   -- 9 out: no scan reaches it
+    set(-8, 1, 10, ore("minecraft:deepslate_coal_ore"))        -- 8 out: the edge of a scan
+    set(-9, 1, 10, ore("minecraft:deepslate_coal_ore"))        -- its vein goes on past the scan
+    set(-10, 1, 10, ore("minecraft:deepslate_coal_ore"))
+    set(-10, 0, 10, ore("minecraft:deepslate_coal_ore"))
     set(3, 1, 15, { name = "minecraft:lava", level = 0 })       -- in the right wall
     set(-1, 0, 18, nil); set(-2, 0, 18, nil)                    -- a cave opening in the left wall
     startAt(); Mine.inv, Mine.files = {}, {}
@@ -275,7 +280,10 @@ check("gold 5 out and coal 5-6 out fetched", oreGone(-5, 1, 12) and oreGone(-5, 
 check("diamond 9 out left", not oreGone(-9, 1, 25))
 check("diamond 8 out (in the scan) mined, and its vein followed on past the scan",
     oreGone(-8, 1, 22) and oreGone(-9, 1, 22) and oreGone(-10, 1, 22) and oreGone(-10, 2, 22))
-check("gold 8 out left (only diamonds go past 6)", not oreGone(-8, 1, 8))
+check("coal 9 out left", not oreGone(-9, 1, 3))
+check("coal 8 out (in the scan) mined, and its vein followed on past the scan",
+    oreGone(-8, 1, 10) and oreGone(-9, 1, 10) and oreGone(-10, 1, 10) and oreGone(-10, 0, 10))
+check("gold 8 out left (only diamonds and coal go past 6)", not oreGone(-8, 1, 8))
 checkLava(30)
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 30) == 0, leftIn(0, 2, 0, 2, 1, 30) .. " blocks left")
 checkFloor(0, 2, -1, 1, 30)

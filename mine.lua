@@ -64,10 +64,10 @@
 --    on the other side stays put), scans (radius 8, no fuel), and swaps
 --    back.  It only turns to look at wall blocks the scan says are ore,
 --    lava or water, and right after each scan it tunnels out to the ore it
---    found, up to SCAN_REACH (6) from the tunnel, and diamonds however far
---    out as long as the scan saw them, then goes on with the tunnel.  It
---    goes no further than the scan reached, except to follow a diamond
---    vein to its end.  Low on fuel, it fetches the coal first.  See the Geo Scanner section for how it lines the
+--    found, up to SCAN_REACH (6) from the tunnel, and diamonds and coal
+--    however far out as long as the scan saw them, then goes on with the
+--    tunnel.  It goes no further than the scan reached, except to follow a
+--    diamond or coal vein to its end.  Low on fuel, it fetches the coal first.  See the Geo Scanner section for how it lines the
 --    scan's world directions up with the tunnel.
 --  * Veins: an ore it touches (anything tagged as an ore, *_ore blocks,
 --    ancient debris) is mined along with its whole vein: the turtle
@@ -352,9 +352,10 @@ local function inReach(p)
     return p.z >= 1 and outside(p) <= (hasScanner and SCAN_REACH or VEIN_REACH) and inScan(p)
 end
 
--- Diamonds a scan shows are mined however far out, as long as they're in
--- the scan.
-local function isDiamond(name) return name:find("diamond") ~= nil end
+-- Diamonds and coal a scan shows are mined however far out, as long as
+-- they're in the scan, and their veins followed to the end: diamonds for
+-- their worth, coal because the turtle runs on it.
+local function goesFar(name) return name:find("diamond") ~= nil or name:find("coal") ~= nil end
 
 --------------------------------------------------------------------------
 -- Homes.  Home 0 is the start: valuables chest above, bulk below.  Home
@@ -818,12 +819,12 @@ end
 
 -- The block in direction d is ore: dig into it, look all round, follow
 -- any more ore, then come back.  Ore is followed within reach (and
--- within the scan, fetching what one found); diamond further: anywhere
--- a scan saw, and from a diamond block on to the next however far out,
--- so a diamond vein is followed to its end.
+-- within the scan, fetching what one found); diamond and coal further:
+-- anywhere a scan saw, and from such a block on to the next however far
+-- out, so their veins are followed to the end.
 function mineVein(d)
     local ok0, data0 = look(d)
-    local diamond = ok0 and isDiamond(data0.name)
+    local far = ok0 and goesFar(data0.name)
     if #trail == 0 then stats.veins = stats.veins + 1 end
     if not go(d) then return end
     stats.ore = stats.ore + 1
@@ -838,7 +839,7 @@ function mineVein(d)
             local m = neighbour(e)
             local n = inReach(m)
             local fluid = scanSays(m) == "fluid"
-            if not opened[key(m)] and (fluid or n or (m.z >= 1 and (diamond or (bound and inScan(m)))))
+            if not opened[key(m)] and (fluid or n or (m.z >= 1 and (far or (bound and inScan(m)))))
                     and scanSays(m) ~= "clear" and (not best or turnsTo(e) < turnsTo(todo[best])) then
                 best, near = i, n
             end
@@ -847,7 +848,7 @@ function mineVein(d)
         local e = table.remove(todo, best)
         local ok, data = look(e)
         if not ok then opened[key(neighbour(e))] = true
-        elseif isOre(data) and (near or isDiamond(data.name)) then mineVein(e)
+        elseif isOre(data) and (near or goesFar(data.name)) then mineVein(e)
         elseif FLUID[data.name] or waterIn(data) then seal(e); wet = true
         end
     end
@@ -1307,10 +1308,10 @@ end
 -- knows there's air (what it has dug).  From then on it knows what's in
 -- the walls without turning to look at them, and where ore lies further
 -- out: right after each scan it tunnels out to what that scan found, up to
--- SCAN_REACH from the tunnel (diamonds however far, as long as the scan
--- saw them), mines it, and goes on with the tunnel; it goes no further
--- than the scan reached from where it was taken, except to follow a
--- diamond vein to its end.  Low on fuel, it fetches the coal first, and
+-- SCAN_REACH from the tunnel (diamonds and coal however far, as long as
+-- the scan saw them), mines it, and goes on with the tunnel; it goes no
+-- further than the scan reached from where it was taken, except to follow
+-- a diamond or coal vein to its end.  Low on fuel, it fetches the coal first, and
 -- burns it.
 --------------------------------------------------------------------------
 local warnedScan = false
@@ -1479,7 +1480,7 @@ local function record(blocks, z1, z2, toCell)
         if out == 1 then known[k] = kind end
         local zTop = z2 == LENGTH and z2 + SCAN_REACH or z2
         if kind == "ore" and out >= 1 and p.z >= z1 and p.z <= zTop and not opened[k]
-                and (inReach(p) or isDiamond(e.name)) then
+                and (inReach(p) or goesFar(e.name)) then
             targets[k] = { x = p.x, y = p.y, z = p.z, coal = e.name:find("coal") ~= nil,
                            from = from, scan = scans }
         end
