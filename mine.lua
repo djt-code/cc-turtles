@@ -553,7 +553,7 @@ local plugs = {}           -- key -> position: dug tunnel blocks it filled again
 -- the dig) is dried out first (see dry), so none is left behind.  False
 -- if it can't: a protected or unbreakable block, or something that won't
 -- move out of the way.
-local cutOff, eachAround   -- defined below
+local cutOff, eachAround, stem   -- defined below
 local function go(d)
     local n = neighbour(d)
     local inside = inBox(n) and not digLimit
@@ -561,7 +561,7 @@ local function go(d)
     for _ = 1, 30 do
         room()                     -- first: a trip changes what's there
         local ok, data = look(d)
-        if ok and inside and FLUID[data.name] then
+        if ok and inside and (FLUID[data.name] or waterIn(data)) then
             dry(d)
             ok, data = look(d)
         end
@@ -587,8 +587,14 @@ local function go(d)
             opened[key(T.pos)] = true
             plugs[key(T.pos)] = nil
             -- in it, the turtle keeps fluid out of the block: seal what
-            -- let it in before it spreads, from here
-            if wet then eachAround(OPP[d], cutOff) end
+            -- let it in before it spreads, from here, or follow it to
+            -- where it comes in
+            if wet then
+                local cut = 0
+                eachAround(OPP[d], function(e) if cutOff(e) then cut = cut + 1 end end)
+                local level = tonumber(wet.state and wet.state.level) or 0
+                if cut == 0 and level > 0 then stem(level) end
+            end
             return true
         end
     end
@@ -737,6 +743,24 @@ local function stopFlow(level)
     return sealed
 end
 
+-- The turtle is in flowing water (level `level`) with nothing beside it
+-- to cut off.  The first time here, it's likely left over and draining
+-- away; found here again, it comes from further off, so follow it.
+-- Falling water always has something above feeding it, and water in
+-- tunnel dug before (repairing) is getting in: those are followed at
+-- once.  Once it has sealed where water came in, it gives what's left a
+-- moment to drain, so it doesn't go chasing that.  True if it sealed it.
+function stem(level)
+    local k = key(T.pos)
+    local sealed = false
+    if (unfed[k] == true or ((level >= 8 or repairing) and unfed[k] == nil)) and stopFlow(level) then
+        sealed = true
+        sleep(2)
+    end
+    unfed[k] = unfed[k] or true
+    return sealed
+end
+
 local warnedWet = false
 function dry(d)
     for _ = 1, 4 do
@@ -764,18 +788,7 @@ function dry(d)
         eachAround(OPP[d], function(e)
             if cutOff(e) then cut = cut + 1 end
         end)
-        -- flowing water with nothing beside it to cut off: the first time,
-        -- likely left over and draining away; found here again, it comes
-        -- from further off, so follow it.  Falling water always has
-        -- something above feeding it, and water in tunnel dug before
-        -- (repairing) is getting in: those are followed at once.
-        local k = key(T.pos)
-        if cut == 0 and level > 0 then
-            if (unfed[k] == true or ((level >= 8 or repairing) and unfed[k] == nil)) and stopFlow(level) then
-                cut = 1
-            end
-            unfed[k] = unfed[k] or true
-        end
+        if cut == 0 and level > 0 and stem(level) then cut = 1 end
         local backed = false
         if d ~= "up" and d ~= "down" then T.face(d); backed = T.back() end
         if not backed then moveDir(OPP[d]) end
@@ -1747,6 +1760,7 @@ local function repair(z1, z2, done)
                 alongAxis("z", from); alongAxis("x", lane.x); alongAxis("y", lane.y)
                 local dz = to >= from and 1 or -1
                 for z = from, to, dz do
+                    if isFloor(neighbour("down")) then fill("down") end   -- the floor too (no turning)
                     lightHere()
                     if z ~= to then go(dz > 0 and 0 or 2) end
                 end

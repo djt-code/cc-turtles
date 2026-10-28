@@ -369,8 +369,13 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   from an earlier home, and the finished part of the segment it carries on
   with) it walks first along the bottom lanes, where water ends up. If
   that finds any, it walks all the lanes too. It follows any water it finds
-  to where it comes in, a hole in the ceiling say, and seals that. It puts
-  back torches that were washed away. To start a fresh tunnel somewhere
+  to where it comes in, a hole in the ceiling or a waterlogged block say,
+  and seals that. It also fills any hole or water in the floor it walks
+  over, and puts back torches that were washed away. Once it has sealed
+  a leak it waits a moment for what's left to drain, so it doesn't chase
+  that. (The turtle stirs water up as it moves: it pushes flowing water
+  out of the block it moves into, and a block it leaves between two
+  sources becomes one.) To start a fresh tunnel somewhere
   else instead, add `--new`.
 - **Haul:** `mine haul` shuttles the valuables in the homes back to the start
   whenever you like. Run it from the start or from the last home. It walks

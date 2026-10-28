@@ -217,8 +217,11 @@ local function waterStep(ticks)
     clock = clock + (ticks or 8)
     for _ = 1, 100000 do
         local first
-        for _, q in pairs(pending) do
-            if q[1] <= clock and (not first or q[1] < first[1]) then first = q end
+        for key, q in pairs(pending) do      -- the earliest; ties by place, so runs repeat
+            if q[1] <= clock and (not first or q[1] < first[1] or (q[1] == first[1] and key < first[5])) then
+                first = q
+                q[5] = key
+            end
         end
         if not first then return end
         local t, a, b, c = first[1], first[2], first[3], first[4]
@@ -1246,6 +1249,32 @@ local left = 0
 for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then left = left + 1 end end end end
 check("followed the flow to the wall and sealed it: no water in the tunnel",
     spread > 5 and left == 0 and not isWater(get(3, 0, 26)), spread .. " floor blocks wet before, " .. left .. " after")
+check("finished", logHas("^Done"))
+
+-- 13g. dug already, with waterlogged glow lichen in the right wall at
+--      floor level near z=24, its water spread along the floor: `mine
+--      reset --home 1` and `mine --resume` go over the segment, follow
+--      the water to the lichen and replace it, without going back and
+--      forth over it
+dugTunnel()
+files["mine.job"] = "3 3 40 16 2 active"
+for _, it in ipairs(stock(2, 64)) do table.insert(chestAt(-1, 0, 32), it) end
+for _ = 1, 2 do table.insert(chestAt(0, -1, 16), { name = "minecraft:cobblestone", count = 64 }) end
+set(3, 0, 24, { name = "minecraft:glow_lichen", waterlogged = true })
+WATERY = true
+flow(3, 0, 24)
+settleWater()
+P.x, P.y, P.z, P.d = 0, 0, 32, 3
+files[".turtlepos"] = "0 0 32 3 flat"
+FUEL = 3000
+run("reset", "--home", "1")
+run("--resume")
+WATERY = false
+local wetLeft = 0
+for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then wetLeft = wetLeft + 1 end end end end
+check("followed the water to the lichen and replaced it", wetLeft == 0 and (get(3, 0, 24) or {}).name ~= "minecraft:glow_lichen",
+    wetLeft .. " tunnel blocks wet")
+LICHEN_MOVES, LICHEN_TURNS = moves, turns
 check("finished", logHas("^Done"))
 
 -- 13f. stopped (Ctrl+T) partway through a segment; then a hole opens in
