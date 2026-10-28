@@ -378,9 +378,21 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   that aren't caused by mobs (TNT, beds in the Nether) if it's a normal turtle.
   But lava burns any item that falls into it, and it makes the tunnel deadly
   for you later. So lava or water touching the tunnel or a vein is sealed with
-  a bulk block (the turtle keeps a stack for this), and a source inside the
-  tunnel is filled and dug out. Falling gravel and sand are dug until they
-  stop coming.
+  a bulk block (the turtle keeps a stack, and fetches more if it runs out).
+  Falling gravel and sand are dug until they stop coming.
+- **Water in the tunnel:** water can't just be dug out. It flows back into
+  an open block from any water beside or above it. A block with two sources
+  beside it becomes a source itself. A turtle that moves into a source leaves
+  the source behind when it moves on. So the turtle fills a source in the
+  tunnel with a bulk block and digs it out. If water comes back (from a lake
+  above the ceiling, or an aquifer), something next to that block feeds it.
+  The turtle steps in and seals the water touching it outside the tunnel.
+  It fills the sources touching it inside, steps back, and tries again.
+  Those fillings are dug out again later: ahead by the lanes, behind at the
+  end of the segment, by when what fed them is sealed. Flowing water that
+  nothing feeds drains away. The ways it dug out to veins are sealed too if
+  water got into them. In tests through an underground lake and under one,
+  it left the tunnel dry with nothing leaking in.
 - **Trips home:** before a dig with fewer than 2 empty slots, or a move that
   would leave too little fuel, it goes to its home. There it sorts its
   inventory into the two chests (tidying the valuables chest), refuels, and

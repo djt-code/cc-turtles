@@ -104,21 +104,22 @@ local SIZE = 27
 -- As CC:Tweaked stores what a turtle picks up: into the first slot,
 -- counting on from the selected one, that is empty or holds the same item
 -- (so an empty slot ahead of a part stack starts a second stack).
--- SPLIT counts the pickups that left two part stacks of one item.
+-- SPLIT counts the pickups that started a new stack though a part stack
+-- of the item was there to join.
 local function addItem(name, n)
+    local part = false
+    for s = 1, 16 do if inv[s] and inv[s].name == name and inv[s].count < 64 then part = true end end
     for i = 0, 15 do
         local s = (sel - 1 + i) % 16 + 1
         local it = inv[s]
         if not it then
+            if part then SPLIT = (SPLIT or 0) + 1 end
             inv[s] = { name = name, count = math.min(n, 64) }; n = n - inv[s].count
         elseif it.name == name and it.count < 64 then
             local take = math.min(n, 64 - it.count); it.count = it.count + take; n = n - take
         end
         if n == 0 then break end
     end
-    local part = 0
-    for s = 1, 16 do if inv[s] and inv[s].name == name and inv[s].count < 64 then part = part + 1 end end
-    if part > 1 then SPLIT = (SPLIT or 0) + 1 end
     if n == 0 then return true end
     SPILLED = (SPILLED or 0) + n
     return false
@@ -140,12 +141,65 @@ local function gravity(x, y, z)
         set(x, y, z, above); set(x, y + 1, z, nil); y = y + 1
     end
 end
+-- Water, roughly as Minecraft runs it, worked out whenever a block next
+-- to it changes: an open block (not the turtle's) beside or under water
+-- fills again: a source if two sources sit beside it on something solid
+-- or a source, falling water under water, flowing water beside water that
+-- isn't spent; flowing water nothing feeds drains away.  The turtle
+-- moving into water leaves the block as it was, so a source it moves out
+-- of is left behind, as a waterlogged turtle leaves one.
+local WATER_NAME = "minecraft:water"
+local function isWater(b) return b and b.name == WATER_NAME end
+local function waterFor(x, y, z)
+    local sources, feed = 0, nil
+    for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+        local b = get(x + d[1], y, z + d[2])
+        if isWater(b) then
+            if b.level == 0 then sources = sources + 1 end
+            local l = b.level >= 8 and 0 or b.level
+            if l < 7 then feed = math.min(feed or 99, l + 1) end
+        end
+    end
+    local below = get(x, y - 1, z)
+    if sources >= 2 and below and (below.name ~= WATER_NAME or below.level == 0)
+            and below.name ~= "minecraft:lava" then
+        return { name = WATER_NAME, level = 0 }
+    end
+    if isWater(get(x, y + 1, z)) then return { name = WATER_NAME, level = 8 } end
+    if feed then return { name = WATER_NAME, level = feed } end
+    return nil
+end
+local function flow(x, y, z)
+    local queue, head, steps = { { x, y, z } }, 1, 0
+    local function near(a, b, c)
+        for _, d in ipairs({ { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }) do
+            queue[#queue + 1] = { a + d[1], b + d[2], c + d[3] }
+        end
+    end
+    near(x, y, z)
+    while head <= #queue and steps < 4000 do
+        local q = queue[head]; head = head + 1; steps = steps + 1
+        local a, b, c = q[1], q[2], q[3]
+        local cur = get(a, b, c)
+        if c >= 1 and not (a == P.x and b == P.y and c == P.z)
+                and (cur == nil or (isWater(cur) and cur.level ~= 0)) then
+            local new = waterFor(a, b, c)
+            if (new and new.level) ~= (cur and cur.level) then
+                set(a, b, c, new)
+                near(a, b, c)
+            end
+        end
+    end
+end
+
 local function move(dx, dy, dz)
     if FUEL <= 0 then DRY = DRY + 1; return false end
     local nx, ny, nz = P.x + dx, P.y + dy, P.z + dz
     if not passable(get(nx, ny, nz)) then return false end
     if ONMOVE then ONMOVE(P.x, P.y, P.z, nx, ny, nz) end
+    local ox, oy, oz = P.x, P.y, P.z
     P.x, P.y, P.z = nx, ny, nz; moves = moves + 1
+    if WATERY then flow(ox, oy, oz) end
     FUEL = FUEL - 1; LOWEST = math.min(LOWEST, FUEL)
     if TRAVELLING then                  -- a trip ends back where it started
         if P.x ~= BACK[1] or P.y ~= BACK[2] or P.z ~= BACK[3] then LEFT_SPOT = true
@@ -165,6 +219,7 @@ local function digAt(x, y, z)
     DIGS = (DIGS or 0) + 1
     addItem(DROP[b.name] or b.name, 1)
     gravity(x, y, z)
+    if WATERY then flow(x, y, z) end
     return true
 end
 local function solid(b) return b and not passable(b) and b.name ~= "minecraft:torch" end
@@ -180,6 +235,8 @@ local function placeAt(x, y, z, behind)
     if it.name == "minecraft:chest" then set(x, y, z, chest())
     else set(x, y, z, { name = it.name }) end
     it.count = it.count - 1; if it.count == 0 then inv[sel] = nil end
+    PLACED = (PLACED or 0) + 1
+    if WATERY then flow(x, y, z) end
     return true
 end
 local function dropInto(c, n)
@@ -627,7 +684,7 @@ FUEL, LOWEST, DRY, SPILLED, TRAVEL_DIGS = 200, 200, 0, 0, 0
 run("3", "3", "50", "--spacing", "16")
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 50) == 0, leftIn(0, 2, 0, 2, 1, 50) .. " blocks left")
 check("what it picked up joined its stack (it keeps its slots tidy)", SPLIT <= 2,
-    SPLIT .. " pickups left a second part stack")
+    SPLIT .. " pickups started a second part stack")
 checkOres(); checkLava(50); checkFloor(0, 2, -1, 1, 50)
 local tn = checkStart()
 check("diamonds and emerald brought back", (tn["minecraft:diamond"] or 0) == 3 and (tn["minecraft:emerald"] or 0) == 1,
@@ -870,6 +927,42 @@ check("mined every deposit in the field", all)
 check("went back into the tunnel from the field at most twice", entries <= 2, entries .. " times")
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 16) == 0, leftIn(0, 2, 0, 2, 1, 16) .. " blocks left")
 checkFloor(0, 2, -1, 1, 16)
+check("back at the start", atStart())
+
+-- 11d. water: the tunnel runs through an underground lake (its own
+--      blocks water sources, with more round them) and then under a lake
+--      above its ceiling.  Water flows back into what it digs, so it
+--      fills the sources and seals what feeds them, and leaves a dry
+--      tunnel that no water gets into, without going round in circles
+setup(stock(4, 64))
+for x = -3, 5 do for y = -2, 4 do for z = 8, 13 do set(x, y, z, { name = "minecraft:water", level = 0 }) end end end
+for x = -2, 4 do for y = 3, 5 do for z = 18, 23 do set(x, y, z, { name = "minecraft:water", level = 0 }) end end end
+for x = -3, 5 do for z = 7, 24 do set(x, 6, z, { name = "minecraft:stone" }) end end
+for _, it in ipairs({ { name = "minecraft:cobblestone", count = 64 }, { name = "minecraft:cobblestone", count = 64 } }) do
+    table.insert(chestAt(0, -1, 0), it)                 -- bulk to seal with
+end
+startAt(); inv, files = {}, {}
+EQ = { right = "minecraft:diamond_pickaxe" }
+FUEL, DRY, PLACED = 3000, 0, 0
+WATERY = true
+run("3", "3", "30")
+WATERY = false
+local wetIn, wetOpen = 0, 0
+for x = -4, 6 do for y = -3, 6 do for z = 1, 31 do
+    local b = get(x, y, z)
+    if isWater(b) then
+        if x >= 0 and x <= 2 and y >= 0 and y <= 2 then wetIn = wetIn + 1 end
+        for _, d in ipairs({ { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }) do
+            if not get(x + d[1], y + d[2], z + d[3]) then wetOpen = wetOpen + 1 end
+        end
+    end
+end end end
+check("no water left in the tunnel", wetIn == 0, wetIn .. " blocks")
+check("no water touching open space (sealed off)", wetOpen == 0, wetOpen .. " open faces")
+check("tunnel clear", leftIn(0, 2, 0, 2, 1, 30) == 0, leftIn(0, 2, 0, 2, 1, 30) .. " blocks left")
+checkFloor(0, 2, -1, 1, 30)
+check("didn't go round in circles placing blocks", PLACED < 400, PLACED .. " blocks placed")
+check("finished", logHas("^Done"))
 check("back at the start", atStart())
 
 -- 12. low on fuel with a scanner: the only fuel is coal 5 out from the

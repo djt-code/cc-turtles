@@ -77,7 +77,8 @@
 --    block from the inventory (it keeps a stack for this).  Turtles take
 --    no harm from lava, but lava burns any item that falls in it and
 --    makes the tunnel deadly for players.  Lava or water inside the
---    tunnel is filled and dug out.
+--    tunnel is dried out (see dry): filled and dug out, and if it comes
+--    back, what feeds it is sealed first.
 --  * Floor: the turtle doesn't need one, but a player does.  Every block
 --    under the tunnel's bottom row that's a hole (a crevasse, a cave, where
 --    floor ore was), a fluid, or something not to stand on (grass, snow,
@@ -460,13 +461,14 @@ end
 --------------------------------------------------------------------------
 local trip                 -- defined below
 
--- Make room before a dig: when a slot has filled since the last look (a
--- new stack started, maybe one that could have joined another), tidy the
--- inventory; then a trip home if fewer than ROOM slots are free.
+-- Make room before a dig: when a slot has filled or emptied since the
+-- last look (a new stack started, maybe one that could have joined
+-- another, or a gap opened ahead of a part stack), tidy the inventory;
+-- then a trip home if fewer than ROOM slots are free.
 local freeBefore = 0
 local function room()
     local free = T.freeSlots()
-    if free < freeBefore or free < ROOM then
+    if free ~= freeBefore or free < ROOM then
         T.tidyInventory()
         free = T.freeSlots()
     end
@@ -480,17 +482,23 @@ end
 
 local seal
 
--- Step one block in direction d, digging what's there (falling gravel
--- and sand included); a lava or water source in the tunnel is filled and
--- dug out first, so none is left behind.  False if it can't: a protected
--- or unbreakable block, or something that won't move out of the way.
 local digLimit             -- `mine reset`: blocks it may dig on the way back (nil: any)
+local dry                  -- defined below
+local plugs = {}           -- key -> position: dug tunnel blocks it filled again (see dry)
 
+-- Step one block in direction d, digging what's there (falling gravel
+-- and sand included).  In the tunnel, lava or water there (or let in by
+-- the dig) is dried out first (see dry), so none is left behind.  False
+-- if it can't: a protected or unbreakable block, or something that won't
+-- move out of the way.
 local function go(d)
+    local n = neighbour(d)
+    local inside = inBox(n) and not digLimit
     for _ = 1, 30 do
         room()                     -- first: a trip changes what's there
         local ok, data = look(d)
-        if ok and isSource(data) and inBox(neighbour(d)) and seal(d) then
+        if ok and inside and FLUID[data.name] then
+            dry(d)
             ok, data = look(d)
         end
         if ok and not FLUID[data.name] then
@@ -500,26 +508,32 @@ local function go(d)
                 digLimit = digLimit - 1
             end
             if not digDir(d) then return false, data.name end
+            local okw, w = look(d)         -- the dig let water in
+            if inside and okw and FLUID[w.name] then dry(d) end
         end
         if moveDir(d) then
             opened[key(T.pos)] = true
+            plugs[key(T.pos)] = nil
             return true
         end
     end
     return false, "something in the way"
 end
 
--- Step back the way it came in direction d: backwards, if it still faces
--- that way (no turning round), else turning to go.
-local function retreat(d)
-    if d == T.dir and T.back() then return true end
-    return go(OPP[d])
-end
-
 -- Turns it takes to face direction d (none for up or down).
 local function turnsTo(d)
     if d == "up" or d == "down" or d == T.dir then return 0 end
     return (d - T.dir) % 4 == 2 and 2 or 1
+end
+
+-- Step back the way it came in direction d: backwards, facing d (no
+-- turning round), unless facing the other way is fewer turns.
+local function retreat(d)
+    if d ~= "up" and d ~= "down" and turnsTo(d) <= turnsTo(OPP[d]) then
+        T.face(d)
+        if T.back() then return true end
+    end
+    return go(OPP[d])
 end
 
 local function selectItem(test)
@@ -542,8 +556,89 @@ end
 -- Seal lava or water in direction d with a bulk block.
 function seal(d)
     local ok = putFiller(d)
-    if ok then stats.sealed = stats.sealed + 1 end
+    if ok then
+        stats.sealed = stats.sealed + 1
+        opened[key(neighbour(d))] = nil
+    end
     return ok
+end
+
+-- After stepping back out of a block in direction d: if water or lava
+-- has got into it, seal it, so the way out isn't a channel into the
+-- tunnel (only if it can look without turning).
+local function sealBehind(d)
+    if d ~= "up" and d ~= "down" and T.dir ~= d then return end
+    local ok, data = look(d)
+    if ok and FLUID[data.name] then seal(d) end
+end
+
+-- Water and lava in the tunnel.  A source can't just be dug out: water
+-- flows back into an open block from any water beside or above it, a
+-- block with two sources beside it becomes a source itself, and a turtle
+-- that moves into a source leaves it behind when it moves on.  So the
+-- turtle fills a source with a bulk block and digs it out.  If a fluid
+-- comes back, something next to that block feeds it (water from above,
+-- an aquifer): it steps in, seals the lava and water touching it outside
+-- the tunnel, and fills the sources touching it inside, steps back, and
+-- tries again.  Those fillings in the tunnel are dug out again in their
+-- turn (ahead, by the lanes; behind, at the end of the segment), by when
+-- what fed them is sealed.  Flowing water nothing feeds drains away.
+-- Call fn with each direction but skip, the fewest turns away first.
+local function eachAround(skip, fn)
+    local todo = {}
+    for _, e in ipairs({ "up", "down", 0, 1, 2, 3 }) do
+        if e ~= skip then todo[#todo + 1] = e end
+    end
+    while #todo > 0 do
+        local best = 1
+        for i = 2, #todo do
+            if turnsTo(todo[i]) < turnsTo(todo[best]) then best = i end
+        end
+        fn(table.remove(todo, best))
+    end
+end
+
+local warnedWet = false
+function dry(d)
+    for _ = 1, 4 do
+        local ok, data = look(d)
+        if not (ok and FLUID[data.name]) then return true end
+        if not selectItem(function(n) return FILLER[n] end) then
+            trip("Out of blocks to seal water with")
+            ok, data = look(d)
+            if not (ok and FLUID[data.name]) then return true end
+        end
+        turtle.select(1)
+        if isSource(data) then
+            if not seal(d) then break end
+            digDir(d)
+            ok, data = look(d)
+            if not (ok and FLUID[data.name]) then return true end
+        end
+        -- something feeds it: step in and cut it off
+        if not moveDir(d) then break end
+        local cut = 0
+        eachAround(OPP[d], function(e)
+            local m = neighbour(e)
+            local okm, dm = look(e)
+            if okm and FLUID[dm.name] and (isSource(dm) or not inBox(m)) then
+                local was = opened[key(m)]
+                if seal(e) then
+                    cut = cut + 1
+                    if inBox(m) and was then plugs[key(m)] = m end
+                end
+            end
+        end)
+        local backed = false
+        if d ~= "up" and d ~= "down" then T.face(d); backed = T.back() end
+        if not backed then moveDir(OPP[d]) end
+        if cut == 0 then return true end   -- nothing feeds it: it drains away
+    end
+    if not warnedWet then
+        warnedWet = true
+        print("Couldn't stop the water at " .. T.posString() .. " (out of bulk blocks?); working through it.")
+    end
+    return false
 end
 
 -- The tunnel's floor: the blocks under its bottom row.
@@ -584,10 +679,16 @@ local function clearCell(d)
         local ok, data = look(d)
         if not ok then break end
         if isOre(data) then mineVein(d); break end
-        if FLUID[data.name] and not (isSource(data) and seal(d)) then break end
+        if FLUID[data.name] then
+            if digLimit then break end
+            dry(d)
+            ok, data = look(d)
+            if not ok or FLUID[data.name] then break end
+        end
         if protected(data.name) then return end
         if not digDir(d) then return end
     end
+    plugs[key(n)] = nil
     opened[key(n)] = true
 end
 
@@ -618,6 +719,7 @@ function mineVein(d)
     -- Look round, the fewest turns away first; not where a scan saw
     -- neither ore nor fluid (no turning to look at plain rock).
     local todo = { "up", "down", 0, 1, 2, 3 }
+    local wet = false
     while true do
         local best, near
         for i, e in ipairs(todo) do
@@ -633,12 +735,13 @@ function mineVein(d)
         local ok, data = look(e)
         if not ok then opened[key(neighbour(e))] = true
         elseif isOre(data) and (near or isDiamond(data.name)) then mineVein(e)
-        elseif FLUID[data.name] then seal(e)
+        elseif FLUID[data.name] then seal(e); wet = true
         end
     end
     local here = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
     retreat(d)
     trail[#trail] = nil
+    if wet then sealBehind(d) end
     if isFloor(here) then fill(d) end      -- ore out of the floor: fill the hole
 end
 
@@ -849,9 +952,11 @@ local function placeChest(d)
         if not ok then break end
         if protected(data.name) then return T.isContainer(data.name) end
         if FLUID[data.name] then
-            if not (isSource(data) and seal(d)) then break end
+            dry(d)
+            ok, data = look(d)
+            if not ok or FLUID[data.name] then break end
         end
-        if not FLUID[data.name] and not digDir(d) then return false end
+        if not digDir(d) then return false end
     end
     if not selectItem(function(n) return CHEST_ITEMS[n] end) then return false end
     local ok = placeDir(d)
@@ -1006,8 +1111,11 @@ local function lightHere()
         if not ok then break end
         if TORCHES[data.name] or protected(data.name) then return end
         if FLUID[data.name] then
-            if not (isSource(data) and seal(d)) then break end
-        elseif not digDir(d) then return end
+            dry(d)
+            ok, data = look(d)
+            if not ok or FLUID[data.name] then break end
+        end
+        if not digDir(d) then return end
     end
     local placed = selectItem(isTorch) and placeDir(d)
     if not placed and supportNiche(d) then placed = selectItem(isTorch) and placeDir(d) end
@@ -1263,6 +1371,7 @@ local function fetchTargets(which)
         retreat(d)
         trail[#trail] = nil
         way[out() + 1] = nil
+        sealBehind(d)
         if isFloor(from) then fill(d) end
     end
     local function nearest(t)
@@ -1426,6 +1535,22 @@ local function mineSegment(z1, z2)
         if not ok then stop(string.format("Can't get through at %s (%s).", T.posString(), tostring(what))) end
     end
     via = nil
+    -- tunnel blocks filled to cut water off behind the lanes: dig them
+    -- out, now what fed them is sealed (nearest first, a few rounds, as
+    -- digging one out can mean filling another)
+    for _ = 1, 4 do
+        local list = {}
+        for _, q in pairs(plugs) do list[#list + 1] = q end
+        if #list == 0 then break end
+        table.sort(list, function(a, b) return dist(a, T.pos) < dist(b, T.pos) end)
+        for _, q in ipairs(list) do
+            if plugs[key(q)] then
+                alongAxis("z", q.z); alongAxis("x", q.x); alongAxis("y", q.y)
+                plugs[key(q)] = nil
+            end
+        end
+    end
+    plugs = {}
     fetchTargets()                         -- the scanner's ore further out
     tunnelHome()
 end
