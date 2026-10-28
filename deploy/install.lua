@@ -1,33 +1,52 @@
 -- install.lua -- put cc-turtles on the shell's search path, then reboot
 --
 -- Usage (from wherever the repo was cloned):
---   cc-turtles/deploy/install [--craftix] [--no-reboot]
+--   cc-turtles/deploy/install [--craftix] [--autostart <app>] [--no-reboot]
 --
 -- Adds lines to the top of /startup.lua (or, if /startup is a directory,
 -- writes /startup/00-cc-turtles.lua, which runs first) that add the
 -- repo's bin/ (cat, echo, git, craftix and the rest) to the shell's path
 -- at boot, and turtle/ (mine, farm, ...) on a turtle or pc/ (diskclone)
--- on a computer, so they run from any directory.  lib/ holds modules the
--- programs require, not programs, so it stays off the path.  The lines go
--- first so a startup program that never returns (autocompost, say)
--- doesn't keep them from running.  Running install again changes
--- nothing; run it again after the 2026-10-28 move into bin/ and turtle/
--- and it swaps the old line (the repo's top folder) for the new ones.
--- This file lives in deploy/, which isn't on the path itself; deploy/setup
--- fetches the repo and runs it in one go.
+-- on a computer, so they run from any directory, and help/ to the help
+-- path, so `help mine` works.  lib/ holds modules the programs require,
+-- not programs, so it stays off the path.  The lines go first so a
+-- startup program that never returns (autocompost, say) doesn't keep them
+-- from running.  Running install again changes nothing; run it again
+-- after the 2026-10-28 move into bin/ and turtle/ and it swaps the old
+-- line (the repo's top folder) for the new ones.  This file lives in
+-- deploy/, which isn't on the path itself; deploy/setup fetches the repo
+-- and runs it in one go.
 --
--- --craftix also starts Craftix, the POSIX-style shell, at boot: a line at
--- the end of /startup.lua (or /startup/zz-craftix.lua) runs it while the
--- setting craftix.login is on, and install turns that on.  It goes last,
--- so the rest of startup runs first (and one that never returns means no
--- Craftix).  Leaving Craftix (exit) gives the stock prompt; to stop it
--- starting, `set craftix.login false` there.
+-- At the end of startup go, in this order:
+--  * on a turtle, the autostart (/startup/zy-autostart.lua with a startup
+--    folder): turtle/autostart runs the program the setting
+--    cc-turtles.autostart names, resuming its job after a reboot.
+--    --autostart <app> sets it (mine, farm, mow or autocompost); `set
+--    cc-turtles.autostart ""` turns it off.
+--  * Craftix, the POSIX-style shell (/startup/zz-craftix.lua), while the
+--    setting craftix.login is on; --craftix adds it and turns that on.
+--    Leaving Craftix (exit) gives the stock prompt; to stop it starting,
+--    `set craftix.login false`.
+-- Last, so the rest of startup runs first; a job that never returns
+-- means no Craftix until you stop it with Ctrl+T.
 
-local noReboot, login = false, false
-for _, a in ipairs({ ... }) do
+local noReboot, login, autostart = false, false, nil
+local AUTOSTART = { mine = true, farm = true, mow = true, autocompost = true }
+local args = { ... }
+local i = 1
+while i <= #args do
+    local a = args[i]
     if a == "--no-reboot" then noReboot = true
     elseif a == "--craftix" then login = true
-    else print("Usage: install [--craftix] [--no-reboot]"); return end
+    elseif a == "--autostart" and AUTOSTART[args[i + 1]] and turtle then
+        autostart = args[i + 1]
+        i = i + 1
+    else
+        print("Usage: install [--craftix] [--autostart mine|farm|mow|autocompost] [--no-reboot]")
+        if a == "--autostart" and not turtle then print("(--autostart is for turtles)") end
+        return
+    end
+    i = i + 1
 end
 
 -- the repo is the directory above this one
@@ -43,8 +62,14 @@ end
 local dirs = { repo .. "/bin", repo .. (turtle and "/turtle" or "/pc") }
 local lines = {}
 for i, d in ipairs(dirs) do lines[i] = pathLine(d) end
+lines[#lines + 1] = string.format(
+    "if not (':' .. help.path() .. ':'):find(':%s/help:', 1, true) then help.setPath(help.path() .. ':%s/help') end",
+    repo, repo)
 local block = table.concat(lines, "\n") .. "\n"
 local loginLine = loginLineFor(repo .. "/bin/craftix")
+local autoLine = string.format(
+    'if settings.get("cc-turtles.autostart", "") ~= "" and fs.exists("%s/turtle/autostart.lua") then shell.run("%s/turtle/autostart") end',
+    repo, repo)
 -- what earlier installs wrote, when the programs were in the repo's top folder
 local stale = { pathLine(repo), loginLineFor(repo .. "/craftix") }
 
@@ -75,8 +100,9 @@ local function without(text, drop)
     return text
 end
 
+local folder = fs.isDir("/startup")
 local target, rest, current
-if fs.isDir("/startup") then
+if folder then
     target = "/startup/00-cc-turtles.lua"
     current = read(target) or ""
     rest = ""                                   -- ours alone: (re)written whole
@@ -86,38 +112,55 @@ else
     rest = without(without(current, lines), { stale[1] })
 end
 
+-- `lines` holds the path and help lines; an earlier install's has the
+-- path lines alone, so drop what's left of those too
+local pathOnly = {}
+for i = 1, #dirs do pathOnly[i] = lines[i] end
+rest = without(rest, pathOnly)
 if block .. rest == current then
     print(target .. " already puts " .. table.concat(dirs, " and ") .. " on the path.")
 else
     write(target, block .. rest)
-    print("Put " .. table.concat(dirs, " and ") .. " on the path in " .. target .. ".")
+    print("Put " .. table.concat(dirs, " and ") .. " on the path, and help/ on the help path, in " .. target .. ".")
 end
 
--- Craftix at boot: with --craftix, or when an earlier install's line runs
--- it from where it used to be
-local loginTarget = fs.isDir("/startup") and "/startup/zz-craftix.lua" or "/startup.lua"
-local text = read(loginTarget) or ""
-local moved = text:find(stale[2] .. "\n", 1, true) ~= nil
-text = without(text, { stale[2] })
-if text:find(loginLine, 1, true) then
-    if moved then write(loginTarget, text) end
-    if login then print(loginTarget .. " already starts Craftix.") end
-elseif login or moved then
-    if loginTarget == "/startup.lua" then
-        write(loginTarget, text .. ((text == "" or text:sub(-1) == "\n") and "" or "\n") .. loginLine .. "\n")
-    else
-        write(loginTarget, loginLine .. "\n")
+-- The end of startup: the autostart (a turtle), then Craftix
+local wasLogin, hadAuto
+if folder then
+    local function put(path, line, want)
+        local had = (read(path) or ""):find(line, 1, true) ~= nil
+        if want and not had then write(path, line .. "\n") end
+        return had
     end
-    print("Craftix starts at boot from " .. loginTarget .. ".")
+    local old = read("/startup/zz-craftix.lua") or ""
+    wasLogin = old:find(loginLine, 1, true) ~= nil or old:find(stale[2], 1, true) ~= nil
+    if old:find(stale[2], 1, true) then fs.delete("/startup/zz-craftix.lua") end
+    hadAuto = put("/startup/zy-autostart.lua", autoLine, turtle ~= nil)
+    put("/startup/zz-craftix.lua", loginLine, login or wasLogin)
+else
+    local text = read(target) or ""
+    wasLogin = text:find(loginLine .. "\n", 1, true) ~= nil or text:find(stale[2] .. "\n", 1, true) ~= nil
+    hadAuto = text:find(autoLine .. "\n", 1, true) ~= nil
+    local body = without(text, { loginLine, stale[2], autoLine })
+    local tail = (turtle and (autoLine .. "\n") or "") .. ((login or wasLogin) and (loginLine .. "\n") or "")
+    local new = body .. ((body == "" or body:sub(-1) == "\n" or tail == "") and "" or "\n") .. tail
+    if new ~= text then write(target, new) end
 end
+if turtle and not hadAuto then print("The autostart is in startup (it runs what cc-turtles.autostart names).") end
+if login and not wasLogin then print("Craftix starts at boot.") end
 if login then
     settings.set("craftix.login", true)
     settings.save()
 end
+if autostart then
+    settings.set("cc-turtles.autostart", autostart)
+    settings.save()
+    print("At boot this turtle runs " .. autostart .. ": `help autostart` says how.")
+end
 
 if noReboot then
     -- this shell gets it now; others after a reboot
-    load(block, "=startup", "t", { shell = shell })()
+    load(block, "=startup", "t", { shell = shell, help = help })()
     print("Not rebooting: on the path in this shell now, everywhere after a reboot.")
     if login then print("Type craftix to start it now.") end
     return
