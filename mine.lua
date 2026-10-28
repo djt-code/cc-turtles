@@ -1934,10 +1934,8 @@ end
 -- one; the dig limit catches it if that's wrong).
 local function checkHeading(dugTo)
     local solid = {}
-    for a = 0, 3 do                        -- a quarter turns right of the way it faces
-        local ok, data = turtle.inspect()
-        solid[a] = ok and not FLUID[data.name]
-        turtle.turnRight()
+    for a, seen in pairs(T.lookAround()) do      -- a quarter turns right of the way it faces
+        solid[a] = seen and not FLUID[seen.name]
     end
     local function expect(t)
         local v = DELTA[t]
@@ -1999,8 +1997,7 @@ if doReset then
     local h = checkHeading(job.homes * SPACING)
     if h and h ~= T.dir then
         print(string.format("It really faces %d, not %d (the tunnel says so): going by that.", h, T.dir))
-        T.dir = h
-        T.savePos()
+        T.setDir(h)
     end
     -- the way back digs at most out of a vein and across the segment it
     -- was in; much more than that and its position or heading is wrong

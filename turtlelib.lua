@@ -173,6 +173,28 @@ function T.posString()
     return string.format("(%d,%d,%d)", T.pos.x, T.pos.y, T.pos.z)
 end
 
+-- The heading is really d (a program worked it out from what's round the
+-- turtle: the saved one can be off after a stop between a turn and its
+-- save, or a turtle put back by hand).
+function T.setDir(d)
+    T.dir = d
+    T.savePos()
+end
+
+-- What's beside the turtle, by quarter turns to the right of the way it
+-- faces: seen[a] is the inspect data at a turns, or false for air.  For
+-- checking the heading, so it turns with the raw turtle calls (which
+-- leave it facing as it was) and T.dir isn't touched.
+function T.lookAround()
+    local seen = {}
+    for a = 0, 3 do
+        local ok, data = turtle.inspect()
+        seen[a] = ok and data or false
+        turtle.turnRight()
+    end
+    return seen
+end
+
 --------------------------------------------------------------------------
 -- Fuel
 --------------------------------------------------------------------------

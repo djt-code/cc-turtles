@@ -1637,8 +1637,7 @@ local function checkHeading()
     T.clearBlocked()
     if back and r == 0 then return true end
     if back and r then
-        T.dir = (T.dir + r) % 4
-        T.savePos()
+        T.setDir((T.dir + r) % 4)
         print("The turtle faces " .. ({ "right of", "opposite", "left of" })[r]
             .. " the way it had saved; heading corrected from the farm map.")
         return true
