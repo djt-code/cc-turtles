@@ -410,13 +410,18 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   It fills the sources touching it inside, steps back, and tries again.
   Those fillings are dug out again later: ahead by the lanes, behind at the
   end of the segment, by when what fed them is sealed. Flowing water that
-  nothing beside it feeds is left to drain away the first time. If it's
-  there again on a later pass, it's coming from further off, so the turtle
-  follows it upstream along the tunnel, at most as far as water flows, and
-  seals where it comes in. Falling water always has water above feeding it,
-  so it follows that at once. It doesn't put a torch where it has just
-  stepped through water until it has stopped the water, so the torch isn't
-  washed away.
+  nothing beside it feeds, in tunnel it's digging, is from what it's
+  digging through: left over and draining, or from sources the lanes will
+  reach. But falling water always has water above feeding it, and water in
+  tunnel dug before (going over it on a resume, or on a trip) is getting in
+  from somewhere. That it follows upstream through the tunnel to where it
+  comes in, and seals. It goes up while the water's falling, else toward
+  stronger water, looking ahead, above and below before it turns to look
+  sideways. Through dug tunnel it wades through flowing water (the turtle
+  pushes it out of the block it moves into) and only looks at the walls,
+  floor and ceiling, rather than stepping in and out of each wet block.
+  It doesn't put a torch where it has just stepped through water until it
+  has stopped the water, so the torch isn't washed away.
 - **Hidden water:** a waterlogged block holds water but doesn't look like
   it. Glow lichen, pointed dripstone, hanging roots and sculk veins are
   examples. To the turtle it's just a block, but it's a water source that

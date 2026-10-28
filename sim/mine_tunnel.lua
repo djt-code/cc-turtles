@@ -1277,6 +1277,33 @@ check("followed the water to the lichen and replaced it", wetLeft == 0 and (get(
 LICHEN_MOVES, LICHEN_TURNS = moves, turns
 check("finished", logHas("^Done"))
 
+-- 13h. dug already, with waterlogged lichen in the ceiling at the far end
+--      of the segment (z=31), its water falling and spreading back along
+--      the floor: going over the segment it wades through the water and
+--      follows it to the lichen, rather than stepping back and forth
+dugTunnel()
+files["mine.job"] = "3 3 40 16 2 active"
+for _, it in ipairs(stock(2, 64)) do table.insert(chestAt(-1, 0, 32), it) end
+for _ = 1, 2 do table.insert(chestAt(0, -1, 16), { name = "minecraft:cobblestone", count = 64 }) end
+set(1, 3, 31, { name = "minecraft:glow_lichen", waterlogged = true })
+WATERY = true
+flow(1, 3, 31)
+settleWater()
+local spreadH = 0
+for x = 0, 2 do for z = 1, 40 do if isWater(get(x, 0, z)) then spreadH = spreadH + 1 end end end
+P.x, P.y, P.z, P.d = 0, 0, 32, 3
+files[".turtlepos"] = "0 0 32 3 flat"
+FUEL = 3000
+run("reset", "--home", "1")
+run("--resume")
+WATERY = false
+local wetH = 0
+for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then wetH = wetH + 1 end end end end
+check("followed the water to the lichen in the ceiling and replaced it",
+    spreadH > 5 and wetH == 0 and (get(1, 3, 31) or {}).name ~= "minecraft:glow_lichen",
+    spreadH .. " floor blocks wet before, " .. wetH .. " after")
+check("finished", logHas("^Done"))
+
 -- 13f. stopped (Ctrl+T) partway through a segment; then a hole opens in
 --      the ceiling over what's dug, with water above, which pours in and
 --      spreads (washing torches away).  `mine reset` and `mine --resume`:

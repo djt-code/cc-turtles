@@ -560,10 +560,21 @@ local function go(d)
     local wet = false
     for _ = 1, 30 do
         room()                     -- first: a trip changes what's there
+        -- through tunnel dug before (going over it, or on a trip), flowing
+        -- water ahead is getting in somewhere: wade in (the turtle pushes
+        -- it out of the block) rather than step in and out again to dry
+        -- it, and follow it from there.  Where it's digging through wet
+        -- ground, it dries each block (sources next to it are filled as
+        -- it goes).
+        local wade = repairing or inTrip
         local ok, data = look(d)
-        if ok and inside and (FLUID[data.name] or waterIn(data)) then
+        if ok and inside and (isSource(data) or (FLUID[data.name] and not wade)) then
             dry(d)
             ok, data = look(d)
+        end
+        if ok and inside and wade and FLUID[data.name] and not wet then
+            wet = data
+            stats.wet = stats.wet + 1
         end
         if ok and not FLUID[data.name] then
             if protected(data.name) then return false, data.name end
@@ -589,9 +600,17 @@ local function go(d)
             -- in it, the turtle keeps fluid out of the block: seal what
             -- let it in before it spreads, from here, or follow it to
             -- where it comes in
+            -- (through tunnel dug before, only where that's outside the
+            -- tunnel: above, below, and a wall beside it, no turning to
+            -- look into the tunnel; where it's digging, all round, for the
+            -- sources next to it too)
             if wet then
                 local cut = 0
-                eachAround(OPP[d], function(e) if cutOff(e) then cut = cut + 1 end end)
+                eachAround(OPP[d], function(e)
+                    if (not wade or e == "up" or e == "down" or not inBox(neighbour(e))) and cutOff(e) then
+                        cut = cut + 1
+                    end
+                end)
                 local level = tonumber(wet.state and wet.state.level) or 0
                 if cut == 0 and level > 0 then stem(level) end
             end
@@ -703,8 +722,8 @@ end
 -- The turtle is in flowing water (or lava) of the given level that nothing
 -- beside it feeds: it comes from further off, along the tunnel.  Follow it
 -- upstream through the tunnel (up, if it's falling; else to stronger
--- water beside it), at most as far as water flows, to where it comes in
--- from outside, seal that, and come back.  A source in the tunnel is left
+-- water beside it), as far as water spreads and falls, to where it comes
+-- in from outside, seal that, and come back.  A source in the tunnel is left
 -- for drying out when it's reached.  True if it sealed something.
 local unfed = {}           -- key: true, flowing water found here with nothing beside it feeding it; "traced"
 local function stopFlow(level)
@@ -712,26 +731,37 @@ local function stopFlow(level)
     unfed[key(T.pos)] = "traced"
     local tank = turtle.getFuelLevel()
     if tank ~= "unlimited" and tank < T.homeCost() + T.cfg.fuelMargin + 40 then return false end
-    for _ = 1, 8 do
+    for _ = 1, 24 do
         local up, upLevel, source = nil, nil, false
-        eachAround(nil, function(e)
+        -- look the fewest turns away first (up, down, ahead), and once it
+        -- knows the way upstream, don't turn to look any further
+        local todo = {}
+        for _, e in ipairs({ "up", "down", 0, 1, 2, 3 }) do
+            if e ~= (path[#path] and OPP[path[#path]]) then todo[#todo + 1] = e end   -- not back downstream
+        end
+        while #todo > 0 and not (sealed or source) do
+            local best = 1
+            for i = 2, #todo do
+                if turnsTo(todo[i]) < turnsTo(todo[best]) then best = i end
+            end
+            if up and turnsTo(todo[best]) > 0 then break end
+            local e = table.remove(todo, best)
             local m = neighbour(e)
             local ok, data = look(e)
-            if not (ok and (FLUID[data.name] or waterIn(data))) then return end
-            if not inBox(m) then
-                if seal(e) then sealed = true end
-                return
+            if ok and (FLUID[data.name] or waterIn(data)) then
+                if not inBox(m) then
+                    if seal(e) then sealed = true end
+                elseif isSource(data) then
+                    -- going over tunnel dug before, it's water getting in: fill it
+                    if repairing and cutOff(e) then sealed = true else source = true end
+                else
+                    local s = (e == "up" and level >= 8) and -1 or strength(data)
+                    if s < (level >= 8 and 0 or level) and (not upLevel or s < upLevel) then
+                        up, upLevel = e, s
+                    end
+                end
             end
-            if isSource(data) then
-                -- going over tunnel dug before, it's water getting in: fill it
-                if repairing and cutOff(e) then sealed = true else source = true end
-                return
-            end
-            local s = (e == "up" and level >= 8) and -1 or strength(data)
-            if s < (level >= 8 and 0 or level) and (not upLevel or s < upLevel) then
-                up, upLevel = e, s
-            end
-        end)
+        end
         if sealed or source or not up then break end
         local ok, data = look(up)
         level = ok and tonumber(data.state and data.state.level) or 0
@@ -744,18 +774,19 @@ local function stopFlow(level)
 end
 
 -- The turtle is in flowing water (level `level`) with nothing beside it
--- to cut off.  The first time here, it's likely left over and draining
--- away; found here again, it comes from further off, so follow it.
--- Falling water always has something above feeding it, and water in
--- tunnel dug before (repairing) is getting in: those are followed at
--- once.  Once it has sealed where water came in, it gives what's left a
--- moment to drain, so it doesn't go chasing that.  True if it sealed it.
+-- to cut off.  Falling water always has something above feeding it, and
+-- water in tunnel dug before (repairing) is getting in from somewhere:
+-- those are followed to where they come in.  Other water, in tunnel it's
+-- digging, is from what it's digging through (left over and draining, or
+-- from sources the lanes will reach).  Once it has sealed where water came
+-- in, it gives what's left a moment to drain, so it doesn't go chasing
+-- that.  True if it sealed it.
 function stem(level)
     local k = key(T.pos)
     local sealed = false
-    if (unfed[k] == true or ((level >= 8 or repairing) and unfed[k] == nil)) and stopFlow(level) then
+    if (level >= 8 or repairing) and unfed[k] == nil and stopFlow(level) then
         sealed = true
-        sleep(2)
+        sleep(3)
     end
     unfed[k] = unfed[k] or true
     return sealed
@@ -2185,9 +2216,10 @@ T.withTool(pickaxe, function()
         if resume and job.homes > 0 and home.k == 0 then
             local last = homeAt(job.homes)
             if not fuelToGoOn(2 * last.z) then stop("Not enough fuel to get back out to home " .. last.k .. ".") end
-            inTrip = true
+            inTrip, repairing = true, true  -- through tunnel dug before: water there is getting in
             takeSupplies()
             alongAxis("z", 1); alongAxis("z", last.z)
+            repairing = false
             T.face(last.face)
             if not (containerOn("front") and containerOn(last.bulk)) then
                 stop("Home " .. last.k .. "'s chests are missing.")
@@ -2210,8 +2242,9 @@ T.withTool(pickaxe, function()
                 stop("Not enough fuel to fetch more from home " .. last.k .. ": put some in home " .. here.k .. ".")
             end
             print(string.format("Fetching fuel from home %d (z=%d) first.", last.k, last.z))
-            inTrip = true
+            inTrip, repairing = true, true
             alongAxis("z", last.z)
+            repairing = false
             T.face(last.face)
             if containerOn("front") then
                 home = last
