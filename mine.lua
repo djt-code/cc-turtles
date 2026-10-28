@@ -95,8 +95,11 @@
 --    that takes: one in a niche dug into the wall at floor level every
 --    19 blocks or so for a 3-wide tunnel (fewer the narrower), on both
 --    walls when it's wider than 8.  In the niche the torch is out of the
---    tunnel, so the turtle never digs it up again; a niche that opens into
---    a cave gets a bulk block under it to stand the torch on.  Torches are
+--    tunnel's way; a niche that opens into a cave gets a bulk block under
+--    it to stand the torch on.  A scan's fetch or a vein can still go
+--    through a niche, or dig the block a torch rests on: it notes that and
+--    puts the torch back afterwards (after the fetch, and at the end of
+--    the segment).  Torches are
 --    supplies: they move forward with the homes, and it keeps up to 64 on
 --    board.  Lighting is optional: with no torches it just keeps mining,
 --    and --no-lights turns it off (torches are then just valuables).
@@ -279,9 +282,10 @@ local segEnd = 0           -- last block of the segment being mined
 -- Lighting.  Since 1.18 mobs spawn only at block light 0; a torch is 14
 -- and light drops by 1 a block, so a floor block within 13 of a torch is
 -- safe.  Torches go in niches dug into the wall at floor level (out of
--- the tunnel, so the turtle never digs them up again), every torchEvery
--- blocks, and on both walls when the tunnel is too wide to light from
--- one.  LIGHT_REACH leaves a margin: every floor block gets light 2.
+-- the tunnel's way; relight puts back any that digging reaches anyway),
+-- every torchEvery blocks, and on both walls when the tunnel is too wide
+-- to light from one.  LIGHT_REACH leaves a margin: every floor block gets
+-- light 2.
 local LIGHT_REACH = 12
 local TORCH_KEEP = lights and 64 or 0    -- torches carried (--no-lights: none)
 local torchEvery, torchWalls, torchAlong
@@ -418,7 +422,19 @@ end
 --------------------------------------------------------------------------
 local DELTA, OPP = T.DELTA, T.OPP
 local neighbour, key, here, dist = T.neighbour, T.posKey, T.here, T.dist
-local look, digDir, placeDir, moveDir = T.look, T.digDir, T.placeDir, T.moveDir
+local look, placeDir, moveDir = T.look, T.placeDir, T.moveDir
+
+-- The torches it has placed, by the block each is in and the blocks it
+-- may rest on (the one behind it and the one under it); digging any of
+-- those can knock it off (a scanner fetch or a vein going through a
+-- niche), and `broken` keeps those to put back (see relight).
+local torchBy, broken = {}, {}
+local function digDir(d)
+    local n = key(neighbour(d))
+    local ok = T.digDir(d)
+    if ok and torchBy[n] then broken[torchBy[n]] = true end
+    return ok
+end
 local turnsTo, eachAround, dirTo, stepToward = T.turnsTo, T.eachAround, T.dirTo, T.stepToward
 local dropSide, containerOn = T.dropSide, T.containerOn
 
@@ -430,7 +446,7 @@ local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
 local fillerKeep = FILLER_KEEP  -- FILLER_KEEP_WET once water has used it up
-local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes = 0, fetched = 0, wet = 0 }
+local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, relit = 0, homes = 0, fetched = 0, wet = 0 }
 -- From the Geo Scanner (see there): the world direction of the tunnel's +z
 -- once lined up, this segment's blocks touching the tunnel ("rock",
 -- "ore", "fluid" or "air"), and its ore further out.
@@ -1238,6 +1254,23 @@ end
 -- and z is where a torch goes: dig a niche in the wall and put a torch
 -- in it, against the block behind or on the one below (one put there if
 -- there's neither).  No torches, or --no-lights: it just keeps mining.
+-- A torch into the niche in direction d (a block put under it first if
+-- it has nothing to rest on); filed in torchBy.
+local function placeTorch(d)
+    local function isTorch(n) return TORCHES[n] end
+    local placed = T.selectItem(isTorch) and placeDir(d)
+    if not placed and supportNiche(d) then placed = T.selectItem(isTorch) and placeDir(d) end
+    turtle.select(1)
+    if not placed then return false end
+    local niche, v = neighbour(d), DELTA[d]
+    local t = { at = here(), d = d }
+    torchBy[key(niche)] = t
+    torchBy[key({ x = niche.x + v[1], y = niche.y, z = niche.z + v[3] })] = t
+    torchBy[key({ x = niche.x, y = niche.y - 1, z = niche.z })] = t
+    broken[t] = nil
+    return true
+end
+
 local warnedTorch = false
 local function lightHere()
     if not lights or T.pos.y ~= Y0 or not torchAt(T.pos.z) then return end
@@ -1290,14 +1323,38 @@ local function lightHere()
         eachAround(OPP[d], cutOff)
         retreat(d)
     end
-    local placed = T.selectItem(isTorch) and placeDir(d)
-    if not placed and supportNiche(d) then placed = T.selectItem(isTorch) and placeDir(d) end
-    if placed then
+    if placeTorch(d) then
         stats.torches = stats.torches + 1
     else
         print("Couldn't place a torch at " .. T.posString() .. "; carrying on.")
     end
-    turtle.select(1)
+end
+
+-- Put back the torches digging has knocked off or dug up since they were
+-- placed, going back along the tunnel to each (in order along it).  A
+-- scan's fetch can go through a niche lit before the scan, and a vein
+-- through the block a torch rests on.
+local function relight()
+    local list = {}
+    for t in pairs(broken) do list[#list + 1] = t end
+    if #list == 0 then return end
+    table.sort(list, function(a, b)
+        if a.at.z ~= b.at.z then return a.at.z < b.at.z end
+        return key(a.at) < key(b.at)
+    end)
+    for _, t in ipairs(list) do
+        broken[t] = nil
+        alongAxis("y", t.at.y); alongAxis("x", t.at.x); alongAxis("z", t.at.z)
+        local ok, data = look(t.d)
+        if T.at(t.at) and not (ok and TORCHES[data.name]) then
+            if ok and not FLUID[data.name] and not protected(data.name) then digDir(t.d) end
+            if placeTorch(t.d) then
+                stats.relit = stats.relit + 1
+            else
+                print("Couldn't put the torch back at " .. T.posString() .. "; carrying on.")
+            end
+        end
+    end
 end
 
 --------------------------------------------------------------------------
@@ -1588,6 +1645,7 @@ local function fetchTargets(which)
     end
     while out() > 0 do stepBack() end
     for _, t in ipairs(list) do targets[key(t)] = nil end
+    relight()
     alongAxis("y", start.y); alongAxis("x", start.x); alongAxis("z", start.z)
 end
 
@@ -1817,6 +1875,7 @@ local function mineSegment(z1, z2, from)
     saveProgress(#lanes + 1, z2)
     unplug()
     fetchTargets()                         -- the scanner's ore further out
+    relight()                              -- what veins knocked off
     tunnelHome()
 end
 
@@ -2212,7 +2271,8 @@ saveJob(stopped and "active" or "done")
 if not stopped then clearProgress() end
 print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled%s%s.",
     stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled,
-    lights and (", " .. stats.torches .. " torches placed") or "",
+    lights and (", " .. stats.torches .. " torches placed"
+        .. (stats.relit > 0 and (" (" .. stats.relit .. " put back after digging knocked them off)") or "")) or "",
     hasScanner and (", " .. stats.fetched .. " deposits fetched from further out") or ""))
 for _, k in ipairs(T.sortedKeys(leftBehind)) do
     print(string.format("No room to bring back %d items from home %d (z=%d).", leftBehind[k], k, homeAt(k).z))

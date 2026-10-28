@@ -316,6 +316,35 @@ check("tunnel clear", leftIn(0, 2, 0, 2, 1, 16) == 0, leftIn(0, 2, 0, 2, 1, 16) 
 checkFloor(0, 2, -1, 1, 16)
 check("back at the start", atStart())
 
+-- 11e. torches knocked off after they're placed: a scan's fetch going
+--      through a niche lit before the scan (gold 4 out level with the
+--      z=48 niche, fetched by the scan at z=53), and a vein through the
+--      block the z=48 torch hangs on (with and without a scanner; without,
+--      it's found from a lane dug after the torch).  Each torch is put
+--      back, and no floor block is left dark
+local THROUGH = { { -4, 0, 48, "minecraft:gold_ore" } }
+local UNDER = { { -1, 1, 48, "minecraft:iron_ore" }, { -2, 1, 48, "minecraft:iron_ore" },
+                { -2, 0, 48, "minecraft:iron_ore" } }
+for _, case in ipairs({ { "a fetch through a lit niche", true, THROUGH, "TORCHES_DUG" },
+                        { "a vein under a torch, with a scanner", true, UNDER, "TORCHES_DROPPED" },
+                        { "a vein under a torch, no scanner", false, UNDER, "TORCHES_DROPPED" } }) do
+    setup(stock(4, 64, 64))
+    if case[2] then table.insert(chestAt(0, 1, 0), { name = SCANNER, count = 1 }) end
+    for _, o in ipairs(case[3]) do set(o[1], o[2], o[3], ore(o[4])) end
+    startAt(); Mine.inv, Mine.files = {}, {}
+    EQ = { right = "minecraft:diamond_pickaxe" }
+    FUEL, DRY, SCANS, TORCHES_DUG, TORCHES_DROPPED = 2000, 0, 0, 0, 0
+    run("3", "3", "60")
+    local gone = 0
+    for _, o in ipairs(case[3]) do if not isOreBlock(get(o[1], o[2], o[3])) then gone = gone + 1 end end
+    check(case[1] .. ": the torch was knocked off, and put back", _G[case[4]] == 1
+        and (get(-1, 0, 48) or {}).name == "minecraft:torch" and logHas("1 put back"),
+        "dug " .. TORCHES_DUG .. ", dropped " .. TORCHES_DROPPED .. ", z=48: " .. tostring((get(-1, 0, 48) or {}).name))
+    check(case[1] .. ": the ore mined", gone == #case[3], gone .. " of " .. #case[3])
+    checkLight(0, 2, -1, 1, 60); checkFloor(0, 2, -1, 1, 60)
+    check("back at the start", atStart())
+end
+
 -- 11d. water: the tunnel runs through an underground lake (its own
 --      blocks water sources, with more round them) and then under a lake
 --      above its ceiling.  Water flows back into what it digs, so it
