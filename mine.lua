@@ -114,19 +114,24 @@
 
 local T = require("turtlelib")
 
-local JOB_FILE = T.dataPath("mine.job")
-local PROGRESS_FILE = T.dataPath("mine.seg")
-local VEIN_REACH = 4       -- how far a vein is followed out from the tunnel
-local SCAN_RADIUS = 8      -- Geo Scanner radius (free of fuel up to 8)
-local SCAN_REACH = 6       -- with a scanner: how far out from the tunnel ore is fetched
-local SCAN_EVERY = 15      -- blocks between scans along a segment's first lane
-local ROOM = 2             -- empty slots wanted before each dig
-local FILLER_KEEP = 64     -- bulk blocks kept on board for sealing...
-local FILLER_KEEP_WET = 192 -- ...once it has run out drying out water
-local FUEL_KEEP = 32       -- fuel items carried, so it tops up on the way instead of going home
-local FUEL_STOCK = 8       -- fuel items left in each home when moving on: a stock along the tunnel
-local FUEL_WORK = 100      -- fuel for some work after a trip back out
-local MAX_SPACING = 64     -- most blocks between homes
+-- Settings: files, how far it reaches, what it keeps (K.x, not locals:
+-- CC's Lua counts every enclosing function's locals against the 200 a
+-- function may have, and the main chunk has a lot)
+local K = {
+    JOB_FILE = T.dataPath("mine.job"),
+    PROGRESS_FILE = T.dataPath("mine.seg"),
+    VEIN_REACH = 4,         -- how far a vein is followed out from the tunnel
+    SCAN_RADIUS = 8,        -- Geo Scanner radius (free of fuel up to 8)
+    SCAN_REACH = 6,         -- with a scanner: how far out from the tunnel ore is fetched
+    SCAN_EVERY = 15,        -- blocks between scans along a segment's first lane
+    ROOM = 2,               -- empty slots wanted before each dig
+    FILLER_KEEP = 64,       -- bulk blocks kept on board for sealing...
+    FILLER_KEEP_WET = 192,  -- ...once it has run out drying out water
+    FUEL_KEEP = 32,         -- fuel items carried, so it tops up on the way instead of going home
+    FUEL_STOCK = 8,         -- fuel items left in each home when moving on: a stock along the tunnel
+    FUEL_WORK = 100,        -- fuel for some work after a trip back out
+    MAX_SPACING = 64,       -- most blocks between homes
+}
 
 --------------------------------------------------------------------------
 -- Arguments
@@ -296,7 +301,7 @@ local function setBox()
     LENGTH = LENGTH or math.huge
     -- a segment's bulk fits in one chest, with room to spare
     SPACING = SPACING or spacingArg
-        or math.max(8, math.min(MAX_SPACING, math.floor(27 * 64 * 0.75 / math.abs(WIDTH * HEIGHT))))
+        or math.max(8, math.min(K.MAX_SPACING, math.floor(27 * 64 * 0.75 / math.abs(WIDTH * HEIGHT))))
     WALL = WIDTH > 0 and 3 or 1             -- the wall beside the start column
     -- how far along z a torch may be from the darkest floor block: one
     -- wall reaches across the width; two walls meet in the middle
@@ -349,11 +354,11 @@ local bound
 
 local function inScan(p)
     return not bound or math.max(math.abs(p.x - bound.x), math.abs(p.y - bound.y),
-        math.abs(p.z - bound.z)) <= SCAN_RADIUS
+        math.abs(p.z - bound.z)) <= K.SCAN_RADIUS
 end
 
 local function inReach(p)
-    return p.z >= 1 and outside(p) <= (hasScanner and SCAN_REACH or VEIN_REACH) and inScan(p)
+    return p.z >= 1 and outside(p) <= (hasScanner and K.SCAN_REACH or K.VEIN_REACH) and inScan(p)
 end
 
 -- Diamonds and coal a scan shows are mined however far out, as long as
@@ -377,7 +382,7 @@ local lastHome = 0         -- the furthest home built (the supplies are there)
 
 -- The job, saved so `mine --resume` and `mine reset` know the tunnel.
 local function saveJob(state)
-    local f = fs.open(JOB_FILE, "w")
+    local f = fs.open(K.JOB_FILE, "w")
     f.write(string.format("%d %d %d %d %d %s", WIDTH, HEIGHT,
         LENGTH == math.huge and 0 or LENGTH, SPACING, lastHome, state))
     f.close()
@@ -387,14 +392,14 @@ end
 -- from there instead of going over it all again: the home it's dug from,
 -- the lane it's on, and the last block of that lane it finished.
 local function saveProgress(lane, z)
-    local f = fs.open(PROGRESS_FILE, "w")
+    local f = fs.open(K.PROGRESS_FILE, "w")
     f.write(string.format("%d %d %d", home.k, lane, z))
     f.close()
 end
 
 local function loadProgress()
-    if not fs.exists(PROGRESS_FILE) then return nil end
-    local f = fs.open(PROGRESS_FILE, "r")
+    if not fs.exists(K.PROGRESS_FILE) then return nil end
+    local f = fs.open(K.PROGRESS_FILE, "r")
     local k, lane, z = (f.readAll() or ""):match("(%d+) (%d+) (-?%d+)")
     f.close()
     if not k then return nil end
@@ -402,12 +407,12 @@ local function loadProgress()
 end
 
 local function clearProgress()
-    if fs.exists(PROGRESS_FILE) then fs.delete(PROGRESS_FILE) end
+    if fs.exists(K.PROGRESS_FILE) then fs.delete(K.PROGRESS_FILE) end
 end
 
 local function loadJob()
-    if not fs.exists(JOB_FILE) then return nil end
-    local f = fs.open(JOB_FILE, "r")
+    if not fs.exists(K.JOB_FILE) then return nil end
+    local f = fs.open(K.JOB_FILE, "r")
     local w, h, l, s, k, state = (f.readAll() or ""):match("(-?%d+) (-?%d+) (-?%d+) (%d+) (%d+) (%a+)")
     f.close()
     if not w then return nil end
@@ -420,9 +425,9 @@ end
 -- right, plus "up" and "down"), and its sides for chests ("front",
 -- "top", "bottom").
 --------------------------------------------------------------------------
-local DELTA, OPP = T.DELTA, T.OPP
-local neighbour, key, here, dist = T.neighbour, T.posKey, T.here, T.dist
-local look, placeDir, moveDir = T.look, T.placeDir, T.moveDir
+local OPP = T.OPP
+local neighbour, key, here = T.neighbour, T.posKey, T.here
+local look = T.look
 
 -- The torches it has placed, by the block each is in and the blocks it
 -- may rest on (the one behind it and the one under it); digging any of
@@ -435,8 +440,8 @@ local function digDir(d)
     if ok and torchBy[n] then broken[torchBy[n]] = true end
     return ok
 end
-local turnsTo, eachAround, dirTo, stepToward = T.turnsTo, T.eachAround, T.dirTo, T.stepToward
-local dropSide, containerOn = T.dropSide, T.containerOn
+local turnsTo = T.turnsTo
+local containerOn = T.containerOn
 
 --------------------------------------------------------------------------
 -- State
@@ -445,7 +450,7 @@ local opened = {}          -- key(p) = true: known to be air (dug or visited)
 local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
-local fillerKeep = FILLER_KEEP  -- FILLER_KEEP_WET once water has used it up
+local fillerKeep = K.FILLER_KEEP  -- FILLER_KEEP_WET once water has used it up
 local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, relit = 0, homes = 0, fetched = 0, wet = 0 }
 -- From the Geo Scanner (see there): the world direction of the tunnel's +z
 -- once lined up, this segment's blocks touching the tunnel ("rock",
@@ -461,7 +466,7 @@ local function scanSays(p)
     local k = scanned[key(p)]
     if k then return k end
     for _, o in ipairs(scanFrom) do
-        if math.max(math.abs(p.x - o.x), math.abs(p.y - o.y), math.abs(p.z - o.z)) <= SCAN_RADIUS then
+        if math.max(math.abs(p.x - o.x), math.abs(p.y - o.y), math.abs(p.z - o.z)) <= K.SCAN_RADIUS then
             return "clear"
         end
     end
@@ -490,12 +495,12 @@ local trip                 -- defined below
 local freeBefore = 0
 local function room()
     local free = T.freeSlots()
-    if free ~= freeBefore or free < ROOM then
+    if free ~= freeBefore or free < K.ROOM then
         T.tidyInventory()
         free = T.freeSlots()
     end
     freeBefore = free
-    if not inTrip and free < ROOM then trip("Inventory nearly full") end
+    if not inTrip and free < K.ROOM then trip("Inventory nearly full") end
 end
 
 local function isSource(data)
@@ -557,7 +562,7 @@ local function go(d)
             end
         end
         local into = wet or (ok and FLUID[data.name] and data)
-        if moveDir(d) then
+        if T.moveDir(d) then
             wetAt, wetLevel = nil, nil
             if into then
                 wetAt = key(T.pos)
@@ -574,7 +579,7 @@ local function go(d)
             -- sources next to it too)
             if wet then
                 local cut = 0
-                eachAround(OPP[d], function(e)
+                T.eachAround(OPP[d], function(e)
                     if (not wade or e == "up" or e == "down" or not inBox(neighbour(e))) and cutOff(e) then
                         cut = cut + 1
                     end
@@ -602,7 +607,7 @@ end
 -- place it against, a turtle places it against itself).
 local function putFiller(d)
     if not T.selectItem(function(n) return FILLER[n] end) then return false end
-    local ok = placeDir(d)
+    local ok = T.placeDir(d)
     turtle.select(1)
     return ok
 end
@@ -703,11 +708,11 @@ local function stopFlow(level)
         if sealed or source or not up then break end
         local ok, data = look(up)
         level = ok and tonumber(data.state and data.state.level) or 0
-        if not moveDir(up) then break end
+        if not T.moveDir(up) then break end
         path[#path + 1] = up
         unfed[key(T.pos)] = "traced"
     end
-    for i = #path, 1, -1 do moveDir(OPP[path[i]]) end
+    for i = #path, 1, -1 do T.moveDir(OPP[path[i]]) end
     return sealed
 end
 
@@ -730,14 +735,14 @@ function stem(level)
     return sealed
 end
 
-local warnedWet = false
+local warned = {}          -- what it has warned about once already
 function dry(d)
     for _ = 1, 4 do
         local ok, data = look(d)
         if not (ok and FLUID[data.name]) then return true end
         stats.wet = stats.wet + 1
         if not T.selectItem(function(n) return FILLER[n] end) then
-            fillerKeep = FILLER_KEEP_WET   -- wet ground: carry more from now on
+            fillerKeep = K.FILLER_KEEP_WET   -- wet ground: carry more from now on
             trip("Out of blocks to seal water with")
             ok, data = look(d)
             if not (ok and FLUID[data.name]) then return true end
@@ -752,19 +757,19 @@ function dry(d)
         -- something feeds it: step in and cut it off, or, with nothing
         -- beside it to cut off, follow the flow to where it comes in
         local level = tonumber(data.state and data.state.level) or 0
-        if not moveDir(d) then break end
+        if not T.moveDir(d) then break end
         local cut = 0
-        eachAround(OPP[d], function(e)
+        T.eachAround(OPP[d], function(e)
             if cutOff(e) then cut = cut + 1 end
         end)
         if cut == 0 and level > 0 and stem(level) then cut = 1 end
         local backed = false
         if d ~= "up" and d ~= "down" then T.face(d); backed = T.back() end
-        if not backed then moveDir(OPP[d]) end
+        if not backed then T.moveDir(OPP[d]) end
         if cut == 0 then return true end   -- nothing feeds it: it drains away
     end
-    if not warnedWet then
-        warnedWet = true
+    if not warned.wet then
+        warned.wet = true
         print("Couldn't stop the water at " .. T.posString() .. " (out of bulk blocks?); working through it.")
     end
     return false
@@ -779,7 +784,6 @@ end
 -- fill a hole (a crevasse, a cave, where floor ore was) or a fluid with a
 -- bulk block, digging out grass, cobwebs and the like first.  Out of
 -- bulk blocks, it fetches more from its home.
-local warnedFloor = false
 local function fill(d)
     local ok, data = look(d)
     if ok and not leaky(data) then return true end
@@ -789,8 +793,8 @@ local function fill(d)
         stats.filled = stats.filled + 1
         return true
     end
-    if not warnedFloor then
-        warnedFloor = true
+    if not warned.floor then
+        warned.floor = true
         print("Couldn't fill a hole in the floor at (" .. key(neighbour(d)) .. "); no bulk blocks left.")
     end
     return false
@@ -937,7 +941,7 @@ local function chestCounts(side) return T.containerCounts(side) or {} end
 local function restockKit()
     for _, want in ipairs({ { side = home.bulk, set = FILLER, keep = fillerKeep },
                             { side = home.val, set = TORCHES, keep = TORCH_KEEP },
-                            { side = home.val, set = T.fuel, keep = FUEL_KEEP } }) do
+                            { side = home.val, set = T.fuel, keep = K.FUEL_KEEP } }) do
         local test = function(n) return want.set[n] end
         local counts = chestCounts(want.side)
         for _, name in ipairs(T.sortedKeys(counts)) do
@@ -946,7 +950,7 @@ local function restockKit()
             if have >= want.keep then break end
             if want.set[name] then
                 T.restockFrom(want.side, name, T.countItem(name) + math.min(n, want.keep - have),
-                    { quiet = true, room = ROOM })
+                    { quiet = true, room = K.ROOM })
             end
         end
     end
@@ -970,8 +974,8 @@ local function unload(only)
             elseif TORCHES[it.name] and torches < TORCH_KEEP and only ~= "everything" then
                 keep = math.min(it.count, TORCH_KEEP - torches)
                 torches = torches + keep
-            elseif T.fuel[it.name] and fuel < FUEL_KEEP and only ~= "everything" then
-                keep = math.min(it.count, FUEL_KEEP - fuel)
+            elseif T.fuel[it.name] and fuel < K.FUEL_KEEP and only ~= "everything" then
+                keep = math.min(it.count, K.FUEL_KEEP - fuel)
                 fuel = fuel + keep
             elseif isScanner(it.name) and only ~= "everything" then
                 keep = it.count
@@ -979,7 +983,7 @@ local function unload(only)
             local bulk = isBulk(it)
             if it.count > keep and (bulk or only == nil or only == "everything") then
                 turtle.select(s)
-                dropSide(bulk and home.bulk or home.val, it.count - keep)
+                T.dropSide(bulk and home.bulk or home.val, it.count - keep)
                 if turtle.getItemCount(s) > keep then fits = false end
             end
         end
@@ -1004,7 +1008,7 @@ local function refuel() T.refuelFrom(home.val, fuelGoal + home.z) end
 -- Enough fuel to do some work and still get back to the start?  The fuel
 -- it carries counts: the tank is topped up from it on the way (T.ensureFuel).
 local function fuelToGoOn(extra)
-    local need = home.z + T.cfg.fuelMargin + (extra or FUEL_WORK)
+    local need = home.z + T.cfg.fuelMargin + (extra or K.FUEL_WORK)
     return T.hasFuel(need) or T.totalFuelAvailable() >= need
 end
 
@@ -1039,7 +1043,7 @@ end
 -- (and the next tunnel's turtle).  Returns how many it took, and whether
 -- any are left to come back for (the stock doesn't count).
 local function takeSupplies()
-    local took, stock = 0, home.k > 0 and FUEL_STOCK or 0
+    local took, stock = 0, home.k > 0 and K.FUEL_STOCK or 0
     local counts = chestCounts(home.val)
     local function leaveOf(name, n)
         if not T.fuel[name] then return 0 end
@@ -1058,7 +1062,7 @@ local function takeSupplies()
             end
         end
     end
-    counts, stock = chestCounts(home.val), home.k > 0 and FUEL_STOCK or 0
+    counts, stock = chestCounts(home.val), home.k > 0 and K.FUEL_STOCK or 0
     for _, name in ipairs(T.sortedKeys(counts)) do
         if isSupply(name) and counts[name] > leaveOf(name, counts[name]) then return took, true end
     end
@@ -1091,7 +1095,7 @@ local function placeChest(d)
         if not digDir(d) then return false end
     end
     if not T.selectItem(function(n) return CHEST_ITEMS[n] end) then return false end
-    local ok = placeDir(d)
+    local ok = T.placeDir(d)
     turtle.select(1)
     return ok
 end
@@ -1258,11 +1262,11 @@ end
 -- it has nothing to rest on); filed in torchBy.
 local function placeTorch(d)
     local function isTorch(n) return TORCHES[n] end
-    local placed = T.selectItem(isTorch) and placeDir(d)
-    if not placed and supportNiche(d) then placed = T.selectItem(isTorch) and placeDir(d) end
+    local placed = T.selectItem(isTorch) and T.placeDir(d)
+    if not placed and supportNiche(d) then placed = T.selectItem(isTorch) and T.placeDir(d) end
     turtle.select(1)
     if not placed then return false end
-    local niche, v = neighbour(d), DELTA[d]
+    local niche, v = neighbour(d), T.DELTA[d]
     local t = { at = here(), d = d }
     torchBy[key(niche)] = t
     torchBy[key({ x = niche.x + v[1], y = niche.y, z = niche.z + v[3] })] = t
@@ -1271,7 +1275,6 @@ local function placeTorch(d)
     return true
 end
 
-local warnedTorch = false
 local function lightHere()
     if not lights or T.pos.y ~= Y0 or not torchAt(T.pos.z) then return end
     local d
@@ -1280,8 +1283,8 @@ local function lightHere()
     else return end
     local function isTorch(n) return TORCHES[n] end
     if T.countItem(isTorch) == 0 then
-        if not warnedTorch then
-            warnedTorch = true
+        if not warned.torch then
+            warned.torch = true
             if stats.torches == 0 then
                 print("No torches: the tunnel isn't being lit (put some in the start's top chest).")
             else
@@ -1315,12 +1318,12 @@ local function lightHere()
     -- lava or water a scan saw next to the niche would get in and put the
     -- torch out: step in and seal it first
     local niche, wet = neighbour(d), false
-    for _, v in pairs(DELTA) do
+    for _, v in pairs(T.DELTA) do
         local m = { x = niche.x + v[1], y = niche.y + v[2], z = niche.z + v[3] }
         if not (m.x == T.pos.x and m.y == T.pos.y and m.z == T.pos.z) and scanSays(m) == "fluid" then wet = true end
     end
     if wet and go(d) then
-        eachAround(OPP[d], cutOff)
+        T.eachAround(OPP[d], cutOff)
         retreat(d)
     end
     if placeTorch(d) then
@@ -1371,7 +1374,6 @@ end
 -- a diamond or coal vein to its end.  Low on fuel, it fetches the coal first, and
 -- burns it.
 --------------------------------------------------------------------------
-local warnedScan = false
 
 -- Swap the scanner in for the pickaxe (the other side keeps its chunk
 -- controller or whatever it has), scan, and swap back.  If it's
@@ -1417,7 +1419,7 @@ local function scanBlocks()
     local blocks, err
     if found then
         for _ = 1, 3 do
-            local ok, a, b = pcall(peripheral.call, side, method, SCAN_RADIUS)
+            local ok, a, b = pcall(peripheral.call, side, method, K.SCAN_RADIUS)
             if ok then blocks, err = a, b else err = a end
             if blocks then break end
             sleep(1)                       -- the scanner's cooldown
@@ -1458,7 +1460,7 @@ local function relative(blocks)
     blocks = whole
     local far = false
     for _, e in ipairs(blocks) do
-        if math.abs(e.x) > SCAN_RADIUS or math.abs(e.y) > SCAN_RADIUS or math.abs(e.z) > SCAN_RADIUS then
+        if math.abs(e.x) > K.SCAN_RADIUS or math.abs(e.y) > K.SCAN_RADIUS or math.abs(e.z) > K.SCAN_RADIUS then
             far = true
             break
         end
@@ -1535,7 +1537,7 @@ local function record(blocks, z1, z2, toCell)
         if kind ~= "rock" then scanned[k] = kind end
         local out = outside(p)
         if out == 1 then known[k] = kind end
-        local zTop = z2 == LENGTH and z2 + SCAN_REACH or z2
+        local zTop = z2 == LENGTH and z2 + K.SCAN_REACH or z2
         if kind == "ore" and out >= 1 and p.z >= z1 and p.z <= zTop and not opened[k]
                 and (inReach(p) or goesFar(e.name)) then
             targets[k] = { x = p.x, y = p.y, z = p.z, coal = e.name:find("coal") ~= nil,
@@ -1544,11 +1546,11 @@ local function record(blocks, z1, z2, toCell)
     end
     -- the blocks touching the tunnel that the scan saw no block in: air
     local function air(x, y, z)
-        if math.abs(x - T.pos.x) > SCAN_RADIUS or math.abs(y - T.pos.y) > SCAN_RADIUS then return end
+        if math.abs(x - T.pos.x) > K.SCAN_RADIUS or math.abs(y - T.pos.y) > K.SCAN_RADIUS then return end
         local k = key({ x = x, y = y, z = z })
         if not seen[k] then known[k] = "air" end
     end
-    for z = math.max(z1, T.pos.z - SCAN_RADIUS), math.min(z2, T.pos.z + SCAN_RADIUS) do
+    for z = math.max(z1, T.pos.z - K.SCAN_RADIUS), math.min(z2, T.pos.z + K.SCAN_RADIUS) do
         for y = Y0, Y1 do air(X0 - 1, y, z); air(X1 + 1, y, z) end
         for x = X0, X1 do air(x, Y0 - 1, z); air(x, Y1 + 1, z) end
     end
@@ -1592,9 +1594,9 @@ local function fetchTargets(which)
     -- what's dug
     local function plan(t)
         local q = nearest(t)
-        local cost, at = out() + dist(way[0], q) + 2 * dist(q, t), 0
+        local cost, at = out() + T.dist(way[0], q) + 2 * T.dist(q, t), 0
         for i = 1, out() do
-            local c = out() - i + 2 * dist(way[i], t)
+            local c = out() - i + 2 * T.dist(way[i], t)
             if c < cost then cost, at = c, i end
         end
         return cost, at
@@ -1621,21 +1623,21 @@ local function fetchTargets(which)
         end
         bound = t.from
         local ore = stats.ore
-        for _ = 1, 3 * SCAN_RADIUS do
+        for _ = 1, 3 * K.SCAN_RADIUS do
             if opened[key(t)] then break end
-            if dist(T.pos, t) <= 1 then
-                local ok, data = look(dirTo(t))
-                if ok and isOre(data) then mineVein(dirTo(t)) end
+            if T.dist(T.pos, t) <= 1 then
+                local ok, data = look(T.dirTo(t))
+                if ok and isOre(data) then mineVein(T.dirTo(t)) end
                 break
             end
-            local d = stepToward(t)
+            local d = T.stepToward(t)
             local ok, data = look(d)
             if ok and isOre(data) then mineVein(d)
             elseif ok and FLUID[data.name] and not seal(d) then break end
             if not go(d) then break end
             trail[#trail + 1] = d
             way[out()] = here()
-            eachAround(OPP[d], function(e)
+            T.eachAround(OPP[d], function(e)
                 if scanSays(neighbour(e)) == "fluid" then cutOff(e) end
             end)
         end
@@ -1655,14 +1657,14 @@ local function scanNow(z1, z2)
     local blocks, err = scanBlocks()
     if blocks then blocks, err = relative(blocks) end
     if not blocks then
-        if not warnedScan then
-            warnedScan = true
+        if not warned.scan then
+            warned.scan = true
             print("Geo scanner: " .. tostring(err) .. "; checking the walls by hand until it works.")
         end
         return
     end
-    if warnedScan then
-        warnedScan = false
+    if warned.scan then
+        warned.scan = false
         print("Geo scanner working again.")
     end
     local toCell
@@ -1674,7 +1676,7 @@ local function scanNow(z1, z2)
         -- where it dug are no sign: gravel falls, and water and lava,
         -- which don't count, flow in.)
         local function cellsFor(dir)
-            local ahead, right = DELTA[dir], DELTA[(dir + 1) % 4]
+            local ahead, right = T.DELTA[dir], T.DELTA[(dir + 1) % 4]
             return function(e)
                 return { x = T.pos.x + e.f * ahead[1] + e.r * right[1], y = T.pos.y + e.u,
                          z = T.pos.z + e.f * ahead[3] + e.r * right[3] }
@@ -1695,8 +1697,8 @@ local function scanNow(z1, z2)
             for k = 1, 3 do other = math.min(other, hitsFor(cellsFor((T.dir + k) % 4))) end
         end
         if hits >= 4 and other * 2 < hits then
-            if not warnedScan then
-                warnedScan = true
+            if not warned.scan then
+                warned.scan = true
                 print("Geo scanner: the scan puts blocks where it has dug, so its heading looks off; skipping scans.")
             end
             return
@@ -1739,7 +1741,7 @@ local function unplug()
         for _, q in pairs(plugs) do list[#list + 1] = q end
         if #list == 0 then break end
         table.sort(list, function(a, b)
-            local da, db = dist(a, T.pos), dist(b, T.pos)
+            local da, db = T.dist(a, T.pos), T.dist(b, T.pos)
             if da ~= db then return da < db end
             return key(a) < key(b)             -- ties the same every run
         end)
@@ -1858,8 +1860,8 @@ local function mineSegment(z1, z2, from)
             local scanLane = i == startLane or (from and i == startLane + 1)
             for z = first, to, dz do
                 if not ok then break end
-                if hasScanner and scanLane and ((z - z1) % SCAN_EVERY == math.floor(SCAN_EVERY / 2)
-                        or (z == z2 and (not lastScan or math.abs(z - lastScan) > SCAN_RADIUS))) then
+                if hasScanner and scanLane and ((z - z1) % K.SCAN_EVERY == math.floor(K.SCAN_EVERY / 2)
+                        or (z == z2 and (not lastScan or math.abs(z - lastScan) > K.SCAN_RADIUS))) then
                     scanNow(z1, z2)
                     lastScan = z
                 end
@@ -1914,7 +1916,7 @@ local function collect(side)
                 local s = cheapestSlot(value(name))
                 if not s then break end
                 turtle.select(s)
-                if not dropSide(side) then break end   -- swap it for something better
+                if not T.dropSide(side) then break end   -- swap it for something better
             end
             local before = T.countItem(name)
             T.restockFrom(side, name, before + chestCounts(side)[name], { quiet = true, room = 0 })
@@ -1974,7 +1976,7 @@ local function haul()
     local last = homeAt(lastHome)
     for _ = 1, 20 do
         if home.k == 0 then
-            local need = 2 * last.z + T.cfg.fuelMargin + FUEL_WORK
+            local need = 2 * last.z + T.cfg.fuelMargin + K.FUEL_WORK
             if not T.hasFuel(need) then T.refuelFrom("top", need) end
             if not T.hasFuel(need) then
                 print(string.format("A trip out to home %d and back takes %d fuel; it has %d. Put fuel in the top chest.",
@@ -2014,7 +2016,7 @@ local function checkHeading(dugTo)
         solid[a] = seen and not FLUID[seen.name]
     end
     local function expect(t)
-        local v = DELTA[t]
+        local v = T.DELTA[t]
         local n = { x = T.pos.x + v[1], y = T.pos.y, z = T.pos.z + v[3] }
         if n.z < 1 then return nil end
         if inBox(n) then return n.z <= dugTo and "air" or nil end
@@ -2201,7 +2203,7 @@ T.withTool(pickaxe, function()
             local last = homeAt(job.homes)
             -- the walk out and back is longer than a segment's work: fill
             -- the tank for it from the start's chest first
-            T.refuelFrom(home.val, 2 * last.z + T.cfg.fuelMargin + FUEL_WORK)
+            T.refuelFrom(home.val, 2 * last.z + T.cfg.fuelMargin + K.FUEL_WORK)
             if not fuelToGoOn(2 * last.z) then stop("Not enough fuel to get back out to home " .. last.k .. ".") end
             inTrip, repairing = true, true  -- through tunnel dug before: water there is getting in
             takeSupplies()
