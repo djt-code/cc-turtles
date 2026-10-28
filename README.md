@@ -9,7 +9,7 @@ upgrade in software.
 | `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
 | `farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot, sugar cane) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
 | `mine.lua` | Digs a tunnel of any width and height, as long as asked or as long as its supplies last, following every ore vein it touches. It builds a new home from chests every so often, carries its supplies forward, and brings the valuables back to the start at the end. |
-| `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
+| `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
@@ -647,12 +647,31 @@ step (moves, turns, digs and transfers all take 8 ticks).
 `T.goTo` learns obstacles as it bumps into them and re-plans with BFS; it returns
 `false` only when no route exists through the known map.
 
+Beyond columns, the library has six directions: `0..3` as `T.dir` plus
+`"up"` and `"down"`. `T.look(d)`, `T.digDir(d)`, `T.placeDir(d)` and
+`T.moveDir(d)` face `d` first (up and down need no turn); `T.turnsTo(d)`
+says how many turns that takes, `T.eachAround(skip, fn)` goes round the
+turtle fewest turns first, `T.stepToward(p)` picks the step toward a
+position that turns least. Positions are `{ x, y, z }` tables: `T.here()`,
+`T.at(p)`, `T.neighbour(d)`, `T.dirTo(p)`, `T.dist(a, b)`, `T.posKey(p)`.
+Chest sides are CC's `"front"`, `"top"` and `"bottom"`: `T.dropSide`,
+`T.suckSide`, `T.inspectSide`, `T.containerOn(side)`, `T.sideDir(side)`.
+Items are named or picked by a test: `T.selectItem(what)`,
+`T.countItem(what)` and `T.findSlot(what)` take a name or a
+`function(name, item)`; `T.containerCounts(side)` gives everything a chest
+holds; `T.findTool("_pickaxe$")` finds the equipped or carried tool.
+`T.hasFuel(n)` is the "unlimited or at least n" check, `T.setDir(d)` fixes
+a heading a program has worked out, `T.lookAround()` turns on the spot to
+see all four sides, and `T.sortedKeys(t)` gives a table's keys in a set
+order (so what a program does doesn't depend on `pairs`).
+
 ## Simulators
 
 `sim/` holds offline simulators for testing changes without a Minecraft
-server: each mocks the CC:Tweaked APIs around a small block world, runs the
-real program and prints what happened. They need Python and
-[lupa](https://pypi.org/project/lupa/) (`pip install lupa`):
+server: each sets a scenario up in one of the mock worlds in `sim/lib/` (a
+farm, rock to tunnel through, a composter: the CC:Tweaked APIs around a
+small block world), runs the real program and prints what happened. They
+need Python and [lupa](https://pypi.org/project/lupa/) (`pip install lupa`):
 
 ```
 python sim/run.py                  # all of them, with a summary

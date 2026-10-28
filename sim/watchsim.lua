@@ -29,12 +29,15 @@ local here = realFs.getDir(shell.getRunningProgram())
 local root = realFs.getDir(here)
 local S = dofile(realFs.combine(here, "lib/sandbox.lua"))
 
--- Does the simulator at `path` publish a world to show?
+-- Does the simulator at `path` publish a world to show?  The farm and mine
+-- fixtures do (SIM_WORLD).
 local function showable(path)
     local f = realFs.open(path, "r")
     local src = f.readAll()
     f.close()
     return src:find("SIM_WORLD", 1, true) ~= nil
+        or src:find('require("farmworld")', 1, true) ~= nil
+        or src:find('require("mineworld")', 1, true) ~= nil
 end
 
 local args = { ... }

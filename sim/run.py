@@ -8,11 +8,12 @@
 On a ComputerCraft computer, use sim/runsim.lua instead (sim/watchsim.lua
 plays one out on a monitor).
 
-Each simulator is a Lua script that mocks the CC:Tweaked APIs it needs
-(turtle, peripheral, fs, sleep, ...) around a small block world, runs the
-real program and prints what happened.  It gets the repo root as its
-argument (`local PROJ = ...`).  Each one runs in its own process so a hang
-only costs that one simulator.
+Each simulator is a Lua script that sets a scenario up in one of the mock
+worlds in lib/ (farmworld, mineworld, composter: the CC:Tweaked APIs the
+program needs, around a small block world), runs the real program and
+prints what happened.  It gets the repo root as its argument (`local PROJ
+= ...`).  Each one runs in its own process so a hang only costs that one
+simulator.
 """
 import glob
 import os
@@ -41,7 +42,8 @@ def run_one(path):
 def check():
     load = lua().eval("function(s, n) local f, e = load(s, '@' .. n); return e end")
     bad = 0
-    for path in sorted(glob.glob(os.path.join(ROOT, "*.lua")) + glob.glob(os.path.join(HERE, "*.lua"))):
+    for path in sorted(glob.glob(os.path.join(ROOT, "*.lua")) + glob.glob(os.path.join(HERE, "*.lua"))
+                       + glob.glob(os.path.join(HERE, "lib", "*.lua"))):
         err = load(open(path, encoding="utf-8").read(), os.path.relpath(path, ROOT))
         print(("FAIL " + err) if err else ("ok   " + os.path.relpath(path, ROOT)))
         bad += err is not None

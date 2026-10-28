@@ -1,11 +1,12 @@
 # Simulators
 
 Offline tests for the turtle programs. Each `.lua` file here is a
-self-contained script: it mocks the CC:Tweaked APIs it needs (`turtle`,
-`peripheral`, `fs`, `sleep`, `os.pullEvent`, ...) around a small block
-world, runs the real program from the repo root, and prints the program's
-output plus a summary of the world afterwards (lanes, crops, chest
-contents, moves). The world is in memory; nothing is written to disk.
+scenario: it sets up one of the mock worlds in `lib/`, runs the real
+program from the repo root, and prints the program's output plus a summary
+of the world afterwards (lanes, crops, chest contents, moves). The mocks
+replace the CC:Tweaked APIs the programs use (`turtle`, `peripheral`,
+`fs`, `sleep`, `os.pullEvent`, ...) around a small block world in memory;
+nothing is written to disk.
 
 ```
 pip install lupa
@@ -117,7 +118,28 @@ reading: compare the numbers before and after a change (`git stash`, run,
 | `autocompost_no_chest` | autocompost | no chest and a backed-up composter: ends idle instead of spinning |
 | `diskclone_disks` | diskclone | blank, labelled and non-empty disks, `--force`, a too-small disk, a disk already in the drive, no `LABEL` file |
 
-The farm simulators share the same world layout: home at `(0,0,0)` facing
-`+z`, the chest below home, farmland at `y=-2`, crops at `y=-1`. Each file
-carries its own copy of the mock, so one can model a mechanic (such as
-infinite water in `farm_clone`) without changing the others.
+## The library
+
+The mocks live in `lib/`, apart from the scenarios:
+
+| File | What it holds |
+|---|---|
+| `lib/mock.lua` | The pieces every world is built from: the turtle's inventory stored as the game stores it (a pickup goes into the first slot from the selected one that is empty or matches; `SPLIT` counts second stacks it starts, `SPILLED` what didn't fit), containers (drop merges first, suck takes the first stack, `pushItems`), moving and turning with fuel (`FUEL`, `LOWEST`, `DRY`), looking, acting each way, upgrades (`EQ`), `fs` over a table of files, print capture, the `==` report line (`M.runner`) and `M.check`. |
+| `lib/farmworld.lua` | A farm for farm.lua: `F.build{width, length, lanes, crops}` lays out strips of crops or `"cane"` between water lanes over a dirt floor, with the chest under home; the hoe harvests, cuts cane and tills through the gap; seeds, bone meal, dirt, water buckets and empty buckets place as in the game; water at lane level follows the infinite-source rule (`F.STUCK` keeps a cell from refilling); a hopper behind home takes compost; `sleep` runs the clock (`CLOCK`, `STOP_AT`). `F.stock`, `F.ripen`, `F.show`, `F.chestLine`, `F.cropCount`, `F.badLaneTiles`, `F.caneHeights` for scenarios. |
+| `lib/mineworld.lua` | Rock for mine.lua: mixed stone wherever nothing is set, chests, ore (`Mine.features` for the standard veins, lava and gravel), falling gravel, water that flows with the game's timing (`WATERY`), a Geo Scanner (`SCANNER`, `SCAN_TURN`, `WORLD_COORDS`), and the checks: `leftIn`, `checkFloor`, `checkLight`, `checkOres`, `checkLava`, `checkStart`, `checkHomes`, `wetIn`, `torchesIn`. `STOP_AT_DIG` stops a run as Ctrl+T would. |
+| `lib/composter.lua` | A turtle on a composter for autocompost.lua: the composter, the hopper under it (`HOPPER_STOPS_AT` backs it up) and an optional chest in front. |
+| `lib/sandbox.lua` | What `runsim` and `watchsim` run a simulator in on a CC computer. |
+
+Each world is a module (`local F = require("farmworld")`) that installs the
+mocked globals when loaded and returns its state: `F.inv` (the turtle's
+slots), `F.chest`, `F.files`, `F.P` (where it is and faces), `F.moves`,
+`F.get`/`F.set` for blocks. Knobs and counters the scenarios set and read
+(`FUEL`, `EQ`, `WATERY`, `SPILLED`, ...) are globals, listed at the top of
+each file. A scenario builds a world, puts things in it, runs the program
+(`F.runner(PROJ)` gives the `run(...)` that prints the `==` line) and
+prints or checks what came of it; `turtlelib_stop` and `diskclone_disks`
+need no world and carry their own small mocks.
+
+All the farm scenarios share one layout: home at `(0,0,0)` facing `+z`,
+the chest below home, farmland at `y=-2`, crops at `y=-1`, the dirt floor
+at `y=-3`.
