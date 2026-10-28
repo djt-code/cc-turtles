@@ -356,11 +356,21 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   the start's top chest with chests and fuel and run `mine --resume`. It
   carries the new supplies out to the last home and carries on from there.
   Run from the last home (where `mine reset` leaves it), it just carries on
-  from there. Run from an earlier home (`mine reset --home N`), it goes over
-  the tunnel from that home again. It digs out whatever's in the way, dries
-  out any water and seals it off, and passes the homes already built
-  without building them again, then carries on past the last one. Use this
-  when part of the tunnel has flooded. To start a fresh tunnel somewhere
+  from there. It keeps a log of how far it got with the segment it's
+  digging (`mine.seg`: the lane, and the block along it), so it carries on
+  from where it stopped. It doesn't dig or look over the lanes it finished
+  again. Run from an earlier home (`mine reset --home N`), it goes over the
+  segments from that home on, which are dug already, without digging them
+  again, and passes the homes already built without building them again.
+  Then it carries on past the last one. Use this when part of the tunnel
+  has flooded.
+- **Fixing water on resume:** water in tunnel it dug before is getting in
+  from somewhere. So whatever it goes over again on a resume (the segments
+  from an earlier home, and the finished part of the segment it carries on
+  with) it walks first along the bottom lanes, where water ends up. If
+  that finds any, it walks all the lanes too. It follows any water it finds
+  to where it comes in, a hole in the ceiling say, and seals that. It puts
+  back torches that were washed away. To start a fresh tunnel somewhere
   else instead, add `--new`.
 - **Haul:** `mine haul` shuttles the valuables in the homes back to the start
   whenever you like. Run it from the start or from the last home. It walks
@@ -398,7 +408,10 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   nothing beside it feeds is left to drain away the first time. If it's
   there again on a later pass, it's coming from further off, so the turtle
   follows it upstream along the tunnel, at most as far as water flows, and
-  seals where it comes in.
+  seals where it comes in. Falling water always has water above feeding it,
+  so it follows that at once. It doesn't put a torch where it has just
+  stepped through water until it has stopped the water, so the torch isn't
+  washed away.
 - **Keeping fluid out as it digs:** a turtle in a block keeps fluid out of
   it, and only a block touching the walls, floor or ceiling can let fluid
   in. Every such block is on one of its lanes, and it only opens them from

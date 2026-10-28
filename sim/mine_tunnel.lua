@@ -263,6 +263,11 @@ local function chestAt(x, y, z)
     return b and b.inv
 end
 local function digAt(x, y, z)
+    if STOP_AT_DIG and (DIGS or 0) >= STOP_AT_DIG then    -- as if Ctrl+T
+        STOP_AT_DIG = nil
+        STOPPED_HERE = true
+        error("Terminated", 0)
+    end
     local b = get(x, y, z)
     if not b or passable(b) or b.inv or b.name == "minecraft:bedrock" then return false end
     set(x, y, z, nil)
@@ -547,7 +552,9 @@ local function run(...)
     for _, l in ipairs(log) do
         if not l:find("^Segment ") then realPrint("   " .. l) end
     end
-    if not ok then realPrint("   ERROR: " .. tostring(err)) end
+    if not ok and STOPPED_HERE and err == "Terminated" then realPrint("   (stopped, as if by Ctrl+T)")
+    elseif not ok then realPrint("   ERROR: " .. tostring(err)) end
+    STOPPED_HERE = nil
     realPrint(string.format("   ends at (%d,%d,%d) facing %d", P.x, P.y, P.z, P.d))
 end
 local function logHas(pat)
@@ -1193,6 +1200,64 @@ for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then l
 check("followed the flow to the wall and sealed it: no water in the tunnel",
     spread > 5 and left == 0 and not isWater(get(3, 0, 26)), spread .. " floor blocks wet before, " .. left .. " after")
 check("finished", logHas("^Done"))
+
+-- 13f. stopped (Ctrl+T) partway through a segment; then a hole opens in
+--      the ceiling over what's dug, with water above, which pours in and
+--      spreads (washing torches away).  `mine reset` and `mine --resume`:
+--      it carries on from where it stopped (from its log of the segment,
+--      not going over the lanes it finished), and on the way along the
+--      bottom of what it dug it follows the water up to the hole and
+--      seals it, and puts the torches back
+local function holeWorld()
+    setup(stock(4, 64, 64))
+    for _ = 1, 3 do table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 }) end
+    startAt(); inv, files = {}, {}
+    EQ = { right = "minecraft:diamond_pickaxe" }
+    FUEL, DRY = 3000, 0
+end
+holeWorld()
+run("3", "3", "40")
+local fullTurns = turns
+-- stopped and resumed with no water about: about the turns of the whole
+-- tunnel between the two runs (it doesn't go over the finished lanes again)
+holeWorld()
+STOP_AT_DIG = 200
+run("3", "3", "40")
+STOP_AT_DIG = nil
+local firstTurns = turns
+run("reset")
+run("--resume")
+check("stopped and resumed: about the turns of the whole tunnel, not more",
+    firstTurns + turns < fullTurns * 1.25, firstTurns .. " + " .. turns .. " turns, " .. fullTurns .. " in one go")
+check("tunnel clear", leftIn(0, 2, 0, 2, 1, 40) == 0, leftIn(0, 2, 0, 2, 1, 40) .. " blocks left")
+holeWorld()
+STOP_AT_DIG = 200
+run("3", "3", "40")
+STOP_AT_DIG = nil
+for x = -1, 3 do for z = 5, 11 do set(x, 4, z, { name = "minecraft:stone" }) end end
+set(1, 3, 8, { name = "minecraft:water", level = 0 })   -- the hole, water standing in it
+set(1, 4, 8, { name = "minecraft:water", level = 0 })
+WATERY, WASHED = true, 0
+flow(1, 3, 8)
+settleWater()
+local wetBefore = 0
+for x = 0, 2 do for z = 1, 40 do if isWater(get(x, 0, z)) then wetBefore = wetBefore + 1 end end end
+run("reset")
+WASHED = 0
+run("--resume")
+WATERY = false
+local wetAfter = 0
+for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then wetAfter = wetAfter + 1 end end end end
+check("carried on from its log of the segment", logHas("Carrying on with lane"))
+check("found the water from the ceiling, followed it up and sealed the hole",
+    wetBefore > 3 and wetAfter == 0 and not isWater(get(1, 3, 8)),
+    wetBefore .. " floor blocks wet before, " .. wetAfter .. " tunnel blocks after")
+local torches = 0
+for x = -1, 3 do for z = 1, 40 do if (get(x, 0, z) or {}).name == "minecraft:torch" then torches = torches + 1 end end end
+check("no torch washed away after the resume, and they're all up", WASHED == 0 and torches >= 2,
+    WASHED .. " washed away, " .. torches .. " up")
+check("tunnel clear", leftIn(0, 2, 0, 2, 1, 40) == 0, leftIn(0, 2, 0, 2, 1, 40) .. " blocks left")
+check("back at the start", atStart())
 
 -- 14. in the middle of a 3-wide tunnel every way is open, so it can't
 --     tell: it goes by the (wrong) saved heading, but stops, finding no

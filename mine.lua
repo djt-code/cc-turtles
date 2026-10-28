@@ -107,6 +107,7 @@
 local T = require("turtlelib")
 
 local JOB_FILE = T.dataPath("mine.job")
+local PROGRESS_FILE = T.dataPath("mine.seg")
 local VEIN_REACH = 4       -- how far a vein is followed out from the tunnel
 local SCAN_RADIUS = 8      -- Geo Scanner radius (free of fuel up to 8)
 local SCAN_REACH = 6       -- with a scanner: how far out from the tunnel ore is fetched
@@ -351,6 +352,28 @@ local function saveJob(state)
     f.close()
 end
 
+-- How far the segment being dug has got, so `mine --resume` carries on
+-- from there instead of going over it all again: the home it's dug from,
+-- the lane it's on, and the last block of that lane it finished.
+local function saveProgress(lane, z)
+    local f = fs.open(PROGRESS_FILE, "w")
+    f.write(string.format("%d %d %d", home.k, lane, z))
+    f.close()
+end
+
+local function loadProgress()
+    if not fs.exists(PROGRESS_FILE) then return nil end
+    local f = fs.open(PROGRESS_FILE, "r")
+    local k, lane, z = (f.readAll() or ""):match("(%d+) (%d+) (-?%d+)")
+    f.close()
+    if not k then return nil end
+    return { k = tonumber(k), lane = tonumber(lane), z = tonumber(z) }
+end
+
+local function clearProgress()
+    if fs.exists(PROGRESS_FILE) then fs.delete(PROGRESS_FILE) end
+end
+
 local function loadJob()
     if not fs.exists(JOB_FILE) then return nil end
     local f = fs.open(JOB_FILE, "r")
@@ -430,7 +453,7 @@ local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
 local fillerKeep = FILLER_KEEP  -- FILLER_KEEP_WET once water has used it up
-local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes = 0, fetched = 0 }
+local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes = 0, fetched = 0, wet = 0 }
 -- From the Geo Scanner (see there): the world direction of the tunnel's +z
 -- once lined up, this segment's blocks touching the tunnel ("rock",
 -- "ore", "fluid" or "air"), and its ore further out.
@@ -489,6 +512,8 @@ end
 local seal
 
 local digLimit             -- `mine reset`: blocks it may dig on the way back (nil: any)
+local repairing = false    -- going over tunnel dug before: any water in it is getting in from somewhere
+local wetAt, wetLevel      -- the block it last moved into through water or lava, and its level
 local dry                  -- defined below
 local plugs = {}           -- key -> position: dug tunnel blocks it filled again (see dry)
 
@@ -518,10 +543,16 @@ local function go(d)
             if not digDir(d) then return false, data.name end
             local okw, w = look(d)         -- the dig let water in
             if inside and okw and FLUID[w.name] then
-                if isSource(w) then dry(d) else wet = true end
+                if isSource(w) then dry(d) else wet = w; stats.wet = stats.wet + 1 end
             end
         end
+        local into = wet or (ok and FLUID[data.name] and data)
         if moveDir(d) then
+            wetAt, wetLevel = nil, nil
+            if into then
+                wetAt = key(T.pos)
+                wetLevel = type(into) == "table" and tonumber(into.state and into.state.level) or 1
+            end
             opened[key(T.pos)] = true
             plugs[key(T.pos)] = nil
             -- in it, the turtle keeps fluid out of the block: seal what
@@ -608,7 +639,7 @@ function cutOff(e)
     if not (ok and FLUID[data.name] and (isSource(data) or not inBox(m))) then return false, ok and data end
     local was = opened[key(m)]
     if not seal(e) then return false end
-    if inBox(m) and was then plugs[key(m)] = m end
+    if inBox(m) and (was or repairing) then plugs[key(m)] = m end
     return true
 end
 
@@ -652,7 +683,11 @@ local function stopFlow(level)
                 if seal(e) then sealed = true end
                 return
             end
-            if isSource(data) then source = true; return end
+            if isSource(data) then
+                -- going over tunnel dug before, it's water getting in: fill it
+                if repairing and cutOff(e) then sealed = true else source = true end
+                return
+            end
             local s = (e == "up" and level >= 8) and -1 or strength(data)
             if s < (level >= 8 and 0 or level) and (not upLevel or s < upLevel) then
                 up, upLevel = e, s
@@ -674,6 +709,7 @@ function dry(d)
     for _ = 1, 4 do
         local ok, data = look(d)
         if not (ok and FLUID[data.name]) then return true end
+        stats.wet = stats.wet + 1
         if not selectItem(function(n) return FILLER[n] end) then
             fillerKeep = FILLER_KEEP_WET   -- wet ground: carry more from now on
             trip("Out of blocks to seal water with")
@@ -697,10 +733,14 @@ function dry(d)
         end)
         -- flowing water with nothing beside it to cut off: the first time,
         -- likely left over and draining away; found here again, it comes
-        -- from further off, so follow it
+        -- from further off, so follow it.  Falling water always has
+        -- something above feeding it, and water in tunnel dug before
+        -- (repairing) is getting in: those are followed at once.
         local k = key(T.pos)
         if cut == 0 and level > 0 then
-            if unfed[k] == true and stopFlow(level) then cut = 1 end
+            if (unfed[k] == true or ((level >= 8 or repairing) and unfed[k] == nil)) and stopFlow(level) then
+                cut = 1
+            end
             unfed[k] = unfed[k] or true
         end
         local backed = false
@@ -1090,6 +1130,7 @@ local function advance()
         lastHome = home.k
         stats.homes = stats.homes + 1
         saveJob("active")
+        clearProgress()
         print(string.format("Built home %d at z=%d.", home.k, home.z))
     end
     refuel()
@@ -1208,6 +1249,16 @@ local function lightHere()
             if not ok or FLUID[data.name] then break end
         end
         if not digDir(d) then return end
+    end
+    -- it came into this block through water: that would wash the torch
+    -- away, so stop it first (and leave the torch out if it can't)
+    if wetAt == key(T.pos) then
+        if not stopFlow(math.max(1, wetLevel or 1)) then
+            print("Water's flowing at " .. T.posString() .. "; no torch there for now.")
+            return
+        end
+        wetAt = nil
+        sleep(2)                           -- what's left drains away
     end
     -- lava or water a scan saw next to the niche would get in and put the
     -- torch out: step in and seal it first
@@ -1625,44 +1676,10 @@ local function scanNow(z1, z2)
     fetchTargets(function(t) return t.scan == this end)
 end
 
--- Mine the segment from z1 to z2, starting and ending at the home.
-local function mineSegment(z1, z2)
-    local lanes = planLanes()
-    laneAt = {}
-    for _, lane in ipairs(lanes) do laneAt[lane.x .. "," .. lane.y] = true end
-    print(string.format("Segment z=%d..%d from home %d: %d lanes, fuel %s.", z1, z2, home.k, #lanes,
-        tostring(turtle.getFuelLevel())))
-    known, targets, scanFrom, scanned = {}, {}, {}, {}
-    local lastScan = nil
-    for i, lane in ipairs(lanes) do
-        local ahead = i % 2 == 1
-        local from, to, dz = z1, z2, 1
-        if not ahead then from, to, dz = z2, z1, -1 end
-        local ok, what
-        if i == 1 then ok, what = alongAxis("z", z1)
-        else
-            via = lanes[i - 1]             -- finished: the way home meanwhile
-            ok, what = alongAxis("y", lane.y)
-            if ok then ok, what = alongAxis("x", lane.x) end
-        end
-        if ahead then via = nil end        -- this lane is dug back to the segment's start
-        for z = from, to, dz do
-            if not ok then break end
-            if hasScanner and i == 1 and ((z - z1) % SCAN_EVERY == math.floor(SCAN_EVERY / 2)
-                    or (z == z2 and (not lastScan or z - lastScan > SCAN_RADIUS))) then
-                scanNow(z1, z2)
-                lastScan = z
-            end
-            scanHere()
-            lightHere()
-            if z ~= to then ok, what = go(ahead and 0 or 2) end
-        end
-        if not ok then stop(string.format("Can't get through at %s (%s).", T.posString(), tostring(what))) end
-    end
-    via = nil
-    -- tunnel blocks filled to cut water off behind the lanes: dig them
-    -- out, now what fed them is sealed (nearest first, a few rounds, as
-    -- digging one out can mean filling another)
+-- Tunnel blocks filled to cut water off behind the lanes: dig them out,
+-- now what fed them is sealed (nearest first, a few rounds, as digging one
+-- out can mean filling another).
+local function unplug()
     for _ = 1, 4 do
         local list = {}
         for _, q in pairs(plugs) do list[#list + 1] = q end
@@ -1676,6 +1693,113 @@ local function mineSegment(z1, z2)
         end
     end
     plugs = {}
+end
+
+-- Go over part of the tunnel dug before, from the home, for water getting
+-- in: first along its bottom lanes, where water in the tunnel ends up,
+-- then, if that found any, all its lanes.  Water it finds is getting in,
+-- so it follows it to where it comes in and seals that (see dry); torches
+-- washed away are put back.  Nothing else is looked at again.  `done`
+-- picks the lanes dug before (nil: all).
+local function repair(z1, z2, done)
+    local lanes = planLanes()
+    repairing = true
+    local function walk(pick)
+        local n = 0
+        for i, lane in ipairs(lanes) do
+            if (not done or done(i)) and pick(lane) then
+                local from, to = z1, z2
+                if n % 2 == 1 then from, to = z2, z1 end
+                n = n + 1
+                alongAxis("z", from); alongAxis("x", lane.x); alongAxis("y", lane.y)
+                local dz = to >= from and 1 or -1
+                for z = from, to, dz do
+                    lightHere()
+                    if z ~= to then go(dz > 0 and 0 or 2) end
+                end
+            end
+        end
+    end
+    local before = stats.wet
+    walk(function(lane) return lane.y == Y0 end)
+    if stats.wet > before then walk(function(lane) return lane.y ~= Y0 end) end
+    unplug()
+    repairing = false
+    tunnelHome()
+end
+
+-- Go over a segment dug already (resumed from an earlier home than the
+-- last), fixing where water gets in.
+local function repairSegment(z1, z2)
+    print(string.format("Going over z=%d..%d (dug already) for water getting in.", z1, z2))
+    repair(z1, z2)
+end
+
+-- Mine the segment from z1 to z2, starting and ending at the home.
+-- `from`: how far it got before (resuming): its finished lanes are gone
+-- over only for water getting in, and it carries on from there.
+local function mineSegment(z1, z2, from)
+    local lanes = planLanes()
+    laneAt = {}
+    for _, lane in ipairs(lanes) do laneAt[lane.x .. "," .. lane.y] = true end
+    print(string.format("Segment z=%d..%d from home %d: %d lanes, fuel %s.", z1, z2, home.k, #lanes,
+        tostring(turtle.getFuelLevel())))
+    known, targets, scanFrom, scanned = {}, {}, {}, {}
+    local lastScan = nil
+    local startLane, startZ = 1, nil
+    if from then
+        startLane, startZ = from.lane, from.z
+        -- what it finished: dug (open), and gone over only for water
+        for i, lane in ipairs(lanes) do
+            local ahead = i % 2 == 1
+            for z = z1, z2 do
+                if i < startLane or (i == startLane and (ahead and z <= startZ or not ahead and z >= startZ)) then
+                    opened[key({ x = lane.x, y = lane.y, z = z })] = true
+                end
+            end
+        end
+        print(string.format("Carrying on with lane %d of %d at z=%d.", math.min(startLane, #lanes), #lanes, startZ))
+        repair(z1, z2, function(i) return i < startLane end)
+    end
+    for i, lane in ipairs(lanes) do
+        if i >= startLane then
+            local ahead = i % 2 == 1
+            local first, to, dz = z1, z2, 1
+            if not ahead then first, to, dz = z2, z1, -1 end
+            local ok, what = true, nil
+            if i == startLane and from then
+                -- back out to where it stopped, through what's dug
+                via = i > 1 and lanes[i - 1] or nil
+                if startZ then first = startZ end
+                tunnelTo({ x = lane.x, y = lane.y, z = first })
+            elseif i == 1 then ok, what = alongAxis("z", z1)
+            else
+                via = lanes[i - 1]         -- finished: the way home meanwhile
+                ok, what = alongAxis("y", lane.y)
+                if ok then ok, what = alongAxis("x", lane.x) end
+            end
+            if ahead then via = nil end    -- this lane is dug back to the segment's start
+            -- scans are taken along the first lane it digs (and the next,
+            -- if it carried on partway along that one)
+            local scanLane = i == startLane or (from and i == startLane + 1)
+            for z = first, to, dz do
+                if not ok then break end
+                if hasScanner and scanLane and ((z - z1) % SCAN_EVERY == math.floor(SCAN_EVERY / 2)
+                        or (z == z2 and (not lastScan or math.abs(z - lastScan) > SCAN_RADIUS))) then
+                    scanNow(z1, z2)
+                    lastScan = z
+                end
+                scanHere()
+                lightHere()
+                saveProgress(i, z)
+                if z ~= to then ok, what = go(ahead and 0 or 2) end
+            end
+            if not ok then stop(string.format("Can't get through at %s (%s).", T.posString(), tostring(what))) end
+        end
+    end
+    via = nil
+    saveProgress(#lanes + 1, z2)
+    unplug()
     fetchTargets()                         -- the scanner's ore further out
     tunnelHome()
 end
@@ -2052,9 +2176,17 @@ T.withTool(pickaxe, function()
             T.face(here.face)
             inTrip = false
         end
+        if not resume then clearProgress() end
+        local progress = resume and loadProgress()
+        if not (progress and progress.k == lastHome) then progress = nil end
         while home.z < LENGTH do
             segEnd = math.min(home.z + SPACING, LENGTH)
-            mineSegment(home.z + 1, segEnd)
+            if home.k < lastHome then
+                repairSegment(home.z + 1, segEnd)
+            else
+                mineSegment(home.z + 1, segEnd, progress)
+                progress = nil
+            end
             unloadOrStop()
             refuel()
             if segEnd >= LENGTH then break end
@@ -2071,6 +2203,7 @@ T.withTool(pickaxe, function()
     returnToStart()
 end)
 saveJob(stopped and "active" or "done")
+if not stopped then clearProgress() end
 print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled%s%s.",
     stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled,
     lights and (", " .. stats.torches .. " torches placed") or "",
