@@ -87,14 +87,17 @@ If HTTP is disabled on the server, drop the files into
 `<world>/computercraft/computer/<id>/cc-turtles/` by hand.
 
 To run the programs from any directory, put `cc-turtles` on the shell's
-search path by adding a line to `/startup.lua`, which CraftOS runs at boot
-(reboot, or run `/startup` once, to pick it up):
+search path:
 
 ```
-cc-turtles/echo "shell.setPath(shell.path() .. ':/cc-turtles')" >> /startup.lua
+cc-turtles/deploy/install
 ```
 
-or `edit /startup.lua` and type it in: `shell.setPath(shell.path() .. ":/cc-turtles")`.
+It adds a line to the top of `/startup.lua` (or writes
+`/startup/00-cc-turtles.lua` if `/startup` is a directory) that puts the
+repo's directory on the path at boot, then reboots. `--no-reboot` puts it on
+the path in the current shell instead. Running it again changes nothing.
+`deploy/` itself isn't on the path, so `install` doesn't become a command.
 
 The shell looks a program name up in each directory on the path in turn,
 `.lua` optional. Run from anywhere, a program still finds `turtlelib` and

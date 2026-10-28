@@ -43,7 +43,8 @@ def check():
     load = lua().eval("function(s, n) local f, e = load(s, '@' .. n); return e end")
     bad = 0
     for path in sorted(glob.glob(os.path.join(ROOT, "*.lua")) + glob.glob(os.path.join(HERE, "*.lua"))
-                       + glob.glob(os.path.join(HERE, "lib", "*.lua"))):
+                       + glob.glob(os.path.join(HERE, "lib", "*.lua"))
+                       + glob.glob(os.path.join(ROOT, "deploy", "*.lua"))):
         err = load(open(path, encoding="utf-8").read(), os.path.relpath(path, ROOT))
         print(("FAIL " + err) if err else ("ok   " + os.path.relpath(path, ROOT)))
         bad += err is not None
