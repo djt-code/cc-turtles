@@ -40,13 +40,24 @@ def run_one(path):
 
 
 def check():
+    """Syntax, and CC's limit of 200 locals in scope (see locals.py)."""
+    import locals as cclocals
     load = lua().eval("function(s, n) local f, e = load(s, '@' .. n); return e end")
     bad = 0
     for path in sorted(glob.glob(os.path.join(ROOT, "*.lua")) + glob.glob(os.path.join(HERE, "*.lua"))
                        + glob.glob(os.path.join(HERE, "lib", "*.lua"))
                        + glob.glob(os.path.join(ROOT, "deploy", "*.lua"))):
-        err = load(open(path, encoding="utf-8").read(), os.path.relpath(path, ROOT))
-        print(("FAIL " + err) if err else ("ok   " + os.path.relpath(path, ROOT)))
+        src = open(path, encoding="utf-8").read()
+        name = os.path.relpath(path, ROOT)
+        err = load(src, name)
+        if not err:
+            most, line = cclocals.peak(src)
+            if most > cclocals.LIMIT:
+                err = "%s:%d: %d locals in scope; CC's Lua allows %d, counting enclosing functions'" % (
+                    name, line, most, cclocals.LIMIT)
+            elif most > cclocals.LIMIT - 15:
+                print("warn %s:%d: %d locals in scope, close to CC's %d" % (name, line, most, cclocals.LIMIT))
+        print(("FAIL " + err) if err else ("ok   " + name))
         bad += err is not None
     return 1 if bad else 0
 

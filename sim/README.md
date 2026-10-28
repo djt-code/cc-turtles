@@ -15,6 +15,13 @@ python sim/run.py farm_clone       # by name, ".lua" optional
 python sim/run.py --check          # syntax-check the programs and these files
 ```
 
+`--check` also counts locals as CC's Lua does (`locals.py`): no function
+may have more than 200 in scope, counting those of the functions around
+it, so a big program's top-level locals use up the allowance of every
+function inside it. Standard Lua counts each function on its own, so the
+simulators never hit this; on a turtle the program won't load. It warns
+within 15 of the limit.
+
 Or on a ComputerCraft computer or turtle that has the repo (`git clone`),
 no Python needed:
 
