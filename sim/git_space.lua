@@ -5,7 +5,9 @@
 -- a disk that fills stops the clone with what it got saved, and `git
 -- pull` finishes it once there's room; a checkout from before the device
 -- rule loses sim/ on its next pull; and files that move between folders
--- need no room for two copies, as deletions go first.
+-- need no room for two copies, as deletions go first (the git from before
+-- fetched everything first, so moving the whole repo into bin/ and turtle/
+-- filled the disk and left both copies).
 local PROJ = ...
 package.path = PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
@@ -180,3 +182,20 @@ COMMITS.c2, HEAD = moved, "c2"
 CAP = used() + 1500
 ok = git("pull", "/cc-turtles")
 check("the pull fits: the old copy goes before the new one comes", ok and has("bin/mine.lua") and not has("turtle/mine.lua"))
+
+realPrint("== the whole repo moves into a folder, on a disk with room for a few files more")
+local OLDL, NEWL = {}, {}
+for i = 1, 6 do
+    OLDL["p" .. i .. ".lua"] = string.rep("o" .. i, 1000)
+    NEWL["bin/p" .. i .. ".lua"] = OLDL["p" .. i .. ".lua"]
+end
+COMMITS, HEAD, files, CAP = { o1 = OLDL, n1 = NEWL }, "o1", {}, 100000
+git("clone", "https://github.com/me/cc-turtles", "/cc-turtles")
+HEAD, CAP = "n1", used() + 5000
+ok = git("pull", "/cc-turtles")
+local top, bin = 0, 0
+for k in pairs(files) do
+    if k:match("^cc%-turtles/p%d") then top = top + 1 elseif k:match("^cc%-turtles/bin/") then bin = bin + 1 end
+end
+check("every file is in bin/ and none is left at the top", ok and top == 0 and bin == 6,
+    top .. " at the top, " .. bin .. " in bin/")
