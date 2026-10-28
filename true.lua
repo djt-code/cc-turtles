@@ -1,0 +1,8 @@
+-- true.lua -- do nothing, successfully (POSIX true)
+--
+--   true
+--
+-- Ignores its arguments and exits 0.  Kept free of cu.lua so it costs
+-- nothing; it records the status the way cu.exit does.
+
+_G.POSIX_STATUS = 0

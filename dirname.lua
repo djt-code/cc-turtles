@@ -1,0 +1,26 @@
+-- dirname.lua -- the directory part of a path name (POSIX dirname)
+--
+--   dirname string
+--
+-- Strips trailing slashes, the last part, then the slashes before it.
+-- A name with no slash gives ".", one directly under the root (or only
+-- slashes) gives "/".  The string is not looked up on disk.
+
+local cu = require("cu").init("dirname", "dirname string")
+local _, ops = cu.getopt({ ... }, "")
+if #ops ~= 1 then cu.usageError(#ops < 1 and "missing operand" or "extra operand") end
+
+local s = ops[1]
+if s:match("^/+$") then
+    s = "/"
+else
+    s = s:gsub("/+$", "")
+    if not s:find("/") then
+        s = "."
+    else
+        s = s:gsub("[^/]*$", ""):gsub("/+$", "")
+        if s == "" then s = "/" end
+    end
+end
+io.write(s, "\n")
+return cu.exit()

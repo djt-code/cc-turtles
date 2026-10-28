@@ -1,0 +1,24 @@
+-- basename.lua -- the last part of a path name (POSIX basename)
+--
+--   basename string [suffix]
+--
+-- Strips trailing slashes and everything up to the last remaining slash,
+-- then the suffix, if one is given and it is not the whole of what is
+-- left.  A string of only slashes gives "/", an empty string an empty
+-- line.  Only "/" separates: the string is not looked up on disk.
+
+local cu = require("cu").init("basename", "basename string [suffix]")
+local _, ops = cu.getopt({ ... }, "")
+if #ops < 1 or #ops > 2 then cu.usageError(#ops < 1 and "missing operand" or "extra operand") end
+
+local s, suffix = ops[1], ops[2]
+if s:match("^/+$") then
+    s = "/"
+else
+    s = s:gsub("/+$", ""):match("[^/]*$")
+    if suffix and suffix ~= "" and suffix ~= s and s:sub(-#suffix) == suffix then
+        s = s:sub(1, #s - #suffix)
+    end
+end
+io.write(s, "\n")
+return cu.exit()

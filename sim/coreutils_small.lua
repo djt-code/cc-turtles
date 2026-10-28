@@ -1,0 +1,292 @@
+-- sim/coreutils_small.lua
+--
+-- The small utilities in a shellworld: touch, pwd, basename, dirname,
+-- true, false, sleep, which and xargs -- their options, operands, output
+-- formats, diagnostics and exit statuses.
+local PROJ = ...
+package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+local M = require("mock")
+local SW = require("shellworld")
+local check = M.check
+
+local W = SW.new(PROJ)
+local function show(s)
+    return (tostring(s):gsub("[%c\128-\255]", function(c) return c == "\n" and "|" or "\\" .. c:byte() end))
+end
+
+--------------------------------------------------------------------------
+-- true, false
+--------------------------------------------------------------------------
+local r = W:run("true", "-x", "anything")
+check("true: status 0, ignores its arguments", r.ok and r.status == 0 and r.out == "" and #r.err == 0)
+r = W:run("false", "--help")
+check("false: status 1, silent", r.ok and r.status == 1 and r.out == "" and #r.err == 0, show(r.errText))
+r = W:call(function(env)
+    env.require("cu")
+    W:install("true"); W:install("false")
+    return { env.shell.run("true"), env.shell.run("false") }
+end)
+check("shell.run: true gives true, false gives false", r.value[1] == true and r.value[2] == false)
+
+--------------------------------------------------------------------------
+-- pwd
+--------------------------------------------------------------------------
+r = W:run("pwd")
+check("pwd at the root: /", r.status == 0 and r.out == "/\n", show(r.out))
+W:dir("a/b")
+r = W:run("pwd", "-P", { cwd = "a/b" })
+local r2 = W:run("pwd", "-L")
+check("pwd in a/b: /a/b (-P and -L alike)", r.out == "/a/b\n" and r2.out == "/a/b\n", show(r.out))
+W.shell.setDir("")
+r = W:run("pwd", "x")
+check("pwd with an operand: usage error 2", r.status == 2 and r.err[1] == "pwd: too many arguments"
+    and r.err[2] == "usage: pwd [-L|-P]")
+r = W:run("pwd", "-z")
+check("pwd -z: illegal option", r.status == 2 and r.err[1] == "pwd: illegal option -- z")
+
+--------------------------------------------------------------------------
+-- basename, dirname (the POSIX examples and edge cases)
+--------------------------------------------------------------------------
+local function out1(prog, ...) local x = W:run(prog, ...); return x.out, x.status end
+local cases = {
+    { { "/usr/src/cmd/cat.c" }, "cat.c" }, { { "/usr/src/cmd/cat.c", ".c" }, "cat" },
+    { { "cat.c", "cat.c" }, "cat.c" }, { { "a/b/" }, "b" }, { { "//" }, "/" }, { { "/" }, "/" },
+    { { "" }, "" }, { { "abc" }, "abc" }, { { "a//b//" }, "b" }, { { "x.lua", "" }, "x.lua" },
+    { { "--", "-x" }, "-x" }, { { "-" }, "-" },
+}
+local bad = {}
+for _, c in ipairs(cases) do
+    local o, st = out1("basename", table.unpack(c[1]))
+    if o ~= c[2] .. "\n" or st ~= 0 then bad[#bad + 1] = table.concat(c[1], ",") .. "=" .. show(o) end
+end
+check("basename: strips slashes, directories and the suffix", #bad == 0, table.concat(bad, " "))
+r = W:run("basename")
+r2 = W:run("basename", "a", "b", "c")
+check("basename: 0 or 3 operands is a usage error", r.status == 2 and r2.status == 2
+    and r.err[2] == "usage: basename string [suffix]")
+
+cases = {
+    { "/usr/src/cmd/cat.c", "/usr/src/cmd" }, { "cat.c", "." }, { "a/b/", "a" }, { "/a", "/" },
+    { "//", "/" }, { "/", "/" }, { "", "." }, { "a//b//", "a" }, { "/a//b", "/a" }, { "a/", "." },
+    { "../x", ".." },
+}
+bad = {}
+for _, c in ipairs(cases) do
+    local o, st = out1("dirname", c[1])
+    if o ~= c[2] .. "\n" or st ~= 0 then bad[#bad + 1] = c[1] .. "=" .. show(o) end
+end
+check("dirname: the POSIX steps", #bad == 0, table.concat(bad, " "))
+r = W:run("dirname", "a", "b")
+check("dirname with two operands: usage error 2", r.status == 2 and r.err[1] == "dirname: extra operand")
+
+--------------------------------------------------------------------------
+-- sleep
+--------------------------------------------------------------------------
+local t0 = W.clock
+r = W:run("sleep", "2")
+check("sleep 2 waits 2 seconds", r.status == 0 and r.out == "" and W.clock - t0 == 2, tostring(W.clock - t0))
+t0 = W.clock
+r = W:run("sleep", "0.5")
+r2 = W:run("sleep", ".25")
+check("sleep takes decimals", r.status == 0 and r2.status == 0 and math.abs(W.clock - t0 - 0.75) < 1e-9)
+r = W:run("sleep", "abc")
+check("sleep abc: invalid, status 2", r.status == 2 and r.err[1] == "sleep: invalid time interval 'abc'")
+r = W:run("sleep", "-1")
+r2 = W:run("sleep")
+check("sleep -1 / no operand: usage errors", r.status == 2 and r.err[1] == "sleep: illegal option -- 1"
+    and r2.status == 2 and r2.err[1] == "sleep: missing operand")
+
+--------------------------------------------------------------------------
+-- touch
+--------------------------------------------------------------------------
+r = W:run("touch", "new.txt", "a/b/also")
+check("touch creates empty files", r.status == 0 and r.out == "" and W:read("new.txt") == ""
+    and W:read("a/b/also") == "")
+W:file("old.txt", "keep me\r\n\0bytes")
+local m0 = W.mtime["old.txt"]
+W:advance(60)
+r = W:run("touch", "old.txt")
+check("touch an existing file: same bytes, modified now", r.status == 0
+    and W:read("old.txt") == "keep me\r\n\0bytes" and W.mtime["old.txt"] == m0 + 60000)
+W:advance(60)
+r = W:run("touch", "-m", "old.txt")
+check("touch -m: modified now", W.mtime["old.txt"] == m0 + 120000)
+W:advance(60)
+r = W:run("touch", "-a", "old.txt")
+check("touch -a alone: no access time in CraftOS, nothing changes", r.status == 0
+    and W.mtime["old.txt"] == m0 + 120000)
+r = W:run("touch", "-c", "ghost", "old.txt")
+check("touch -c: a missing file stays missing, quietly", r.status == 0 and #r.err == 0
+    and W:read("ghost") == nil and W.mtime["old.txt"] == m0 + 180000)
+r = W:run("touch", "-ac", "ghost")
+check("touch -ac grouped", r.status == 0 and W:read("ghost") == nil)
+r = W:run("touch", "nodir/x", "fine")
+check("touch in a missing directory: reported, status 1, the rest done", r.status == 1
+    and r.err[1] == "touch: nodir/x: No such file or directory" and W:read("fine") == ""
+    and not W.dirs["nodir"], show(r.errText))
+r = W:run("touch", "old.txt/x")
+check("touch under a file: Not a directory", r.status == 1 and r.err[1] == "touch: old.txt/x: Not a directory")
+r = W:run("touch", "/rom/new")
+check("touch in rom: Access denied", r.status == 1 and r.err[1] == "touch: /rom/new: Access denied", show(r.errText))
+r = W:run("touch", "a")
+check("touch a directory: left alone, status 0", r.status == 0 and W.dirs["a"])
+W:advance(60)
+local m1 = W.mtime["old.txt"]
+r = W:run("touch", "-t", "202601021530.45", "old.txt", "dated")
+check("touch -t: creates the missing file, leaves the existing one", r.status == 0
+    and W:read("dated") == "" and W.mtime["old.txt"] == m1)
+r = W:run("touch", "-d", "2026-01-02T15:30:00Z", "dated2")
+r2 = W:run("touch", "-r", "old.txt", "dated3")
+check("touch -d and -r: create", r.status == 0 and r2.status == 0 and W:read("dated2") == ""
+    and W:read("dated3") == "")
+r = W:run("touch", "-t", "1530", "x")
+r2 = W:run("touch", "-d", "yesterday", "x")
+check("touch -t / -d with a bad time: status 2, nothing created", r.status == 2 and r2.status == 2
+    and r.err[1] == "touch: invalid date format '1530'" and W:read("x") == nil)
+r = W:run("touch", "-r", "nope", "x")
+check("touch -r missing reference: status 1", r.status == 1
+    and r.err[1] == "touch: nope: No such file or directory" and W:read("x") == nil)
+r = W:run("touch")
+check("touch with no file: usage error", r.status == 2 and r.err[1] == "touch: missing file operand")
+r = W:run("touch", "rel", { cwd = "a" })
+W.shell.setDir("")
+check("touch resolves against the shell's directory", W:read("a/rel") == "")
+
+--------------------------------------------------------------------------
+-- which
+--------------------------------------------------------------------------
+W:install("cat")
+r = W:run("which", "cat", "edit")
+check("which: absolute paths on the shell's path", r.status == 0
+    and r.out == "/cc-turtles/cat.lua\n/rom/programs/edit.lua\n", show(r.out))
+r = W:run("which", "ls")
+check("which follows an alias", r.out == "/rom/programs/list.lua\n", show(r.out))
+W:file("cat.lua", "-- mine")
+r = W:run("which", "-a", "cat")
+check("which -a: every match in path order (. first)", r.status == 0
+    and r.out == "/cat.lua\n/cc-turtles/cat.lua\n", show(r.out))
+W.files["cat.lua"] = nil
+W:file("bin/tool.lua", "-- tool")
+r = W:run("which", "bin/tool", "./bin/tool.lua")
+check("which with a slash: relative to the directory", r.out == "/bin/tool.lua\n/bin/tool.lua\n", show(r.out))
+r = W:run("which", "nosuch", "edit")
+check("which unknown: reported, status 1, the rest still shown", r.status == 1
+    and r.err[1] == "which: nosuch: not found" and r.out == "/rom/programs/edit.lua\n")
+r = W:run("which")
+check("which with no name: usage error", r.status == 2 and r.err[2] == "usage: which [-a] name...")
+
+--------------------------------------------------------------------------
+-- xargs
+--------------------------------------------------------------------------
+W:install("echo"); W:install("false"); W:install("true")
+r = W:run("xargs", { pipe = true, stdin = "one two\n  three\n" })
+check("xargs: echo by default, all arguments in one run", r.status == 0 and r.out == "one two three\n", show(r.out))
+r = W:run("xargs", "echo", "x:", { stdin = "a b\nc\n" })
+check("xargs from the keyboard (Ctrl+T ends)", r.status == 0 and r.out == "x: a b c\n", show(r.out))
+r = W:run("xargs", "-n", "2", "echo", { pipe = true, stdin = "1 2 3\n4 5\n" })
+check("xargs -n 2", r.out == "1 2\n3 4\n5\n", show(r.out))
+r = W:run("xargs", "-n1", { pipe = true, stdin = [[a "b c" 'd "e"' f\ g h\'i]] .. "\n" })
+check("xargs: quotes and backslashes", r.out == 'a\nb c\nd "e"\nf g\nh\'i\n', show(r.out))
+r = W:run("xargs", "-I", "{}", "echo", "[{}]", "x{}y{}", { pipe = true, stdin = "  one two\n\nthree\n" })
+check("xargs -I: one run per line, leading blanks dropped, every {} replaced",
+    r.out == "[one two] xone twoyone two\n[three] xthreeythree\n", show(r.out))
+r = W:run("xargs", "-I%", "echo", "%%", { pipe = true, stdin = "50\n" })
+check("xargs -I with a pattern character, attached", r.out == "5050\n", show(r.out))
+r = W:run("xargs", "-t", "echo", "hi", { pipe = true, stdin = "a\n" })
+check("xargs -t traces to stderr", r.out == "hi a\n" and r.err[1] == "echo hi a", show(r.errText))
+r = W:run("xargs", "echo", "empty", { pipe = true, stdin = "" })
+r2 = W:run("xargs", "-r", "echo", "empty", { pipe = true, stdin = "\n" })
+check("xargs: empty input runs once; -r not at all", r.out == "empty\n" and r2.out == "" and r2.status == 0)
+r = W:run("xargs", "-E", "STOP", { pipe = true, stdin = "a b STOP c\nd\n" })
+check("xargs -E: input ends at eofstr", r.out == "a b\n", show(r.out))
+r = W:run("xargs", "-0", "-n1", { pipe = true, stdin = "a b\0c\nd\0e" })
+check("xargs -0: NUL-separated, no quoting", r.out == "a b\nc\nd\ne\n", show(r.out))
+r = W:run("xargs", "false", { pipe = true, stdin = "x\n" })
+check("xargs: a failing run gives status 1", r.ok and r.status == 1, r.status)
+r = W:run("xargs", "-n1", "nosuchprog", { pipe = true, stdin = "x\n" })
+check("xargs: unknown utility gives 127", r.status == 127 and r.err[1] == "xargs: nosuchprog: No such program")
+W:file("cc-turtles/die.lua", "_G.POSIX_STATUS = 255; error('', 0)")
+r = W:run("xargs", "-n1", "die", { pipe = true, stdin = "a b\n" })
+check("xargs: a 255 status stops it", r.status == 1 and #r.err == 1
+    and r.err[1] == "xargs: die: exited with status 255; aborting", show(r.errText))
+W:file("cc-turtles/tally.lua", "_G.TALLY = (_G.TALLY or 0) + 1")
+_G.TALLY = 0
+r = W:run("xargs", "-n", "1", "tally", { pipe = true, stdin = "a b c\n" })
+check("xargs runs non-cu programs", r.status == 0 and _G.TALLY == 3)
+r = W:run("xargs", { pipe = true, stdin = 'a "b\n' })
+check("xargs: unmatched quote is an error", r.status == 1 and r.err[1] == "xargs: unmatched double quote"
+    and r.out == "")
+r = W:run("xargs", "-n", "0")
+r2 = W:run("xargs", "-q")
+check("xargs -n 0 / bad option: usage error 2", r.status == 2 and r.err[1] == "xargs: invalid number '0'"
+    and r2.status == 2)
+r = W:run("xargs", "-n", "1", "-I", "@", "echo", "<@>", { pipe = true, stdin = "a b\nc\n" })
+check("xargs: -I after -n wins", r.out == "<a b>\n<c>\n", show(r.out))
+r = W:sh("xargs -n 1 echo", { pipe = true, stdin = "p q\n" })
+check("xargs through the shell", r.out == "p\nq\n", show(r.out))
+
+--------------------------------------------------------------------------
+-- review additions
+--------------------------------------------------------------------------
+r = W:run("touch", "-t", "202613011200", "x")
+r2 = W:run("touch", "-t", "01021530.61", "x")
+local r3 = W:run("touch", "-t", "01021530.60", "leap")
+check("touch -t: month 13 and second 61 rejected, leap second 60 fine", r.status == 2 and r2.status == 2
+    and W:read("x") == nil and r3.status == 0 and W:read("leap") == "")
+r = W:run("touch", "-d", "2026-01-02T15:30:00junk", "x")
+r2 = W:run("touch", "-d", "2026-01-02 15:30:00,25Z", "frac")
+check("touch -d: trailing junk rejected, frac and Z accepted", r.status == 2 and W:read("x") == nil
+    and r2.status == 0 and W:read("frac") == "")
+r = W:run("touch", "old.txt/", "newdir/", "")
+check("touch: file/ and missing/ and empty name fail", r.status == 1 and r.err[1] == "touch: old.txt/: Not a directory"
+    and r.err[2] == "touch: newdir/: No such file or directory" and r.err[3] == "touch: : No such file or directory"
+    and W:read("newdir") == nil, show(r.errText))
+r = W:run("touch", "-c", "newdir/")
+check("touch -c missing/: quiet", r.status == 0 and #r.err == 0)
+
+W.shell.setAlias("zz", "nosuchthing")
+r = W:run("which", "zz")
+check("which: an alias to a missing program is not found (as the shell sees it)", r.status == 1
+    and r.out == "" and r.err[1] == "which: zz: not found", show(r.out))
+W.shell.setAlias("cat", "edit")
+r = W:run("which", "cat")
+r2 = W:run("which", "-a", "cat")
+check("which: an alias shadows the path; -a lists both", r.out == "/rom/programs/edit.lua\n"
+    and r2.out == "/rom/programs/edit.lua\n/cc-turtles/cat.lua\n", show(r2.out))
+W.shell.clearAlias("cat"); W.shell.clearAlias("zz")
+
+r = W:run("xargs", "-L", "2", "echo", { pipe = true, stdin = "a b\n\nc \nd\ne\n" })
+check("xargs -L 2: a line is an argument, a trailing blank continues it", r.status == 0
+    and r.out == "a b cd\ne\n", show(r.out))
+r = W:run("xargs", "-s", "11", "echo", { pipe = true, stdin = "aa bb cc dd\n" })
+check("xargs -s 11: command lines kept short", r.out == "aa bb\ncc dd\n", show(r.out))
+r = W:run("xargs", "-s", "5", "echo", { pipe = true, stdin = "aaaa\n" })
+check("xargs -s too small: argument line too long, status 1", r.status == 1 and r.out == ""
+    and r.err[1] == "xargs: argument line too long", show(r.errText))
+r = W:run("xargs", "-x", "-n", "3", "-s", "11", "echo", { pipe = true, stdin = "aa bb cc\n" })
+check("xargs -x: -n's arguments don't fit, stop", r.status == 1 and r.out == "", show(r.out))
+r = W:run("xargs", "-s", "0")
+check("xargs -s 0: usage error", r.status == 2 and r.err[1] == "xargs: invalid size '0'")
+r = W:run("xargs", "-p", "-n1", "echo", { stdin = "a b\ny\nn\n" })
+check("xargs -p: y runs, anything else skips", r.status == 0 and r.out == "a\n"
+    and r.errText == "echo a ?...echo b ?...", show(r.out) .. " / " .. show(r.errText))
+-- (that the answers aren't read as input also shows a full -n run starts
+-- without reading ahead)
+r = W:run("xargs", "-n", "2", "echo", { stdin = "a b\nc d\n" })
+check("xargs -n 2 from the keyboard: two runs", r.out == "a b\nc d\n", show(r.out))
+W:file("cc-turtles/crash.lua", "require('cu').init('crash'); error('boom')")
+r = W:run("xargs", "crash", { pipe = true, stdin = "a\n" })
+check("xargs: a cu program that crashes counts as a failure", r.ok and r.status == 1, r.status)
+W:file("cc-turtles/slow.lua", "sleep(3)")
+r = W:run("xargs", "-n1", "slow", { pipe = true, stdin = "a b c\n" })
+check("xargs yields during long runs", r.ok and r.status == 0 and #r.events == 0, tostring(r.error))
+local long = string.rep("x", 20000)
+r = W:run("xargs", "-n1", { pipe = true, stdin = long .. " '" .. long .. "' b\\ c\n" })
+check("xargs: long arguments", r.out == long .. "\n" .. long .. "\nb c\n")
+local many = {}
+for i = 1, 3000 do many[i] = "w" .. i end
+_G.TALLY = 0
+r = W:run("xargs", "-0", "-n", "1000", "tally", { pipe = true, stdin = table.concat(many, "\0") .. "\0" })
+check("xargs -0: 3000 arguments in runs of 1000", r.status == 0 and _G.TALLY == 3)
+r = W:run("xargs", "-0", "echo", { pipe = true, stdin = "a\0\0b" })
+check("xargs -0: empty argument kept, unterminated last one used", r.out == "a  b\n", show(r.out))
