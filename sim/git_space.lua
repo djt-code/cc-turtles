@@ -7,7 +7,8 @@
 -- rule loses sim/ on its next pull; and files that move between folders
 -- need no room for two copies, as deletions go first (the git from before
 -- fetched everything first, so moving the whole repo into bin/ and turtle/
--- filled the disk and left both copies).
+-- filled the disk and left both copies).  --only takes just the paths
+-- named, and a pull with new options changes what's kept.
 local PROJ = ...
 package.path = PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
@@ -199,3 +200,17 @@ for k in pairs(files) do
 end
 check("every file is in bin/ and none is left at the top", ok and top == 0 and bin == 6,
     top .. " at the top, " .. bin .. " in bin/")
+
+realPrint("== --only: just the files and folders named; a pull changes the choice")
+COMMITS, HEAD, files, CAP, turtle = { c1 = REPO }, "c1", {}, 100000, {}
+ok = git("clone", "https://github.com/me/cc-turtles", "/cc-turtles", "--only", "turtle/mine.lua", "--only", "bin/")
+check("only turtle/mine.lua and bin/", ok and has("turtle/mine.lua") and has("bin/cat.lua") and has("bin/git.lua")
+    and not has("lib/cu.lua") and not has("README.md"))
+ok = git("pull", "/cc-turtles", "--only", "lib/", "--only", "bin/git.lua")
+check("pull --only swaps the choice: what's no longer wanted goes, the new comes", ok and has("lib/cu.lua")
+    and has("bin/git.lua") and not has("bin/cat.lua") and not has("turtle/mine.lua"))
+ok = git("pull", "/cc-turtles")
+check("a plain pull keeps the choice", ok and has("lib/cu.lua") and not has("bin/cat.lua") and #fetched == 0)
+ok = git("pull", "/cc-turtles", "--all")
+check("pull --all brings everything back, sim/ too", ok and has("sim/lib/mock.lua") and has("pc/diskclone.lua")
+    and has("bin/cat.lua"))

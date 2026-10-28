@@ -9,14 +9,17 @@
 --
 -- A computer's disk is small (1 MB by default), so a clone leaves out
 -- what the device doesn't run: sim/ always, pc/ on a turtle and turtle/
--- on a computer.  --skip <dir> leaves out more, --all nothing; the choice
+-- on a computer.  --skip <dir> leaves out more, --all nothing, and
+-- --only <path> (a file, or a folder ending in /) takes just those; the choice
 -- is kept in .gitlite and pull keeps to it (a checkout from before this
 -- gets the device's rule on its next pull, and loses those folders).  If the disk fills anyway it
 -- stops, keeping what it got, and `git pull` carries on once there's room.
+-- The same options on pull change the choice (deploy/setup uses --only to
+-- put just the apps you name on a device).
 --
 -- Usage:
---   git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--all]
---   git pull   [dir]
+--   git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--only <path>]... [--all]
+--   git pull   [dir] [--skip <dir>]... [--only <path>]... [--all]
 --   git status [dir]
 --   git log    [dir] [-n <count>]
 --
@@ -220,6 +223,13 @@ end
 -- Checkout: bring `dir` from state.files to the tree at `commit`
 --------------------------------------------------------------------------
 local function skipped(state, path)
+    if state.only then
+        local wanted = false
+        for _, o in ipairs(state.only) do
+            if path == o or (o:sub(-1) == "/" and path:sub(1, #o) == o) then wanted = true; break end
+        end
+        if not wanted then return true end
+    end
     for _, d in ipairs(state.skip or {}) do
         if path == d or path:sub(1, #d + 1) == d .. "/" then return true end
     end
@@ -292,6 +302,10 @@ local function parseArgs(list)
             opts.skip = opts.skip or defaultSkip()
             opts.skip[#opts.skip + 1] = (list[i + 1] or ""):gsub("^/+", ""):gsub("/+$", "")
             i = i + 1
+        elseif a == "--only" then
+            opts.only = opts.only or {}
+            opts.only[#opts.only + 1] = ((list[i + 1] or ""):gsub("^/+", ""))
+            i = i + 1
         elseif a == "--all" then opts.all = true
         elseif a == "-n" then opts.count = tonumber(list[i + 1]); i = i + 1
         else pos[#pos + 1] = a end
@@ -301,7 +315,7 @@ local function parseArgs(list)
 end
 
 local function cmdClone(pos, opts)
-    local url = pos[1] or die("Usage: git clone <url> [dir] [-b branch] [--token t] [--skip dir]... [--all]")
+    local url = pos[1] or die("Usage: git clone <url> [dir] [-b branch] [--token t] [--skip dir]... [--only path]... [--all]")
     local R = makeRemote(url, opts.token)
     local dir = shell.resolve(pos[2] or R.repo)
     if fs.exists(fs.combine(dir, STATE_FILE)) then
@@ -313,7 +327,9 @@ local function cmdClone(pos, opts)
     print(string.format("Cloning %s (%s @ %s) into %s", R.url, branch, commit:sub(1, 7), dir))
     fs.makeDir(dir)
     if #skip > 0 then print("Leaving out " .. table.concat(skip, "/, ") .. "/ (--all for everything)") end
-    local state = { url = R.url, branch = branch, token = opts.token, files = {}, skip = skip }
+    if opts.only then print("Taking only " .. table.concat(opts.only, ", ")) end
+    local state = { url = R.url, branch = branch, token = opts.token, files = {}, skip = skip,
+                    only = (not opts.all) and opts.only or nil }
     local n = checkout(R, dir, state, commit)
     print(string.format("Done: %d files.", n))
 end
@@ -325,10 +341,15 @@ local function openCheckout(pos)
     return dir, state, makeRemote(state.url, state.token)
 end
 
-local function cmdPull(pos)
+local function cmdPull(pos, opts)
     local dir, state, R = openCheckout(pos)
     local commit = R.headCommit(state.branch)
-    if state.skip == nil then
+    if opts.all or opts.skip or opts.only then
+        -- a new choice of what to keep: go over every file again
+        state.skip = opts.all and {} or opts.skip or state.skip or defaultSkip()
+        state.only = (not opts.all) and opts.only or nil
+        state.commit = nil
+    elseif state.skip == nil then
         -- a checkout from before the device rule: it gets it now
         state.skip = defaultSkip()
         print("Leaving out " .. table.concat(state.skip, "/, ") .. "/ from now on")
@@ -353,6 +374,7 @@ local function cmdStatus(pos)
     print("Commit:  " .. (state.commit or "none"))
     print("Files:   " .. n .. " tracked")
     if state.skip and #state.skip > 0 then print("Skips:   " .. table.concat(state.skip, "/ ") .. "/") end
+    if state.only then print("Only:    " .. table.concat(state.only, " ")) end
     local ok, head = pcall(R.headCommit, state.branch)
     if ok then
         print(head == state.commit and "Up to date with remote."
@@ -383,14 +405,14 @@ local cmd = table.remove(pos, 1)
 if not http then die("HTTP is disabled on this server.") end
 
 if cmd == "clone" then cmdClone(pos, opts)
-elseif cmd == "pull" then cmdPull(pos)
+elseif cmd == "pull" then cmdPull(pos, opts)
 elseif cmd == "status" then cmdStatus(pos)
 elseif cmd == "log" then cmdLog(pos, opts)
 else
     print("Usage:")
     print("  git clone <url> [dir] [-b branch] [--token t]")
-    print("            [--skip dir]... [--all]")
-    print("  git pull [dir]")
+    print("            [--skip dir]... [--only path]... [--all]")
+    print("  git pull [dir] [--skip dir]... [--only path]... [--all]")
     print("  git status [dir]")
     print("  git log [dir] [-n count]")
 end
