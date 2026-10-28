@@ -497,9 +497,11 @@ local plugs = {}           -- key -> position: dug tunnel blocks it filled again
 -- the dig) is dried out first (see dry), so none is left behind.  False
 -- if it can't: a protected or unbreakable block, or something that won't
 -- move out of the way.
+local cutOff, eachAround   -- defined below
 local function go(d)
     local n = neighbour(d)
     local inside = inBox(n) and not digLimit
+    local wet = false
     for _ = 1, 30 do
         room()                     -- first: a trip changes what's there
         local ok, data = look(d)
@@ -515,11 +517,16 @@ local function go(d)
             end
             if not digDir(d) then return false, data.name end
             local okw, w = look(d)         -- the dig let water in
-            if inside and okw and FLUID[w.name] then dry(d) end
+            if inside and okw and FLUID[w.name] then
+                if isSource(w) then dry(d) else wet = true end
+            end
         end
         if moveDir(d) then
             opened[key(T.pos)] = true
             plugs[key(T.pos)] = nil
+            -- in it, the turtle keeps fluid out of the block: seal what
+            -- let it in before it spreads, from here
+            if wet then eachAround(OPP[d], cutOff) end
             return true
         end
     end
@@ -578,19 +585,8 @@ local function sealBehind(d)
     if ok and FLUID[data.name] then seal(d) end
 end
 
--- Water and lava in the tunnel.  A source can't just be dug out: water
--- flows back into an open block from any water beside or above it, a
--- block with two sources beside it becomes a source itself, and a turtle
--- that moves into a source leaves it behind when it moves on.  So the
--- turtle fills a source with a bulk block and digs it out.  If a fluid
--- comes back, something next to that block feeds it (water from above,
--- an aquifer): it steps in, seals the lava and water touching it outside
--- the tunnel, and fills the sources touching it inside, steps back, and
--- tries again.  Those fillings in the tunnel are dug out again in their
--- turn (ahead, by the lanes; behind, at the end of the segment), by when
--- what fed them is sealed.  Flowing water nothing feeds drains away.
 -- Call fn with each direction but skip, the fewest turns away first.
-local function eachAround(skip, fn)
+function eachAround(skip, fn)
     local todo = {}
     for _, e in ipairs({ "up", "down", 0, 1, 2, 3 }) do
         if e ~= skip then todo[#todo + 1] = e end
@@ -606,7 +602,7 @@ end
 
 -- Seal the fluid in direction e if it feeds the tunnel: any outside it,
 -- a source inside it (a filling, dug out again later).  True if sealed.
-local function cutOff(e)
+function cutOff(e)
     local m = neighbour(e)
     local ok, data = look(e)
     if not (ok and FLUID[data.name] and (isSource(data) or not inBox(m))) then return false, ok and data end
@@ -616,6 +612,17 @@ local function cutOff(e)
     return true
 end
 
+-- Water and lava in the tunnel.  A source can't just be dug out: water
+-- flows back into an open block from any water beside or above it, a
+-- block with two sources beside it becomes a source itself, and a turtle
+-- that moves into a source leaves it behind when it moves on.  So the
+-- turtle fills a source with a bulk block and digs it out.  If a fluid
+-- comes back, something next to that block feeds it (water from above,
+-- an aquifer): it steps in, seals the lava and water touching it outside
+-- the tunnel, and fills the sources touching it inside, steps back, and
+-- tries again.  Those fillings in the tunnel are dug out again in their
+-- turn (ahead, by the lanes; behind, at the end of the segment), by when
+-- what fed them is sealed.  Flowing water nothing feeds drains away.
 -- How strong flowing water or lava is: 0 for a source or falling (level 8
 -- and up), else its level (1 next to a source, weaker further on).
 local function strength(data)
@@ -792,7 +799,8 @@ function mineVein(d)
         for i, e in ipairs(todo) do
             local m = neighbour(e)
             local n = inReach(m)
-            if not opened[key(m)] and (n or (m.z >= 1 and (diamond or (bound and inScan(m)))))
+            local fluid = scanSays(m) == "fluid"
+            if not opened[key(m)] and (fluid or n or (m.z >= 1 and (diamond or (bound and inScan(m)))))
                     and scanSays(m) ~= "clear" and (not best or turnsTo(e) < turnsTo(todo[best])) then
                 best, near = i, n
             end
@@ -1126,11 +1134,17 @@ end
 -- At a lane block: clear the tunnel blocks above and below, look at every
 -- block outside the tunnel that this one touches, and make sure the floor
 -- under it is solid.
+local laneAt = {}          -- "x,y" of this segment's lanes
 local function scanHere()
     for _, d in ipairs({ "up", "down" }) do
         local n = neighbour(d)
         if not opened[key(n)] then
-            if inBox(n) then clearCell(d) else examine(d) end
+            -- a lane block (every block touching the walls, floor or
+            -- ceiling is one) is left for when the turtle is in it, so it
+            -- can seal what's beyond before fluid gets in
+            if inBox(n) then
+                if not laneAt[n.x .. "," .. n.y] then clearCell(d) end
+            else examine(d) end
         end
         if isFloor(n) then fill(d) end    -- something to walk on
     end
@@ -1194,6 +1208,17 @@ local function lightHere()
             if not ok or FLUID[data.name] then break end
         end
         if not digDir(d) then return end
+    end
+    -- lava or water a scan saw next to the niche would get in and put the
+    -- torch out: step in and seal it first
+    local niche, wet = neighbour(d), false
+    for _, v in pairs(DELTA) do
+        local m = { x = niche.x + v[1], y = niche.y + v[2], z = niche.z + v[3] }
+        if not (m.x == T.pos.x and m.y == T.pos.y and m.z == T.pos.z) and scanSays(m) == "fluid" then wet = true end
+    end
+    if wet and go(d) then
+        eachAround(OPP[d], cutOff)
+        retreat(d)
     end
     local placed = selectItem(isTorch) and placeDir(d)
     if not placed and supportNiche(d) then placed = selectItem(isTorch) and placeDir(d) end
@@ -1506,6 +1531,9 @@ local function fetchTargets(which)
             if not go(d) then break end
             trail[#trail + 1] = d
             way[out()] = here()
+            eachAround(OPP[d], function(e)
+                if scanSays(neighbour(e)) == "fluid" then cutOff(e) end
+            end)
         end
         bound = nil
         if stats.ore > ore then stats.fetched = stats.fetched + 1 end
@@ -1600,6 +1628,8 @@ end
 -- Mine the segment from z1 to z2, starting and ending at the home.
 local function mineSegment(z1, z2)
     local lanes = planLanes()
+    laneAt = {}
+    for _, lane in ipairs(lanes) do laneAt[lane.x .. "," .. lane.y] = true end
     print(string.format("Segment z=%d..%d from home %d: %d lanes, fuel %s.", z1, z2, home.k, #lanes,
         tostring(turtle.getFuelLevel())))
     known, targets, scanFrom, scanned = {}, {}, {}, {}

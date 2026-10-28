@@ -398,7 +398,20 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   nothing beside it feeds is left to drain away the first time. If it's
   there again on a later pass, it's coming from further off, so the turtle
   follows it upstream along the tunnel, at most as far as water flows, and
-  seals where it comes in. The ways it dug out to veins are sealed too if
+  seals where it comes in.
+- **Keeping fluid out as it digs:** a turtle in a block keeps fluid out of
+  it, and only a block touching the walls, floor or ceiling can let fluid
+  in. Every such block is on one of its lanes, and it only opens them from
+  inside: it doesn't clear them from the lane beside. So it's always
+  standing in a block when it first opens it to the outside. If the dig
+  lets water in, it moves in, pushing the water out, and seals where it
+  came from before it spreads. That matters most for lava, which is too
+  slow to show up right after a dig. With a scanner, it also seals lava and
+  water the scan saw:
+  - next to the ways it digs out to veins and to ore further out;
+  - next to a torch niche, from inside the niche, before the torch goes in.
+
+  Water washes torches away, and lava burns any item it touches. The ways it dug out to veins are sealed too if
   water got into them. In tests through an underground lake and under one,
   it left the tunnel dry with nothing leaking in.
 - **Trips home:** before a dig with fewer than 2 empty slots, or a move that

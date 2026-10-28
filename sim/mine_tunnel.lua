@@ -141,13 +141,14 @@ local function gravity(x, y, z)
         set(x, y, z, above); set(x, y + 1, z, nil); y = y + 1
     end
 end
--- Water, roughly as Minecraft runs it, worked out whenever a block next
--- to it changes: an open block (not the turtle's) beside or under water
--- fills again: a source if two sources sit beside it on something solid
--- or a source, falling water under water, flowing water beside water that
--- isn't spent; flowing water nothing feeds drains away.  The turtle
--- moving into water leaves the block as it was, so a source it moves out
--- of is left behind, as a waterlogged turtle leaves one.
+-- Water, roughly as Minecraft runs it: an open block (not the turtle's)
+-- beside or under water fills: a source if two sources sit beside it on
+-- something solid or a source, falling water under water, flowing water
+-- beside water that isn't spent; flowing water nothing feeds drains away.
+-- It takes time: water reacts to a change next to it 5 ticks on, and
+-- each turtle move, turn, dig or place takes 8.  A turtle moving into flowing water pushes it out;
+-- one moving into a source is waterlogged and leaves the source behind
+-- when it moves on.  Torches the water reaches are washed away.
 local WATER_NAME = "minecraft:water"
 local function isWater(b) return b and b.name == WATER_NAME end
 local function waterFor(x, y, z)
@@ -169,26 +170,71 @@ local function waterFor(x, y, z)
     if feed then return { name = WATER_NAME, level = feed } end
     return nil
 end
+local pending = {}         -- key -> { due tick, x, y, z }: water blocks due a tick
+local clock = 0            -- ticks
+local SIDES6 = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }
+local function due(a, b, c, t)
+    if not isWater(get(a, b, c)) then return end
+    local key = k(a, b, c)
+    local q = pending[key]
+    if not q or q[1] > t then pending[key] = { t, a, b, c } end
+end
+-- Something changed at (x,y,z) now: the water there and next to it ticks
+-- 5 ticks on.
 local function flow(x, y, z)
-    local queue, head, steps = { { x, y, z } }, 1, 0
-    local function near(a, b, c)
-        for _, d in ipairs({ { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }) do
-            queue[#queue + 1] = { a + d[1], b + d[2], c + d[3] }
-        end
+    due(x, y, z, clock + 5)
+    for _, d in ipairs(SIDES6) do due(x + d[1], y + d[2], z + d[3], clock + 5) end
+end
+-- The open block (not the turtle's) at (a,b,c) gets the water due it.
+local function fillAt(a, b, c, t)
+    local cur = get(a, b, c)
+    local torch = cur and cur.name == "minecraft:torch"
+    if c < 1 or (a == P.x and b == P.y and c == P.z) or not (cur == nil or torch) then return end
+    local new = waterFor(a, b, c)
+    if not new then return end
+    if torch then WASHED = (WASHED or 0) + 1 end    -- water washes a torch away
+    -- INGRESS: water getting into the tunnel (BOX) where it's open, past
+    -- the block just dug (which the turtle moves into, pushing it out)
+    if BOX and a >= BOX[1] and a <= BOX[2] and b >= BOX[3] and b <= BOX[4]
+            and k(a, b, c) ~= LAST_DUG then
+        INGRESS = (INGRESS or 0) + 1
     end
-    near(x, y, z)
-    while head <= #queue and steps < 4000 do
-        local q = queue[head]; head = head + 1; steps = steps + 1
-        local a, b, c = q[1], q[2], q[3]
+    set(a, b, c, new)
+    due(a, b, c, t + 5)
+end
+-- Let `ticks` pass (a turtle action's 8 by default).  A water block that
+-- ticks drains if nothing feeds it (or changes level), and spreads into the
+-- open blocks next to it, which tick 5 ticks later.
+local function waterStep(ticks)
+    clock = clock + (ticks or 8)
+    for _ = 1, 100000 do
+        local first
+        for _, q in pairs(pending) do
+            if q[1] <= clock and (not first or q[1] < first[1]) then first = q end
+        end
+        if not first then return end
+        local t, a, b, c = first[1], first[2], first[3], first[4]
+        pending[k(a, b, c)] = nil
         local cur = get(a, b, c)
-        if c >= 1 and not (a == P.x and b == P.y and c == P.z)
-                and (cur == nil or (isWater(cur) and cur.level ~= 0)) then
-            local new = waterFor(a, b, c)
-            if (new and new.level) ~= (cur and cur.level) then
-                set(a, b, c, new)
-                near(a, b, c)
+        if isWater(cur) and not (a == P.x and b == P.y and c == P.z) then
+            if cur.level ~= 0 then
+                local new = waterFor(a, b, c)
+                if (new and new.level) ~= cur.level then
+                    set(a, b, c, new)
+                    for _, d in ipairs(SIDES6) do due(a + d[1], b + d[2], c + d[3], t + 5) end
+                end
+            end
+            if isWater(get(a, b, c)) then
+                for _, d in ipairs(SIDES6) do fillAt(a + d[1], b + d[2], c + d[3], t) end
             end
         end
+    end
+end
+-- Let the water settle (at the end of a run).
+local function settleWater()
+    for _ = 1, 400 do
+        if next(pending) == nil then return end
+        waterStep(5)
     end
 end
 
@@ -199,7 +245,12 @@ local function move(dx, dy, dz)
     if ONMOVE then ONMOVE(P.x, P.y, P.z, nx, ny, nz) end
     local ox, oy, oz = P.x, P.y, P.z
     P.x, P.y, P.z = nx, ny, nz; moves = moves + 1
-    if WATERY then flow(ox, oy, oz) end
+    if WATERY then
+        local b = get(nx, ny, nz)
+        if isWater(b) and b.level ~= 0 then set(nx, ny, nz, nil) end   -- pushed out
+        flow(ox, oy, oz)
+        waterStep()
+    end
     FUEL = FUEL - 1; LOWEST = math.min(LOWEST, FUEL)
     if TRAVELLING then                  -- a trip ends back where it started
         if P.x ~= BACK[1] or P.y ~= BACK[2] or P.z ~= BACK[3] then LEFT_SPOT = true
@@ -215,11 +266,12 @@ local function digAt(x, y, z)
     local b = get(x, y, z)
     if not b or passable(b) or b.inv or b.name == "minecraft:bedrock" then return false end
     set(x, y, z, nil)
+    LAST_DUG = k(x, y, z)
     if TRAVELLING then TRAVEL_DIGS = (TRAVEL_DIGS or 0) + 1 end
     DIGS = (DIGS or 0) + 1
     addItem(DROP[b.name] or b.name, 1)
     gravity(x, y, z)
-    if WATERY then flow(x, y, z) end
+    if WATERY then flow(x, y, z); waterStep() end
     return true
 end
 local function solid(b) return b and not passable(b) and b.name ~= "minecraft:torch" end
@@ -236,7 +288,7 @@ local function placeAt(x, y, z, behind)
     else set(x, y, z, { name = it.name }) end
     it.count = it.count - 1; if it.count == 0 then inv[sel] = nil end
     PLACED = (PLACED or 0) + 1
-    if WATERY then flow(x, y, z) end
+    if WATERY then flow(x, y, z); waterStep() end
     return true
 end
 local function dropInto(c, n)
@@ -350,8 +402,8 @@ turtle = {
     back = function() return move(-DX[P.d], 0, -DZ[P.d]) end,
     up = function() return move(0, 1, 0) end,
     down = function() return move(0, -1, 0) end,
-    turnRight = function() P.d = (P.d + 1) % 4; turns = turns + 1; return true end,
-    turnLeft = function() P.d = (P.d + 3) % 4; turns = turns + 1; return true end,
+    turnRight = function() P.d = (P.d + 1) % 4; turns = turns + 1; if WATERY then waterStep() end; return true end,
+    turnLeft = function() P.d = (P.d + 3) % 4; turns = turns + 1; if WATERY then waterStep() end; return true end,
     inspect = function() return inspectAt(front()) end,
     inspectUp = function() return inspectAt(above()) end,
     inspectDown = function() return inspectAt(below()) end,
@@ -490,6 +542,7 @@ local function run(...)
     package.loaded.turtlelib = nil
     local chunk = assert(loadfile(PROJ .. "/mine.lua"))
     local ok, err = pcall(chunk, ...)
+    if WATERY then settleWater() end
     realPrint("== mine " .. table.concat({ ... }, " ") .. "  (moves: " .. moves .. ", turns: " .. turns .. ", digs: " .. DIGS .. ", split stacks: " .. SPLIT .. ")")
     for _, l in ipairs(log) do
         if not l:find("^Segment ") then realPrint("   " .. l) end
@@ -986,6 +1039,36 @@ check("a scan turned from its heading: said so, and skipped it", logHas("heading
 check("still dug the tunnel, by hand", leftIn(0, 2, 0, 2, 1, 30) == 0)
 check("back at the start", atStart())
 
+-- 11f. tunnelling past water in the walls (an aquifer right of it, at
+--      every height) with torches: it never opens a block that touches
+--      the water without standing in it, so water hardly gets in, and no
+--      torch is washed away; with and without a scanner
+local function wetWalls(withScanner)
+    setup(stock(4, 64, 64))
+    if withScanner then table.insert(chestAt(0, 1, 0), { name = SCANNER, count = 1 }) end
+    table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 })
+    for x = 3, 6 do for y = -1, 3 do for z = 6, 30 do set(x, y, z, { name = "minecraft:water", level = 0 }) end end end
+    for x = -1, 7 do for z = 5, 31 do set(x, 4, z, { name = "minecraft:stone" }); set(x, -2, z, { name = "minecraft:stone" }) end end
+    startAt(); inv, files = {}, {}
+    EQ = { right = "minecraft:diamond_pickaxe" }
+    FUEL, DRY, PLACED, SCANS, WASHED, INGRESS = 3000, 0, 0, 0, 0, 0
+    WATERY, BOX = true, { 0, 2, 0, 2 }
+    run("3", "3", "36")
+    WATERY, BOX = false, nil
+    local wetIn = 0
+    for x = 0, 2 do for y = 0, 2 do for z = 1, 36 do if isWater(get(x, y, z)) then wetIn = wetIn + 1 end end end end
+    local torches = 0
+    for x = -1, 3 do for z = 1, 36 do if (get(x, 0, z) or {}).name == "minecraft:torch" then torches = torches + 1 end end end
+    check("no water got into the tunnel past the block being dug", INGRESS <= 3,
+        INGRESS .. " times water flowed into an open tunnel block")
+    check("no torch washed away", WASHED == 0 and torches >= 2, WASHED .. " washed away, " .. torches .. " up")
+    check("no water left in the tunnel", wetIn == 0, wetIn .. " blocks")
+    check("tunnel clear", leftIn(0, 2, 0, 2, 1, 36) == 0, leftIn(0, 2, 0, 2, 1, 36) .. " blocks left")
+    check("back at the start", atStart())
+end
+wetWalls(false)
+wetWalls(true)
+
 -- 12. low on fuel with a scanner: the only fuel is coal 5 out from the
 --     tunnel, which it goes for as soon as a scan finds it, and burns
 setup({ { name = SCANNER, count = 1 }, { name = "minecraft:chest", count = 4 } })
@@ -1097,6 +1180,7 @@ table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 })
 set(3, 0, 26, { name = "minecraft:water", level = 0 })
 WATERY = true
 flow(3, 0, 26)
+settleWater()
 local spread = 0
 for x = 0, 2 do for z = 1, 40 do if isWater(get(x, 0, z)) then spread = spread + 1 end end end
 startAt()
