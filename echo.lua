@@ -15,6 +15,8 @@
 -- words on spaces and strips double quotes, so a quoted phrase becomes one
 -- argument; use single quotes for Lua strings:
 --   echo shell.run('autocompost') > /startup.lua
+-- Under Craftix (_G.POSIX_SH set) the shell does the redirects, and a >
+-- that reaches echo was quoted: it's printed like any other string.
 
 local cu = require("cu").init("echo", "echo [string...] [> file | >> file]")
 
@@ -26,7 +28,7 @@ local i = 1
 while i <= #args do
     local a = args[i]
     local op, rest = a:match("^(>>?)(.*)$")
-    if op then
+    if op and not _G.POSIX_SH then
         mode = op == ">>" and "ab" or "wb"
         if rest ~= "" then out = rest
         else i = i + 1; out = args[i] end
