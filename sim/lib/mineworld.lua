@@ -247,6 +247,16 @@ local function dig(x, y, z)
     local b = get(x, y, z)
     if not b or passable(b) or b.inv or b.name == "minecraft:bedrock" then return false end
     set(x, y, z, b.waterlogged and { name = WATER_NAME, level = 0 } or nil)
+    if b.name == "minecraft:torch" then TORCHES_DUG = (TORCHES_DUG or 0) + 1 end
+    -- a torch hanging on this block, or standing on it, drops off (onto
+    -- the ground: the turtle doesn't get it)
+    for _, d in ipairs(M.SIDES6) do
+        local t = get(x + d[1], y + d[2], z + d[3])
+        if t and t.name == "minecraft:torch" and t.on == k(x, y, z) then
+            set(x + d[1], y + d[2], z + d[3], nil)
+            TORCHES_DROPPED = (TORCHES_DROPPED or 0) + 1
+        end
+    end
     LAST_DUG = k(x, y, z)
     if TRAVELLING then TRAVEL_DIGS = (TRAVEL_DIGS or 0) + 1 end
     DIGS = (DIGS or 0) + 1
@@ -263,14 +273,18 @@ local function place(x, y, z, dir)
     local it = Mine.inv[Mine.sel]
     if not it then return false end
     if not passable(get(x, y, z)) then return false end
+    local on                               -- what a torch hangs on or stands on
     if it.name == "minecraft:torch" then
-        local hangs = dir == "front" and solid(get(x + M.DX[P.d], y, z + M.DZ[P.d]))
-        if not (solid(get(x, y - 1, z)) or hangs) then return false end
+        local bx, bz = x + M.DX[P.d], z + M.DZ[P.d]
+        local hangs = dir == "front" and solid(get(bx, y, bz))
+        if hangs then on = k(bx, y, bz)
+        elseif solid(get(x, y - 1, z)) then on = k(x, y - 1, z)
+        else return false end
     end
     if it.name:find("raw_") or M.FUEL_VALUE[it.name] or it.name == "minecraft:diamond"
         or it.name == "minecraft:emerald" then return false end
     if it.name == "minecraft:chest" then set(x, y, z, Mine.chest())
-    else set(x, y, z, { name = it.name }) end
+    else set(x, y, z, { name = it.name, on = on }) end
     M.useSel(Mine)
     PLACED = (PLACED or 0) + 1
     if WATERY then flow(x, y, z); waterStep() end
