@@ -13,6 +13,7 @@ upgrade in software.
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
 | `cat.lua` | Prints files a screenful at a time (CraftOS has no `cat`): `cat claude.log`. |
+| `echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
 | `claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
@@ -86,12 +87,14 @@ If HTTP is disabled on the server, drop the files into
 `<world>/computercraft/computer/<id>/cc-turtles/` by hand.
 
 To run the programs from any directory, put `cc-turtles` on the shell's
-search path. `edit /startup.lua` and add this line (CraftOS runs
-`/startup.lua` at boot; reboot, or run `/startup` once, to pick it up):
+search path by adding a line to `/startup.lua`, which CraftOS runs at boot
+(reboot, or run `/startup` once, to pick it up):
 
 ```
-shell.setPath(shell.path() .. ":/cc-turtles")
+cc-turtles/echo "shell.setPath(shell.path() .. ':/cc-turtles')" >> /startup.lua
 ```
+
+or `edit /startup.lua` and type it in: `shell.setPath(shell.path() .. ":/cc-turtles")`.
 
 The shell looks a program name up in each directory on the path in turn,
 `.lua` optional. Run from anywhere, a program still finds `turtlelib` and
@@ -658,9 +661,8 @@ it has nothing left to compost it sleeps until you give it more.
   turtle.
 - If the composter stays full for 10 seconds it asks whether the hopper below is
   full or missing, and keeps waiting.
-- To start it at boot, `edit /startup.lua` and put `shell.run("autocompost")`
-  in it (`shell.run("/cc-turtles/autocompost")` if `cc-turtles` isn't on the
-  path).
+- To start it at boot: `echo "shell.run('autocompost')" >> /startup.lua`
+  (`shell.run('/cc-turtles/autocompost')` if `cc-turtles` isn't on the path).
 
 ## diskclone
 
