@@ -1017,7 +1017,9 @@ local function restockKit()
                             { side = home.val, set = TORCHES, keep = TORCH_KEEP },
                             { side = home.val, set = T.fuel, keep = FUEL_KEEP } }) do
         local test = function(n) return want.set[n] end
-        for name, n in pairs(chestCounts(want.side)) do
+        local counts = chestCounts(want.side)
+        for _, name in ipairs(T.sortedKeys(counts)) do
+            local n = counts[name]
             local have = carried(test)
             if have >= want.keep then break end
             if want.set[name] then
@@ -1116,7 +1118,9 @@ end
 -- there's room.  Returns how many it took, and whether any are left.
 local function takeSupplies()
     local took = 0
-    for name, n in pairs(chestCounts(home.val)) do
+    local counts = chestCounts(home.val)
+    for _, name in ipairs(T.sortedKeys(counts)) do
+        local n = counts[name]
         if isSupply(name) then
             local before = T.countItem(name)
             T.restockFrom(home.val, name, before + n, { quiet = true, room = 1 })
@@ -1617,6 +1621,7 @@ local function fetchTargets(which)
         if not opened[key(t)] and (not which or which(t)) then list[#list + 1] = t end
     end
     if #list == 0 then return end
+    table.sort(list, function(a, b) return key(a) < key(b) end)   -- ties the same every run
     local start, base = here(), #trail
     -- where it has been since leaving the tunnel: way[i] after trail[base + i]
     local way = { [0] = start }
@@ -1783,7 +1788,11 @@ local function unplug()
         local list = {}
         for _, q in pairs(plugs) do list[#list + 1] = q end
         if #list == 0 then break end
-        table.sort(list, function(a, b) return dist(a, T.pos) < dist(b, T.pos) end)
+        table.sort(list, function(a, b)
+            local da, db = dist(a, T.pos), dist(b, T.pos)
+            if da ~= db then return da < db end
+            return key(a) < key(b)             -- ties the same every run
+        end)
         for _, q in ipairs(list) do
             if plugs[key(q)] then
                 alongAxis("z", q.z); alongAxis("x", q.x); alongAxis("y", q.y)
@@ -1944,7 +1953,10 @@ local function collect(side)
     for name in pairs(counts) do
         if not isSupply(name) then names[#names + 1] = name end
     end
-    table.sort(names, function(a, b) return value(a) > value(b) end)
+    table.sort(names, function(a, b)
+        if value(a) ~= value(b) then return value(a) > value(b) end
+        return a < b
+    end)
     for _, name in ipairs(names) do
         while (chestCounts(side)[name] or 0) > 0 do
             if T.freeSlots() == 0 then
@@ -2205,8 +2217,8 @@ if doHaul then
     home = startingHome(true)
     if not home then return end
     T.withTool(pickaxe, haul)
-    for k, n in pairs(leftBehind) do
-        print(string.format("Still %d items in home %d (z=%d).", n, k, homeAt(k).z))
+    for _, k in ipairs(T.sortedKeys(leftBehind)) do
+        print(string.format("Still %d items in home %d (z=%d).", leftBehind[k], k, homeAt(k).z))
     end
     return
 end
@@ -2326,8 +2338,8 @@ print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid bloc
     stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled,
     lights and (", " .. stats.torches .. " torches placed") or "",
     hasScanner and (", " .. stats.fetched .. " deposits fetched from further out") or ""))
-for k, n in pairs(leftBehind) do
-    print(string.format("No room to bring back %d items from home %d (z=%d).", n, k, homeAt(k).z))
+for _, k in ipairs(T.sortedKeys(leftBehind)) do
+    print(string.format("No room to bring back %d items from home %d (z=%d).", leftBehind[k], k, homeAt(k).z))
 end
 if stopped then print("Stopped because: " .. stopped .. " `mine --resume` carries on.") end
 end

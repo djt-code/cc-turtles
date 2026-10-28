@@ -179,8 +179,8 @@ local function cropAt(k) return crops[k] or DEFAULT_CROP end
 local function saveMap()
     local f = fs.open(MAP_FILE, "w")
     f.writeLine(WIDTH .. " " .. LENGTH)
-    for k, t in pairs(tiles) do
-        f.writeLine(k .. " " .. t .. (crops[k] and (" " .. crops[k]) or ""))
+    for _, k in ipairs(T.sortedKeys(tiles)) do
+        f.writeLine(k .. " " .. tiles[k] .. (crops[k] and (" " .. crops[k]) or ""))
     end
     f.close()
 end
@@ -586,8 +586,8 @@ local function waitAndCompost(seconds)
             if more then sleep(math.min(COMPOST_CHECK, math.max(0, wake - os.clock()))) end
         end
         local parts = {}
-        for name, n in pairs(fed) do
-            if n > 0 then parts[#parts + 1] = n .. " " .. name .. " seeds" end
+        for _, name in ipairs(T.sortedKeys(fed)) do
+            if fed[name] > 0 then parts[#parts + 1] = fed[name] .. " " .. name .. " seeds" end
         end
         if #parts > 0 then
             print("Composted " .. table.concat(parts, ", ") ..
@@ -835,7 +835,7 @@ end
 -- nearest (nx,nz): the turtle when not given.
 function regenTile(nx, nz)
     nx, nz = nx or T.pos.x, nz or T.pos.z
-    local best, bestD
+    local best, bestD, bestK
     for k in pairs(wet) do
         local x, z = keyXZ(k)
         local n = 0
@@ -843,7 +843,10 @@ function regenTile(nx, nz)
             if wet[T.ckey(x + d[1], z + d[2])] then n = n + 1 end
         end
         local dist = math.abs(x - nx) + math.abs(z - nz)
-        if n >= 2 and (not best or dist < bestD) then best, bestD = { x = x, z = z }, dist end
+        -- (ties by key, so it's the same tile every run)
+        if n >= 2 and (not best or dist < bestD or (dist == bestD and k < bestK)) then
+            best, bestD, bestK = { x = x, z = z }, dist, k
+        end
     end
     return best
 end
@@ -917,7 +920,7 @@ local function ensureWater(n, target)
             if k ~= tk and regenIf(tk, k) then
                 local x, z = keyXZ(k)
                 local d = math.abs(x - target.x) + math.abs(z - target.z)
-                if not best or d < best.d then best = { x = x, z = z, d = d } end
+                if not best or d < best.d or (d == best.d and k < best.k) then best = { x = x, z = z, d = d, k = k } end
             end
         end
         if best and scoopAt(best.x, best.z, 1, false) > 0 then
@@ -1467,9 +1470,9 @@ local function farmPass(harvest, lanes, grow)
         print(string.format("Damage: %d crop/cane tiles won't plant, %d lane tiles not a source, %d blocked",
             stats.damaged, stats.dry, stats.blocked))
     end
-    for seed, n in pairs(bare) do
+    for _, seed in ipairs(T.sortedKeys(bare)) do
         print(string.format("Out of %s: %d tiles left bare. Put some in the chest.",
-            (seed:gsub("^minecraft:", ""):gsub("_", " ")), n))
+            (seed:gsub("^minecraft:", ""):gsub("_", " ")), bare[seed]))
     end
     return damaged
 end

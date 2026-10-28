@@ -660,6 +660,17 @@ function T.requireHome(force, prog)
     return false
 end
 
+-- The keys of a table, sorted (by `cmp` if given): going over a table
+-- with pairs takes a different order every run, so wherever the order
+-- shows (which chest stack is taken first, a tie between two targets),
+-- this gives the same one each time.
+function T.sortedKeys(t, cmp)
+    local keys = {}
+    for k in pairs(t) do keys[#keys + 1] = k end
+    table.sort(keys, cmp)
+    return keys
+end
+
 -- Remove every occurrence of `flag` from an argument list; true if found.
 function T.popFlag(args, flag)
     local found = false
