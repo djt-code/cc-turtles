@@ -294,14 +294,17 @@ local function cmdLog(pos, opts)
     local dir, state, R = openCheckout(pos)
     local n = opts.count or 10
     local commits = R.log(state.branch, n)
+    -- a screenful at a time: pagedPrint waits for a key when it fills
+    local lines = {}
     for _, c in ipairs(commits) do
         local marker = (c.sha == state.commit) and "*" or " "
         local subject = c.message:match("^[^\n]*")
-        print(string.format("%s%s %s", marker, c.sha:sub(1, 7), subject))
-        print(string.format("   %s  %s", c.author, c.date:sub(1, 10)))
+        lines[#lines + 1] = string.format("%s%s %s", marker, c.sha:sub(1, 7), subject)
+        lines[#lines + 1] = string.format("   %s  %s", c.author, c.date:sub(1, 10))
     end
-    if #commits == 0 then print("No commits.") end
-    print("(* = checked out)")
+    if #commits == 0 then lines[#lines + 1] = "No commits." end
+    lines[#lines + 1] = "(* = checked out)"
+    textutils.pagedPrint(table.concat(lines, "\n"))
 end
 
 --------------------------------------------------------------------------

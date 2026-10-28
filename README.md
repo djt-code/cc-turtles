@@ -79,7 +79,8 @@ cd cc-turtles
 
 Later, `git pull` inside the directory fetches only the files that changed.
 `git status` shows the checked-out commit and whether the remote has moved on;
-`git log` lists recent commits on the branch, marking the one checked out.
+`git log` lists recent commits on the branch, marking the one checked out,
+a screenful at a time (press a key for the next).
 The programs `require("turtlelib")`, so run them from inside `cc-turtles`
 (or `cd` there first); if HTTP is disabled on the server, drop the files into
 `<world>/computercraft/computer/<id>/cc-turtles/` by hand.
