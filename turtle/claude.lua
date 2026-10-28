@@ -47,7 +47,7 @@ local LOG_FILE = T.dataPath("claude.log")
 local MAX_TOKENS = 8192         -- a reply is a short note and some code
 local MAX_OUTPUT = 6000         -- characters of a tool's output sent back
 local RETRIES = 4               -- on rate limits, overload and outages
-local HTTP_TIMEOUT = 120        -- seconds to wait for a reply
+local HTTP_TIMEOUT = 60         -- seconds to wait for a reply: CC allows at most 60
 
 --------------------------------------------------------------------------
 -- Arguments

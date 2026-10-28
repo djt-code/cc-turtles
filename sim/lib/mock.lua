@@ -569,7 +569,13 @@ function M.httpApi()
     end
     H.api = {
         post = function(req, body, headers)
-            if type(req) == "table" then body, headers = req.body, req.headers; req = req.url end
+            if type(req) == "table" then
+                -- as rom/apis/http/http.lua checks it
+                if req.timeout ~= nil and not (req.timeout >= 0 and req.timeout <= 60) then
+                    error("timeout out of range (between 0.0 and 60.0)", 2)
+                end
+                body, headers = req.body, req.headers; req = req.url
+            end
             H.requests[#H.requests + 1] = { url = req, headers = headers, body = json.decode(body) }
             local r = table.remove(H.queue, 1)
             if not r then error("http.post with nothing scripted for it (request " .. #H.requests .. ")") end
