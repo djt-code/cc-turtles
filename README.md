@@ -84,12 +84,29 @@ farm layout is kept).
 
 ## Install
 
-On the turtle, with HTTP enabled on the server:
+On the turtle or computer, with HTTP enabled on the server:
 
 ```
-wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/bin/git.lua git
-git clone https://github.com/djt-code/cc-turtles
-cd cc-turtles
+wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua
+```
+
+That fetches `git`, clones the repo into `/cc-turtles` and runs
+`deploy/install` (below), which puts the programs on the path and
+reboots. Add `--craftix` to start [Craftix](#craftix) at boot,
+`--no-reboot` to skip the reboot. The clone leaves out what the device
+doesn't run, since a computer's disk holds 1 MB and the whole repo nearly
+fills it: `sim/` always, `pc/` on a turtle and `turtle/` on a computer
+(`--all` for everything). Run the same line again to update, or to finish
+a clone that filled the disk: it pulls an existing checkout, and clears
+what a half-done clone left in the folders it leaves out.
+
+By hand, the same is:
+
+```
+wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/bin/git.lua /git-boot.lua
+git-boot clone https://github.com/djt-code/cc-turtles /cc-turtles
+rm git-boot.lua
+cc-turtles/deploy/install
 ```
 
 Later, `git pull` inside the directory fetches only the files that changed.
@@ -130,7 +147,7 @@ time the program looks for them, so `mine --resume` and `reset` carry on.
 ## git
 
 ```
-git clone <url> [dir] [-b <branch>] [--token <token>]
+git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--all]
 git pull   [dir]
 git status [dir]
 git log    [dir] [-n <count>]
@@ -143,6 +160,16 @@ downloads only blobs whose SHA changed, deletes tracked files removed
 upstream, and never touches untracked files (so `farm.map` survives).
 Works with GitHub and Forgejo/Gitea (any host). `--token` is only needed for
 private repos and is saved in `.gitlite` for later pulls.
+
+A clone leaves out `sim/`, and `pc/` on a turtle or `turtle/` on a
+computer; `--skip <dir>` leaves out more, `--all` nothing. The choice is
+saved in `.gitlite` and `pull` keeps to it. A checkout made before this
+gets the device's rule on its next `pull`, which deletes those folders.
+Before writing a file it checks the disk has room (CC counts every file as
+at least 500 bytes), and if not it stops, saying so, with what it got
+recorded: free some space and `git pull` fetches the rest. `pull` deletes
+files removed upstream before fetching new ones, so files that moved
+don't need room twice.
 
 ## Utilities
 

@@ -13,7 +13,8 @@
 -- doesn't keep them from running.  Running install again changes
 -- nothing; run it again after the 2026-10-28 move into bin/ and turtle/
 -- and it swaps the old line (the repo's top folder) for the new ones.
--- This file lives in deploy/, which isn't on the path itself.
+-- This file lives in deploy/, which isn't on the path itself; deploy/setup
+-- fetches the repo and runs it in one go.
 --
 -- --craftix also starts Craftix, the POSIX-style shell, at boot: a line at
 -- the end of /startup.lua (or /startup/zz-craftix.lua) runs it while the
