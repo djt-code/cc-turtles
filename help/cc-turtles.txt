@@ -1,0 +1,50 @@
+cc-turtles: the commands this repo adds. `help <command>` for one.
+
+Anywhere (bin/):
+  basename: the last part of a path name (POSIX basename)
+  cat: concatenate files to standard output (POSIX cat)
+  cmp: compare two files byte by byte (POSIX cmp)
+  craftix: Craftix, a small POSIX-style shell for CraftOS
+  cut: write selected parts of each line (POSIX cut)
+  df: report free disk space (POSIX df)
+  diff: show the differences between two files (POSIX diff)
+  dirname: the directory part of a path name (POSIX dirname)
+  du: report disk usage (POSIX du)
+  echo: write its arguments to standard output (POSIX/XSI echo)
+  expr: evaluate an expression and print the result (POSIX expr)
+  false: do nothing, unsuccessfully (POSIX false)
+  find: find files by name, type, size or age (POSIX find)
+  git: minimal git client for CC:Tweaked
+  grep: print the lines that match a pattern (POSIX grep)
+  head: copy the first part of files to standard output (POSIX head)
+  more: show files a screenful at a time (POSIX more, a subset)
+  od: dump files in octal and other formats (POSIX od)
+  printf: write formatted output (POSIX printf)
+  pwd: print the working directory (POSIX pwd)
+  sleep: wait a while (POSIX sleep)
+  sort: sort, merge or check lines of text (POSIX sort)
+  strings: find printable strings in files (POSIX strings)
+  tail: copy the last part of a file to standard output (POSIX tail)
+  tee: copy standard input to standard output and to files (POSIX tee)
+  test: evaluate a condition and exit 0 (true) or 1 (false) (POSIX test)
+  touch: create files, or mark them modified now (POSIX touch)
+  tr: translate, squeeze or delete characters (POSIX tr)
+  true: do nothing, successfully (POSIX true)
+  uniq: report or filter out repeated lines (POSIX uniq)
+  wc: count lines, words and bytes (POSIX wc)
+  which: show which program a command name runs (not in POSIX)
+  xargs: run a command with arguments read from input (POSIX xargs)
+
+Turtles (turtle/):
+  autocompost: a turtle that sits on a composter and composts everything compostable you give it
+  autostart: at boot, carry on with the turtle's job
+  claude: let Claude drive the turtle
+  farm: crop farming turtle for CC:Tweaked (wheat, carrots, potatoes, beetroot and sugar cane; any mix of them on one farm)
+  home: send the turtle back to its job's start position
+  mine: tunnel-mining turtle for CC:Tweaked
+  mow: lawn-mowing turtle for CC:Tweaked
+
+Computers (pc/):
+  diskclone: copy a directory onto as many floppy disks as a dispenser can feed
+
+Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, craftix.login).

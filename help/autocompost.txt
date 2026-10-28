@@ -1,0 +1,7 @@
+autocompost: a turtle that sits on a composter and composts everything compostable you give it
+
+Put the turtle directly on top of a composter, with a hopper under the composter to take the bone meal out.  Fill the turtle with anything: it drops each compostable item in one at a time (dropDown only ever takes one), waits while the composter is full, and sleeps until its inventory changes when there's nothing left to compost.  It never moves.
+
+What's compostable is learned, not listed, so modded items work too: an item the composter refuses while it isn't full is not compostable. Those go into a chest in front of the turtle if there is one, otherwise they stay in the turtle.
+
+Usage: autocompost To start it at boot:  echo "shell.run('autocompost')" >> /startup.lua

@@ -1,0 +1,5 @@
+basename: the last part of a path name (POSIX basename)
+
+  basename string [suffix]
+
+Strips trailing slashes and everything up to the last remaining slash, then the suffix, if one is given and it is not the whole of what is left.  A string of only slashes gives "/", an empty string an empty line.  Only "/" separates: the string is not looked up on disk.

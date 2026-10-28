@@ -1,0 +1,5 @@
+wc: count lines, words and bytes (POSIX wc)
+
+  wc [-c|-m] [-lw] [file...]
+
+For each file (standard input if there are none, or for "-") writes the counts asked for, always in the order lines, words, bytes, then the file name, separated by single spaces.  No options means -lwc.  With more than one file a "total" line follows.  A word is a run of characters that aren't spaces, tabs or newlines.  -m counts characters, which in CraftOS's one-byte character set is the same as -c.  A file that can't be read is reported and wc exits 1 at the end.

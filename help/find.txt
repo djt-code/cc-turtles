@@ -1,0 +1,34 @@
+find: find files by name, type, size or age (POSIX find)
+
+  find [-H|-L] [path...] [expression]
+
+Walks each path (default ".") and every file and directory under it, and evaluates the expression on each; with no -print, -exec or -ok in it, the paths that match are printed one per line.  Primaries:
+  -name pat
+      the last part of the path matches the glob pat (* ? [a-z] [!a-z] and \ quoting; a leading "." is nothing special)
+  -path pat
+      the whole path matches pat (* also matches "/")
+  -type c
+      f a file, d a directory (b c l p s never match)
+  -size n[c]
+      n blocks of 512 bytes, rounded up, or n bytes with c
+  -mtime n
+      last modified n days ago (whole days)
+  -newer file
+      modified more recently than file
+  -print
+      write the path; -print0 ends it with a NUL instead
+  -prune
+      don't go into this directory
+  -exec cmd [arg...] ;    run cmd, "{}" standing for the path; true if
+      it succeeded.  With + instead of ;, run cmd once at the end with all the paths in place of the "{}"
+  -ok cmd [arg...] ;      like -exec ;, but asks first (y to run); the
+      question goes to stderr, the answer comes from the input
+  -depth
+      list a directory's contents before the directory
+  -xdev
+      don't go into other drives (/rom, disks are still tested)
+  -maxdepth n, -mindepth n
+      (common extensions) only test entries at most / at least n levels below the path
+n can be +n (more than n) or -n (less than n).  Combine them with ( expr ), ! expr, expr -a expr (or just side by side) and expr -o expr. The shell has no backslashes, so end -exec with a plain ; (\; works too).
+  find . -name "*.lua" -size +4
+  find /disk -type f -exec rm {} ;

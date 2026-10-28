@@ -1,0 +1,35 @@
+craftix: Craftix, a small POSIX-style shell for CraftOS
+
+  craftix
+      an interactive shell
+  craftix -c 'commands' [name [arg...]]
+      run one command line
+  craftix script [arg...]
+      run a file of commands
+
+Craftix runs inside the stock CraftOS shell and has it find and run the programs (the same path, aliases and directory; cd, alias and set work as they always do).  What it adds:
+
+  a | b | c
+      pipes.  Each command runs to its end, then the next reads what it wrote: nothing streams, so `a | head` still runs all of a.
+  < f   > f   >> f
+      redirects; also 2> f, 2>> f, 2>&1, >&2, n>&-. /dev/null works for reading and writing.
+  a ; b   a && b   a || b   ! a
+      and a newline is a ;
+  'single' "double" \x
+      quoting; # starts a comment.  A line ending in \, |, &&, || or inside quotes goes on to the next.
+  X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $0
+      variables.  $PATH is the shell's path (setting it changes the path) and $PWD its directory. CraftOS has no environment, so programs can't see variables and X=1 cmd ignores the X=1.
+  *  ?  [abc]  [!a-z]
+      globs; a name starting with a dot only matches an explicit dot.  No match leaves the word as is.
+  $(cmd)  `cmd`
+      command substitution.
+  builtins
+      exit [n], :, true, false, read [-r] name..., shift [n], unset name..., export name=value..., . file
+
+Not yet: if/while/for/case, functions, & (background), ( subshells ), here-documents, $(( arithmetic )), ~.
+
+Leave with exit, or by holding Ctrl+T at the prompt.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.
+
+A script can start with #!/cc-turtles/bin/craftix (the stock shell honours the #! line), or run as `craftix script`.
+
+Programs see a pipe or a file as io.input() and io.output().  print, write, term.write and printError are redirected too, so stock programs can be piped: `ls | grep lua`.  ls lays its names out in columns as it would on screen, so `ls | wc -l` counts rows, not files.  Full-screen programs (edit, paint) need the screen: don't pipe them.  While a command runs, _G.POSIX_SH is set (echo leaves > to the shell then).

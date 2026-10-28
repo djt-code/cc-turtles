@@ -1,0 +1,5 @@
+sleep: wait a while (POSIX sleep)
+
+  sleep time
+
+Waits `time` seconds.  Decimals are allowed (sleep 0.5); CraftOS counts time in ticks, so the wait is rounded up to the next 0.05 s.  Ctrl+T stops it early.

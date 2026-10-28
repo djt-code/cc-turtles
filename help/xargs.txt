@@ -1,0 +1,27 @@
+xargs: run a command with arguments read from input (POSIX xargs)
+
+  xargs [-prtx] [-E eofstr | -0] [-I replstr | -L number | -n number] [-s size]
+        [utility [argument...]]
+
+Reads arguments from standard input (from the keyboard: hold Ctrl+T to end it) and runs utility (default echo) with the given arguments followed by those, through the shell, so aliases and the path apply. Input arguments are separated by blanks and newlines; '...' and "..." quote within one line and a backslash escapes the next character.
+  -n number
+      at most number input arguments per run
+  -L number
+      each input line is one argument (a line ending in a blank goes on into the next one); number of them per run
+  -I replstr
+      one run per input line (leading blanks dropped), with every replstr in the arguments replaced by the line
+  -s size
+      keep each command line shorter than size bytes
+  -0
+      arguments end at NUL bytes only, with no quoting
+  -E eofstr
+      an argument equal to eofstr ends the input
+  -r
+      don't run utility at all when the input is empty
+  -t
+      write each command to stderr before running it
+  -p
+      ask before each run (y runs it); implies -t
+  -x
+      stop if a command (with -n's number of arguments) would not fit in -s size; there is no other length limit
+Without -n, -L, -I or -s everything goes into one run.  The status is 0 if every run succeeded, 1 if one failed (or the input was bad), 127 if utility was not found; a run ending with status 255 stops xargs.

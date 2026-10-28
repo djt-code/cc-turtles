@@ -1,0 +1,5 @@
+cat: concatenate files to standard output (POSIX cat)
+
+  cat [-u] [file...]
+
+Writes each file in turn, byte for byte; "-" or no files at all reads standard input (from the keyboard: hold Ctrl+T to end it).  A file that can't be read is reported and skipped, and cat exits 1 at the end. -u (unbuffered) is accepted: output is never buffered here anyway. To read a long file a screenful at a time, use more.

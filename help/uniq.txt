@@ -1,0 +1,11 @@
+uniq: report or filter out repeated lines (POSIX uniq)
+
+  uniq [-c|-d|-u] [-f fields] [-s chars] [input [output]]
+
+Reads input (standard input if it's missing or "-") and writes one copy of each run of identical adjacent lines to output (standard output if it's missing).  Sort the input first to catch repeats anywhere.
+  -c  put the number of times each line occurred, and a space, before it
+  -d  write only the lines that were repeated
+  -u  write only the lines that were not repeated
+  -f  ignore the first fields fields of each line when comparing (a
+      field is blanks then non-blanks)
+  -s  ignore that many characters more, after the fields

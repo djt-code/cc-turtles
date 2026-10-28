@@ -1,0 +1,5 @@
+printf: write formatted output (POSIX printf)
+
+  printf format [argument...]
+
+Writes the format with its conversions filled in from the arguments, as C's printf does: %s a string, %b a string with backslash escapes, %c its first character, %d %i signed and %o %u %x %X unsigned integers, %e %E %f %F %g %G floating point, %% a percent sign.  Flags (- + space # 0), a field width and a .precision can come between % and the letter.  The format's own escapes are \\ \a \b \f \n \r \t \v and \ddd (octal); %b's argument has the same but \0ddd for octal, and \c, which ends all output. Numeric arguments can be decimal, 0x hex, 0 octal, or 'c (or "c) for the code of the character c.  When arguments are left over the format is used again; missing ones count as "" or 0.  A bad number is reported, counts as what could be read of it, and printf exits 1.

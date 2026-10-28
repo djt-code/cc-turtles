@@ -1,0 +1,16 @@
+tail: copy the last part of a file to standard output (POSIX tail)
+
+  tail [-f] [-c number | -n number] [file...]
+  tail -r [-n number] [file...]
+
+Writes the last 10 lines of the file, or of standard input when there is no file or it is "-" (from the keyboard: hold Ctrl+T to end it).
+  -n number
+      the last `number` lines; "+number" starts at that line
+  -c number
+      the same in bytes; "+number" starts at that byte
+(A plain or "-" number counts from the end; the last -c or -n wins.)
+  -r   write the lines last first: all of them, or the last -n number.
+"tail -5" is taken as "tail -n 5".  With several files each gets a "==> name <==" header, as head does.
+  -f   follow: after the end, keep checking the (last) file once a
+       second and write whatever is added to it.  Hold Ctrl+T to stop.
+       It does nothing when reading standard input.

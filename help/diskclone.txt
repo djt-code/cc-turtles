@@ -1,0 +1,8 @@
+diskclone: copy a directory onto as many floppy disks as a dispenser can feed
+
+Runs on a computer with a disk drive below it and a dispenser wired to its back.  Each cycle: pulse the back output (the dispenser drops one floppy into the hopper that feeds the drive), wait for the disk, copy the directory onto it, label it, eject it.  Ejected disks are collected by the hopper in front of the drive.  Stops when no disk arrives (the dispenser is empty) or after <count> disks.
+
+Usage:
+  diskclone <dir> [count] [--force]
+
+<dir> must have a file named LABEL in its root: its first line becomes each disk's label, and LABEL itself is not copied.  A disk that already has a label or files on it is ejected untouched, unless --force is given, in which case it is wiped and written like a blank one.

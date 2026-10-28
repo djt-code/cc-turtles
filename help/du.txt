@@ -1,0 +1,9 @@
+du: report disk usage (POSIX du)
+
+  du [-a|-s] [-kx] [-H|-L] [file...]
+
+For each file (default "."), writes "<size> <path>" for every directory under it, deepest first, ending with the file itself.  A directory's size counts everything under it.  Sizes are in 512-byte blocks, or 1024-byte blocks with -k, each file rounded up.
+  -a  list files too, not just directories
+  -s  only the total for each file operand
+  -x  stay on the operand's drive (don't count /rom or disks under it)
+-H and -L (follow symbolic links) are accepted; CraftOS has no links.

@@ -1,0 +1,5 @@
+touch: create files, or mark them modified now (POSIX touch)
+
+  touch [-acm] [-r ref_file | -t time | -d date_time] file...
+
+A missing file is created empty (-c: left missing, quietly); its directory must already exist.  CraftOS cannot set a file's times, so for an existing file touch rewrites it unchanged, which makes its modification time now.  There is no access time: -a alone does nothing to an existing file, and -m is the same as the default. -r, -t and -d are checked but no file can be given that time: missing files are still created (with the time now), existing ones left alone. Directories are left alone.

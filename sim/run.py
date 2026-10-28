@@ -3,7 +3,8 @@
     pip install lupa
     python sim/run.py                    every simulator, then a summary
     python sim/run.py farm_clone ...     just these (".lua" optional)
-    python sim/run.py --check            syntax-check the programs only
+    python sim/run.py --check            syntax-check the programs only (and
+                                         that help/ is made from them)
 
 On a ComputerCraft computer, use sim/runsim.lua instead (sim/watchsim.lua
 plays one out on a monitor).
@@ -58,7 +59,10 @@ def check():
                 print("warn %s:%d: %d locals in scope, close to CC's %d" % (name, line, most, cclocals.LIMIT))
         print(("FAIL " + err) if err else ("ok   " + name))
         bad += err is not None
-    return 1 if bad else 0
+    import mkhelp
+    stale = mkhelp.main(["--check"])
+    print(("FAIL help/ out of date (python sim/mkhelp.py): " + " ".join(stale)) if stale else "ok   help/")
+    return 1 if bad or stale else 0
 
 
 def main(args):

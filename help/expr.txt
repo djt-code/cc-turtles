@@ -1,0 +1,15 @@
+expr: evaluate an expression and print the result (POSIX expr)
+
+  expr operand...
+
+Every number, string and operator is its own argument (expr 1 + 2, not expr 1+2).  The operators, loosest first, all left-associative:
+  a | b    a if it is neither empty nor 0, else b if that holds, else 0
+  a & b    a if neither a nor b is empty or 0, else 0
+  a = b, a != b, a < b, a <= b, a > b, a >= b
+           1 or 0; compared as integers when both are, else as strings
+  a + b, a - b, a * b, a / b, a % b    integers; / and % truncate
+  a : re   matches the basic regular expression re (regex.lua) at the
+           start of a: the number of bytes matched (0 if none), or with
+           \( \) the text the first group matched ("" if none)
+  ( expr ) grouping
+An integer is digits with an optional leading "-".  A leading "--" is skipped, so "expr -- -1 + 2" works.  The result is printed with a newline; the exit status is 0 if it is neither empty nor 0, 1 if it is, 2 for a bad expression (syntax, a non-integer in arithmetic, dividing by zero, arithmetic beyond 2^53).  The stock shell's * is not a wildcard, so it needs no quoting.

@@ -1,0 +1,5 @@
+head: copy the first part of files to standard output (POSIX head)
+
+  head [-c number | -n number] [file...]
+
+Writes the first `number` lines (-n, 10 by default) or bytes (-c) of each file; "-" or no files at all reads standard input (from the keyboard: hold Ctrl+T to end it early).  The last -c or -n wins.  With more than one file, each one starts with a "==> name <==" header, and a blank line separates them.  A file that can't be read is reported and skipped, and head exits 1 at the end.  "head -5" is taken as "head -n 5", as most systems do.

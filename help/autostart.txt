@@ -1,0 +1,16 @@
+autostart: at boot, carry on with the turtle's job
+
+Usage:  autostart          what startup runs (deploy/install puts it there)
+        autostart --now
+            the same, without the 5 second wait
+
+Runs the program named by the setting cc-turtles.autostart (mine, farm, mow or autocompost; `set cc-turtles.autostart farm`, or `deploy/install --autostart farm`).  A turtle reboots whenever its chunk loads again, so this is what keeps a job going.  It waits 5 seconds first: any key cancels, for the prompt.
+
+  mine
+      a tunnel it was digging when it went down: back to the last home if it's elsewhere, then `mine --resume`.  No tunnel yet: a new one, as the settings say (mine.width, mine.height, mine.length: 3x3, 32 long unless changed). A tunnel it finished, or stopped itself (out of chests or fuel): it says so and leaves it to you.
+  farm
+      a saved farm: home if it's elsewhere, then farm it.  No farm yet: learn the one the settings give (farm.width, farm.length), then farm it.
+  mow
+      a pass it was in the middle of: home, then mow.  Mowing on repeat (mow.repeat > 0): mow.  Otherwise nothing: the lawn was mowed.
+  autocompost
+      autocompost.

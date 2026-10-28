@@ -1,0 +1,5 @@
+tee: copy standard input to standard output and to files (POSIX tee)
+
+  tee [-ai] [file...]
+
+Every line read is written at once to standard output and to each file (replacing them, or adding to their ends with -a).  "-" is a file named "-", as POSIX says, not standard output.  A file that can't be opened is reported and the copy goes on to the others; tee then exits 1.  From the keyboard, hold Ctrl+T to end the input.  -i (ignore interrupts) is accepted; CraftOS has no SIGINT, and Ctrl+T only ever ends the input.

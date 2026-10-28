@@ -1,0 +1,13 @@
+tr: translate, squeeze or delete characters (POSIX tr)
+
+  tr [-c|-C] [-s] string1 string2
+  tr -s [-c|-C] string1
+  tr -d [-c|-C] string1
+  tr -ds [-c|-C] string1 string2
+
+Copies standard input to standard output (from the keyboard: hold Ctrl+T to end it), changing each character found in string1 into the one at the same place in string2.  If string2 is shorter, its last character is repeated.
+  -c, -C  use every character NOT in string1, in code order
+  -d      delete the characters of string1 instead
+  -s      squeeze a run of the same character into one, for the
+          characters of the last string given
+In the strings: a-z is a range; [:alpha:] and the other classes (alnum blank cntrl digit graph lower print punct space upper xdigit); [=c=] is c; [c*n] is n copies of c in string2 ([c*] as many as fill it); escapes \\ \a \b \f \n \r \t \v and \ooo (octal).  [:lower:] to [:upper:] (and back) changes case.  The shell strips double quotes, so tr "a b" "_ _" passes the spaces through.

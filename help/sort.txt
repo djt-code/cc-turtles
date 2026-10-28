@@ -1,0 +1,22 @@
+sort: sort, merge or check lines of text (POSIX sort)
+
+  sort [-m] [-o output] [-bdfinru] [-t char] [-k keydef]... [file...]
+  sort -c|-C [-bdfinru] [-t char] [-k keydef] [file]
+
+Sorts the lines of all the files together (standard input if there are none, or for "-") and writes them out, comparing bytes.
+  -n  by the number at the start (blanks, a minus sign, digits, a point)
+  -r  largest first          -u  only one of each set of equal lines
+  -f  fold lower case into upper case
+  -b  ignore leading blanks   -d  only blanks, letters and digits count
+  -i  ignore unprintable characters
+  -t  fields are separated by this character (by default a field is
+      its leading blanks plus the non-blanks after them)
+  -k  sort on a key: field[.char][mods][,field[.char][mods]], counting
+      from 1; mods are b d f i n r and override the global ones for that
+      key.  Several -k: the first decides, later ones break ties.  Lines
+      still equal are compared whole (not with -u).
+  -o  write to this file (it may be one of the inputs)
+  -m  the inputs are already sorted (they are just sorted together)
+  -c  check the input is sorted: report the first line out of order and
+      exit 1.  -C does the same without the report.
+Exits 2 if a file can't be read or written.

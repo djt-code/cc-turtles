@@ -1,0 +1,25 @@
+claude: let Claude drive the turtle
+
+Talks to the Claude API (Anthropic) from the turtle over HTTP and gives the model one tool that matters: `lua`, which runs the Lua it writes on the turtle, with the turtle API and turtlelib (T) in scope.  You give it a goal; it works at it, call by call, says what it did, and asks when it isn't sure.
+
+Usage:
+  claude [goal words...] [--model id] [--effort low|medium|high]
+         [--steps N] [--confirm]
+
+  claude dig a 3 by 3 tunnel 20 blocks ahead and come back
+  claude                      asks for the goal
+
+  --steps N
+      at most N tool calls per goal (default 60), then it's told to stop and sum up
+  --confirm
+      show each piece of code and ask before running it
+
+When it stops, type the next thing to do (it keeps the conversation), or press Enter on an empty line to quit.  Ctrl+T stops it (under T.run, so the saved position stays right).
+
+Setup:
+  * put an API key in `claude.key` next to this program (`edit claude.key`, paste the key, save).  Make it a key of its own with a spending limit: anything on a computer's disk can be read by whoever can open the turtle or the server's save folder.  The file is in .gitignore, and `git pull` never touches untracked files.
+  * the server's CC:Tweaked config must allow HTTP to api.anthropic.com (the same `http.rules` allow-list that lets `git` reach your host).
+
+What it costs: every round trip (one tool call) sends the whole conversation, so a long job is many calls; the system prompt and tools are marked for prompt caching.  The totals are printed when a goal ends.
+
+Position: it picks up turtlelib's saved position (.turtlepos) if there is one, so `home` still works afterwards; otherwise here is (0,0,0) facing +z.

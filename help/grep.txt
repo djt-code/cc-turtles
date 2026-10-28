@@ -1,0 +1,6 @@
+grep: print the lines that match a pattern (POSIX grep)
+
+  grep [-E|-F] [-c|-l|-q] [-insvx] -e patterns ... [-f file] ... [file...]
+  grep [-E|-F] [-c|-l|-q] [-insvx] patterns [file...]
+
+Patterns are basic regular expressions (-E: extended, -F: fixed strings); a pattern list holds one pattern per line, and a line is selected if any of them matches.  -e gives a list (repeatable), -f reads one from a file.  -i ignores case, -x matches whole lines only, -v selects the lines that do NOT match.  Output: the lines, prefixed with "file:" when there are several files and "number:" with -n; -c prints a count per file instead, -l the names of the files with a selected line, -q nothing.  -s hides the messages about unreadable files.  No files (or "-") reads standard input (the keyboard: hold Ctrl+T to end it). Exit status: 0 a line was selected, 1 none, 2 an error (0 with -q if a line was selected anyway).

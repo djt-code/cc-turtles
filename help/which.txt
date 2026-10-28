@@ -1,0 +1,5 @@
+which: show which program a command name runs (not in POSIX)
+
+  which [-a] name...
+
+Writes the absolute path of the program the shell would run for each name, finding it the way the shell does: an alias first, then a name with a "/" relative to the current directory, otherwise each directory of the shell's path in turn, trying name and name.lua. -a lists every match: the alias's program, then each one on the path. A name with no program is reported, and which exits 1.

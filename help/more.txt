@@ -1,0 +1,7 @@
+more: show files a screenful at a time (POSIX more, a subset)
+
+  more [-cs] [-u] [file...]
+
+Shows the files ("-" or none: standard input) in the pager (pager.lua: space/PgDn a page, j/k or the arrows a line, h/l sideways, q to quit); what fits on the screen is just printed.  With more than one file each starts with its name between lines of colons.  -s squeezes runs of blank lines into one; -c and -u are accepted (the pager always redraws the whole screen and shows no underlining).  When the output isn't the screen, more copies its input like cat.  A file that can't be read is reported and skipped (exit status 1).
+
+Not supported: -e, -i, -n number, -p command, -t tagstring, and more's own commands (/ search, :n, v and so on); the pager's keys stand in.

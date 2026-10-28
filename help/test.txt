@@ -1,0 +1,22 @@
+test: evaluate a condition and exit 0 (true) or 1 (false) (POSIX test)
+
+  test [expression]
+  [ [expression] ]          ([.lua runs this file; the last argument must be ])
+
+Nothing is printed: the answer is the exit status, 0 true, 1 false, 2 for an error.  Files are relative to the shell's directory.
+  -e f  f exists           -f f  a file          -d f
+      a directory
+  -s f  a file, not empty  -r f  exists          -w f
+      exists, not read-only
+  -x f  a directory, or a program (a file named *.lua or with no extension)
+  -n s  s is not empty     -z s  s is empty      s
+      s is not empty
+  -t fd fd 0 is the keyboard, 1 the screen (not redirected), 2 always
+  -b -c -p -S -h -L -g -u -k: always false (CraftOS has no such files)
+  s1 = s2, s1 != s2, s1 < s2, s1 > s2
+      strings (byte order)
+  n1 -eq -ne -lt -le -gt -ge n2
+      integers
+  f1 -nt f2, f1 -ot f2 (modification time), f1 -ef f2 (the same path)
+  ! expr, expr -a expr, expr -o expr, ( expr )
+One to four arguments follow the POSIX rules by count; -a, -o and the parentheses (removed from POSIX.1-2024, kept for old scripts) and longer expressions go through a parser where ! binds tightest, then -a, then -o. Remember the stock shell splits on spaces: quote "" for an empty string.

@@ -1,0 +1,29 @@
+farm: crop farming turtle for CC:Tweaked (wheat, carrots, potatoes, beetroot and sugar cane; any mix of them on one farm)
+
+Needs a diamond hoe (and a diamond pickaxe for `clone`), equipped or in the inventory.  The program makes the tool it needs the only tool equipped and parks the other in the inventory, so digDown() with the hoe always tills.  Optional: Advanced Peripherals Chunky Turtle upgrade.
+
+Usage:
+  farm <width> <length> [repeatMinutes]
+      first run: explore + farm
+  farm [repeatMinutes]
+      later runs: saved layout
+  farm learn <width> <length> [repeatMinutes]
+      re-explore the farm
+  farm repair
+      inspect every tile once and fix damage, then stop
+  farm clone [repeatMinutes]
+      build the saved layout HERE, then farm it
+  farm reset
+      return to home after a stop
+  farm reset --here
+      turtle is home already (moved by hand): just reset position
+  farm ... --here
+      accept current spot as home
+
+width  = tiles to the RIGHT of the turtle (negative = to the LEFT)
+length = tiles AHEAD of the turtle (negative = BEHIND)
+Both are counted OUT from the turtle: its own row and column are not part of the farm, so the box is x = 1..width, z = 1..length. repeatMinutes defaults to 20; 0 = single pass.
+
+Settings (`set farm.repeat 30`): farm.width and farm.length are the box to learn when none is given (a size given is saved there, so a turtle that boots with no map can learn the same farm again), farm.repeat the minutes between passes.
+
+Placement: put the turtle diagonally outside one corner of the farm, hovering TWO blocks above the farmland (one block above the crop tops). Put the output chest/barrel directly below the start position (up to 3 blocks down, air between; it's found afresh on every visit, so it can be moved up or down later without telling the turtle).  Keep in the chest: what each crop is planted with (wheat or beetroot seeds, carrots, potatoes, sugar cane), dirt, and a bucket or two (water buckets for clone); the turtle restocks from it.

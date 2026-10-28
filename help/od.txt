@@ -1,0 +1,9 @@
+od: dump files in octal and other formats (POSIX od)
+
+  od [-v] [-A d|o|x|n] [-j skip] [-N count] [-t type]... [-bcdosx] [file...]
+
+Reads the files one after another as one stream ("-" or none: standard input) and writes 16 bytes a line: the offset, then the bytes in each output type, one line per type.  The default is -t o2 with octal offsets.  A type is a letter, and for d o u x an optional size:
+  a  named characters (nul, sp, del...)    c  characters, \n-style escapes
+  d  signed decimal     o  octal     u  unsigned decimal     x  hex
+  sizes: 1 2 4 8, or C (1), S (2), I (4), L (8); the default is 4.
+Several types can be given together (-t x1c) or with more -t options. -b -c -d -o -s -x are short for -t o1, c, u2, o2, d2 and x2. Words are little-endian.  -A picks the offset base (n: no offsets). -j skips bytes first (decimal, 0x hex or 0 octal, then b k or m for 512, 1024 or 1048576 bytes); -N stops after count bytes.  A line equal to the one before is written as "*" unless -v is given.  The last line holds the offset just past the data.

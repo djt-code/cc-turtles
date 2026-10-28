@@ -1,0 +1,8 @@
+df: report free disk space (POSIX df)
+
+  df [-k] [-P] [file...]
+
+With no files, lists every mounted drive: the computer's own drive at /, the read-only /rom, and any disks (/disk, /disk2, ...).  With files, lists the drive each one is on.  Sizes are in 512-byte blocks, or 1024-byte blocks with -k, rounded up.  -P gives the portable format:
+  Filesystem 1024-blocks Used Available Capacity Mounted on
+  hdd 977 3 974 1% /
+Without -P the same figures are lined up in columns that fit a turtle's screen.  The filesystem name is fs.getDrive's ("hdd", "rom", or the disk drive's side).  /rom has no capacity, so its size is what its files use.

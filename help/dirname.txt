@@ -1,0 +1,5 @@
+dirname: the directory part of a path name (POSIX dirname)
+
+  dirname string
+
+Strips trailing slashes, the last part, then the slashes before it. A name with no slash gives ".", one directly under the root (or only slashes) gives "/".  The string is not looked up on disk.

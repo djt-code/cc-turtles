@@ -1,0 +1,5 @@
+strings: find printable strings in files (POSIX strings)
+
+  strings [-a] [-t d|o|x] [-n number] [file...]
+
+Writes every run of at least 4 (or -n number) printable characters (space to ~) found in the files, one per line.  -t puts the run's byte offset from the start of its file in front, in decimal, octal or hex, followed by a space.  Whole files are always scanned, so -a changes nothing.  "-" or no files reads standard input.

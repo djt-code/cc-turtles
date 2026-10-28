@@ -1,0 +1,5 @@
+diff: show the differences between two files (POSIX diff)
+
+  diff [-c|-e|-f|-u|-C n|-U n] [-bqr] file1 file2
+
+Writes the lines that must change to turn file1 into file2, as a shortest edit (Myers' algorithm).  The default "normal" format gives commands like 3,5c3 with "< " lines from file1 and "> " from file2; -u (or -U n) is the unified format with 3 (n) lines of context, -c (or -C n) the context format, -e an ed script and -f the same forwards. -b ignores trailing blanks and treats other runs of blanks as one; -q only says whether the files differ.  Either file can be "-", standard input.  If one operand is a directory, the file of the other's name in it is used; if both are, their files are compared by name, and -r goes on into common subdirectories.  Exit 0: no differences, 1: some, 2: trouble.
