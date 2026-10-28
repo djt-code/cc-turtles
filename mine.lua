@@ -650,8 +650,7 @@ local unfed = {}           -- key: true, flowing water found here with nothing b
 local function stopFlow(level)
     local path, sealed = {}, false
     unfed[key(T.pos)] = "traced"
-    local tank = turtle.getFuelLevel()
-    if tank ~= "unlimited" and tank < T.homeCost() + T.cfg.fuelMargin + 40 then return false end
+    if not T.hasFuel(T.homeCost() + T.cfg.fuelMargin + 40) then return false end
     for _ = 1, 24 do
         local up, upLevel, source = nil, nil, false
         -- look the fewest turns away first (up, down, ahead), and once it
@@ -982,15 +981,11 @@ local function unloadOrStop()
     end
 end
 
-local function refuel()
-    if turtle.getFuelLevel() == "unlimited" then return end
-    T.refuelFrom(home.val, fuelGoal + home.z)
-end
+local function refuel() T.refuelFrom(home.val, fuelGoal + home.z) end
 
 -- Enough fuel to do some work and still get back to the start?
 local function fuelToGoOn(extra)
-    local level = turtle.getFuelLevel()
-    return level == "unlimited" or level >= home.z + T.cfg.fuelMargin + (extra or FUEL_WORK)
+    return T.hasFuel(home.z + T.cfg.fuelMargin + (extra or FUEL_WORK))
 end
 
 -- Go home, unload and refuel, and come back to this exact spot and
@@ -1485,10 +1480,7 @@ local function record(blocks, z1, z2, toCell)
     end
 end
 
-local function fuelLow()
-    local level = turtle.getFuelLevel()
-    return level ~= "unlimited" and level < home.z + fuelGoal / 2
-end
+local function fuelLow() return not T.hasFuel(home.z + fuelGoal / 2) end
 
 -- Fetch ore found by the scanner, `which` picking it (nil: all, which
 -- mops up any a stop for room or fuel left).  It goes from each deposit
@@ -1907,10 +1899,8 @@ local function haul()
     for _ = 1, 20 do
         if home.k == 0 then
             local need = 2 * last.z + T.cfg.fuelMargin + FUEL_WORK
-            if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < need then
-                T.refuelFrom("top", need)
-            end
-            if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < need then
+            if not T.hasFuel(need) then T.refuelFrom("top", need) end
+            if not T.hasFuel(need) then
                 print(string.format("A trip out to home %d and back takes %d fuel; it has %d. Put fuel in the top chest.",
                     last.k, need, turtle.getFuelLevel()))
                 return
@@ -2155,9 +2145,7 @@ T.withTool(pickaxe, function()
         end
         -- resuming from an earlier home: the supplies (fuel among them) are
         -- in the last one, so fill up and take some fuel there first
-        local level = turtle.getFuelLevel()
-        if resume and home.k > 0 and home.k < job.homes and level ~= "unlimited"
-                and level < fuelGoal + home.z then
+        if resume and home.k > 0 and home.k < job.homes and not T.hasFuel(fuelGoal + home.z) then
             local here, last = home, homeAt(job.homes)
             if not fuelToGoOn(2 * (last.z - here.z)) then
                 stop("Not enough fuel to fetch more from home " .. last.k .. ": put some in home " .. here.k .. ".")

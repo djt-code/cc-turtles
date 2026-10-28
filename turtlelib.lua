@@ -176,6 +176,12 @@ end
 --------------------------------------------------------------------------
 -- Fuel
 --------------------------------------------------------------------------
+-- Is there fuel for n moves?  (Always, with fuel turned off.)
+function T.hasFuel(n)
+    local level = turtle.getFuelLevel()
+    return level == "unlimited" or level >= n
+end
+
 function T.refuelTo(target)
     if turtle.getFuelLevel() == "unlimited" then return true end
     if turtle.getFuelLevel() >= target then return true end

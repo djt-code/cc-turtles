@@ -601,8 +601,7 @@ end
 -- Wait at home until the tank holds `enough`, refuelling from the
 -- inventory and the chest whenever something changes (or every 10 s).
 local function waitForFuel(enough)
-    local level = turtle.getFuelLevel()
-    if level == "unlimited" or level >= enough then return end
+    if T.hasFuel(enough) then return end
     print(string.format("Need %d fuel, have %d: put fuel (coal, charcoal, lava...) in the chest or the turtle.",
         enough, turtle.getFuelLevel()))
     while turtle.getFuelLevel() < enough do
@@ -1694,7 +1693,7 @@ fuelGoal = math.floor(math.abs(WIDTH * LENGTH) * perTile)
 -- that, go anyway with enough to make headway: the turtle comes home to
 -- refuel before it could run dry.
 T.refuelTo(fuelGoal)
-if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < fuelGoal then
+if not T.hasFuel(fuelGoal) then
     if toChest() then T.refuelFrom(CHEST_SIDE, fuelGoal) end
     T.toStartHeight()
     waitForFuel(T.cfg.fuelMargin + FUEL_WORK)
