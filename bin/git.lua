@@ -7,8 +7,15 @@
 -- SHA changed, deletes tracked files removed upstream, and never touches
 -- untracked files.
 --
+-- A computer's disk is small (1 MB by default), so a clone leaves out
+-- what the device doesn't run: sim/ always, pc/ on a turtle and turtle/
+-- on a computer.  --skip <dir> leaves out more, --all nothing; the choice
+-- is kept in .gitlite and pull keeps to it (a checkout from before this
+-- gets the device's rule on its next pull, and loses those folders).  If the disk fills anyway it
+-- stops, keeping what it got, and `git pull` carries on once there's room.
+--
 -- Usage:
---   git clone <url> [dir] [-b <branch>] [--token <token>]
+--   git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--all]
 --   git pull   [dir]
 --   git status [dir]
 --   git log    [dir] [-n <count>]
@@ -17,14 +24,19 @@
 --     https://git.example.com/me/cc-turtles
 --     https://github.com/mepholic/cc-turtles.git
 --
--- Bootstrap onto a turtle:
---   wget https://git.example.com/me/cc-turtles/raw/branch/main/bin/git.lua git
---   git clone https://git.example.com/me/cc-turtles
+-- Bootstrap onto a turtle or computer: deploy/setup.lua does it all;
+--   wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua
 --
 -- --token is only needed for private repos (Forgejo access token or
 -- GitHub PAT); it is saved in .gitlite so pull can reuse it.
 
 local STATE_FILE = ".gitlite"
+
+-- What a clone leaves out unless told otherwise: the simulators, and the
+-- programs for the other kind of device.
+local function defaultSkip()
+    return { "sim", turtle and "pc" or "turtle" }
+end
 
 --------------------------------------------------------------------------
 -- Small helpers
@@ -207,27 +219,61 @@ end
 --------------------------------------------------------------------------
 -- Checkout: bring `dir` from state.files to the tree at `commit`
 --------------------------------------------------------------------------
+local function skipped(state, path)
+    for _, d in ipairs(state.skip or {}) do
+        if path == d or path:sub(1, #d + 1) == d .. "/" then return true end
+    end
+    return false
+end
+
 local function checkout(R, dir, state, commit)
-    local remote = R.tree(commit)
+    local remote = {}
+    for path, sha in pairs(R.tree(commit)) do
+        if not skipped(state, path) then remote[path] = sha end
+    end
     local have = state.files or {}
     local fetched, deleted = 0, 0
 
-    for path, sha in pairs(remote) do
-        if have[path] ~= sha or not fs.exists(fs.combine(dir, path)) then
-            print("  " .. path)
-            writeFile(fs.combine(dir, path), R.blob(commit, path))
-            fetched = fetched + 1
-        end
-    end
-    for path in pairs(have) do
-        if not remote[path] then
+    -- deletions first, so files that moved don't need room twice
+    local got = {}
+    for path, sha in pairs(have) do
+        if remote[path] then
+            got[path] = sha
+        else
             local p = fs.combine(dir, path)
             if fs.exists(p) then fs.delete(p); pruneDirs(dir, p) end
             deleted = deleted + 1
         end
     end
+    state.files = got
+    writeState(dir, state)
 
-    state.files, state.commit = remote, commit
+    local paths = {}
+    for path in pairs(remote) do paths[#paths + 1] = path end
+    table.sort(paths)
+    for _, path in ipairs(paths) do
+        local sha, p = remote[path], fs.combine(dir, path)
+        if have[path] ~= sha or not fs.exists(p) then
+            print("  " .. path)
+            local data = R.blob(commit, path)
+            -- CC counts a file as at least 500 bytes; keep room for .gitlite
+            -- to grow, as it's what lets a pull carry on from here
+            local need = math.max(#data, 500) - (fs.exists(p) and math.max(fs.getSize(p), 500) or 0)
+            local sp = fs.combine(dir, STATE_FILE)
+            local room = fs.getFreeSpace(dir) - (fs.exists(sp) and fs.getSize(sp) or 0) - 1024
+            if need > room then
+                state.files[path] = nil
+                writeState(dir, state)              -- what's here so far
+                die(string.format("Out of disk space at %s (%d bytes, %d free). " ..
+                    "Delete something, then `git pull` carries on.", path, #data, math.max(room, 0)))
+            end
+            writeFile(p, data)
+            state.files[path] = sha
+            fetched = fetched + 1
+        end
+    end
+
+    state.commit = commit
     writeState(dir, state)
     return fetched, deleted
 end
@@ -242,6 +288,11 @@ local function parseArgs(list)
         local a = list[i]
         if a == "-b" or a == "--branch" then opts.branch = list[i + 1]; i = i + 1
         elseif a == "--token" then opts.token = list[i + 1]; i = i + 1
+        elseif a == "--skip" then
+            opts.skip = opts.skip or defaultSkip()
+            opts.skip[#opts.skip + 1] = (list[i + 1] or ""):gsub("^/+", ""):gsub("/+$", "")
+            i = i + 1
+        elseif a == "--all" then opts.all = true
         elseif a == "-n" then opts.count = tonumber(list[i + 1]); i = i + 1
         else pos[#pos + 1] = a end
         i = i + 1
@@ -250,17 +301,19 @@ local function parseArgs(list)
 end
 
 local function cmdClone(pos, opts)
-    local url = pos[1] or die("Usage: git clone <url> [dir] [-b branch] [--token t]")
+    local url = pos[1] or die("Usage: git clone <url> [dir] [-b branch] [--token t] [--skip dir]... [--all]")
     local R = makeRemote(url, opts.token)
     local dir = shell.resolve(pos[2] or R.repo)
     if fs.exists(fs.combine(dir, STATE_FILE)) then
         die(dir .. " already contains a checkout; use `git pull`.")
     end
+    local skip = opts.all and {} or opts.skip or defaultSkip()
     local branch = opts.branch or R.defaultBranch()
     local commit = R.headCommit(branch)
     print(string.format("Cloning %s (%s @ %s) into %s", R.url, branch, commit:sub(1, 7), dir))
     fs.makeDir(dir)
-    local state = { url = R.url, branch = branch, token = opts.token, files = {} }
+    if #skip > 0 then print("Leaving out " .. table.concat(skip, "/, ") .. "/ (--all for everything)") end
+    local state = { url = R.url, branch = branch, token = opts.token, files = {}, skip = skip }
     local n = checkout(R, dir, state, commit)
     print(string.format("Done: %d files.", n))
 end
@@ -275,6 +328,12 @@ end
 local function cmdPull(pos)
     local dir, state, R = openCheckout(pos)
     local commit = R.headCommit(state.branch)
+    if state.skip == nil then
+        -- a checkout from before the device rule: it gets it now
+        state.skip = defaultSkip()
+        print("Leaving out " .. table.concat(state.skip, "/, ") .. "/ from now on")
+        state.commit = nil
+    end
     if commit == state.commit then
         print("Already up to date (" .. commit:sub(1, 7) .. ").")
         return
@@ -293,6 +352,7 @@ local function cmdStatus(pos)
     print("Branch:  " .. state.branch)
     print("Commit:  " .. (state.commit or "none"))
     print("Files:   " .. n .. " tracked")
+    if state.skip and #state.skip > 0 then print("Skips:   " .. table.concat(state.skip, "/ ") .. "/") end
     local ok, head = pcall(R.headCommit, state.branch)
     if ok then
         print(head == state.commit and "Up to date with remote."
@@ -329,6 +389,7 @@ elseif cmd == "log" then cmdLog(pos, opts)
 else
     print("Usage:")
     print("  git clone <url> [dir] [-b branch] [--token t]")
+    print("            [--skip dir]... [--all]")
     print("  git pull [dir]")
     print("  git status [dir]")
     print("  git log [dir] [-n count]")
