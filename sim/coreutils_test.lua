@@ -4,7 +4,7 @@
 -- argument count, -a/-o/!/( ), the "[" form through the stock shell, and
 -- expr's operators, results and exit statuses.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check
@@ -155,7 +155,7 @@ r = W:sh("test ! ]")
 check("test ! ] is false", r.status == 1)
 r = W:sh('test "hello world" = "hello world"')
 check("quoted strings through the shell", r.status == 0)
-check("[ is resolvable as a program name", W.shell.resolveProgram("[") == "cc-turtles/[.lua")
+check("[ is resolvable as a program name", W.shell.resolveProgram("[") == "cc-turtles/bin/[.lua")
 
 --------------------------------------------------------------------------
 -- 6. expr

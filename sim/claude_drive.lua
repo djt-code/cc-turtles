@@ -6,7 +6,7 @@
 -- checked without a network or a token spent.  The world is the mine's
 -- rock.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/turtle/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local Mine = require("mineworld")
 local P = Mine.P
@@ -16,7 +16,7 @@ textutils = M.textutilsApi()
 local HTTP = M.httpApi()
 http = HTTP.api
 local answers = M.consoleApi(Mine, {})
-local run = M.runner(Mine, PROJ .. "/claude.lua", {
+local run = M.runner(Mine, PROJ .. "/turtle/claude.lua", {
     stats = function() return "moves: " .. Mine.moves .. ", turns: " .. Mine.turns .. ", API calls: " .. #HTTP.requests end,
 })
 

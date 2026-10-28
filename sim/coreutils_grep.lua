@@ -4,7 +4,7 @@
 -- lists from -e and -f, files, "-" and standard input (keyboard and pipe),
 -- missing files, the output formats and the exit statuses.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check

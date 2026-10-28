@@ -7,8 +7,9 @@
 --   -- r.out, r.err (lines), r.status, r.ok
 --
 -- An in-memory file system (directories, a read-only /rom with stubs of
--- the stock programs, the repo's programs copied into /cc-turtles as they
--- are run or required), the shell, io, term, os and the printing globals,
+-- the stock programs, the repo's programs copied into /cc-turtles/bin
+-- (or lib/, turtle/, pc/, as in the repo) as they are run or required),
+-- the shell, io, term, os and the printing globals,
 -- all as CraftOS has them.  A program runs in its own environment over
 -- the real globals, as the shell runs it, so a world leaves the sim's own
 -- globals alone (except term, keys and colours, which mock.termApi sets).
@@ -40,7 +41,9 @@ local ROM = {
 local ALIASES = { ls = "list", dir = "list", cp = "copy", mv = "move", rm = "delete", clr = "clear",
                   rs = "redstone", sh = "shell" }
 -- a plain turtle's path (rom/startup.lua: rednet and fun are for non-turtles)
-local PATH = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/cc-turtles"
+local PATH = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/cc-turtles/bin:/cc-turtles/turtle"
+-- where the repo keeps its Lua files, in the order a name is looked for
+local REPO_DIRS = { "bin", "lib", "turtle", "pc" }
 
 -- A path as fs keeps it: root-relative, no "." or "..", no illegal
 -- characters ("*" kept only for patterns).
@@ -677,16 +680,20 @@ function W_:dir(p) self.mkdirs(clean(p)) end
 -- A file's text (nil if it isn't one).
 function W_:read(p) return self.files[clean(p)] end
 
--- Copy <repo>/<name>.lua into /cc-turtles; its path there, or nil if the
--- repo has no such file.
+-- Copy <repo>/<dir>/<name>.lua (bin/, lib/, turtle/ or pc/) into the
+-- same folder of /cc-turtles; its path there, or nil if the repo has no
+-- such file.
 function W_:install(name)
-    local f = hostOpen(self.proj .. "/" .. name .. ".lua", "rb")
-    if not f then return nil end
-    local text = f:read("a")
-    f:close()
-    local p = self.progDir .. "/" .. name .. ".lua"
-    self:file(p, text)
-    return p
+    for _, dir in ipairs(REPO_DIRS) do
+        local f = hostOpen(self.proj .. "/" .. dir .. "/" .. name .. ".lua", "rb")
+        if f then
+            local text = f:read("a")
+            f:close()
+            local p = self.progDir .. "/" .. dir .. "/" .. name .. ".lua"
+            self:file(p, text)
+            return p
+        end
+    end
 end
 
 -- read(): the next line typed (opts.stdin); none left, the user holds Ctrl+T.
@@ -701,8 +708,8 @@ function W_.readFn(W)
 end
 
 -- require for code in directory `dir`, as cc.require does it: each
--- program its own package.loaded; a name missing from /cc-turtles is
--- copied in from the repo.
+-- program its own package.loaded; for a program in /cc-turtles, a name
+-- missing there is copied in from the repo first.
 function W_:makeRequire(env, dir)
     local W = self
     local package = { loaded = {}, path = "?;?.lua;?/init.lua;/rom/modules/main/?;/rom/modules/main/?.lua;/rom/modules/main/?/init.lua" }
@@ -717,7 +724,9 @@ function W_:makeRequire(env, dir)
         if package.loaded[name] ~= nil then return package.loaded[name] end
         local rel = name:gsub("%.", "/")
         local p = find(rel)
-        if not p and dir == W.progDir then p = W:install(rel) end
+        if not p and (dir .. "/"):sub(1, #W.progDir + 1) == W.progDir .. "/" and W:install(rel) then
+            p = find(rel)
+        end
         if not p then error("module '" .. name .. "' not found", 2) end
         local fn, e = load(W.files[p], "@/" .. p, "t", env)
         if not fn then error(e, 0) end
@@ -828,11 +837,12 @@ function W_:sh(line, opts)
     end)
 end
 
--- fn(env) inside the world, as if it were a program in /cc-turtles
+-- fn(env) inside the world, as if it were a program in /cc-turtles/bin
 -- (env.require("cu") works); r.value is what it returned.
 function W_:call(fn, opts)
     return self:session(opts, function()
-        local env = self:env(self.progDir .. "/call.lua", {})
+        local env = self:env(self.progDir .. "/bin/call.lua", {})
+        env.package.path = "/" .. self.progDir .. "/lib/?.lua;" .. env.package.path
         local ok, e = pcall(fn, env)
         if ok then return true, nil, e end
         if e ~= "" then self.env0.printError(tostring(e)) end

@@ -6,7 +6,7 @@
 -- for events (its io swapped in only while it runs), Ctrl+T, the prompt
 -- and scripts.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check
@@ -30,7 +30,7 @@ local HELPERS = {
     ask = [[local l = read() print("got " .. tostring(l))]],
     crash = [[error("boom")]],
 }
-for name, src in pairs(HELPERS) do W:file("cc-turtles/" .. name .. ".lua", src) end
+for name, src in pairs(HELPERS) do W:file("cc-turtles/bin/" .. name .. ".lua", src) end
 
 local function sh(line, opts) return W:run("craftix", "-c", line, opts or {}) end
 local function show(s) return (tostring(s):gsub("\n", "|")) end
@@ -126,7 +126,7 @@ r = sh([[printf 'a b  c \n' | read x y; echo "$x/$y"; read v < f.txt; echo $v; r
 check("read splits a line into names, the last gets the rest; 1 at the end",
     r.out == "a/b  c\nhi\n1\n", show(r.out))
 r = sh([[echo $PATH; PATH=$PATH:/x; echo $PATH]])
-local p0 = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/cc-turtles"
+local p0 = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/cc-turtles/bin:/cc-turtles/turtle"
 check("$PATH is the shell's path, and setting it sets that", r.out == p0 .. "\n" .. p0 .. ":/x\n" and W.path == p0 .. ":/x",
     show(r.out))
 W.path = p0
@@ -177,7 +177,7 @@ r = W:run("craftix", { stdin = "ask | cat\ntyped\n" })
 check("a command reading the keyboard while its output is piped", r.out:find("got typed\n", 1, true) ~= nil, show(r.out))
 
 -- 11. scripts
-W:file("s.sh", "#!/cc-turtles/craftix\n# a script\necho \"$0 $# $1\"\nargs \"$@\"\nshift\nargs $*\nexit 5\n")
+W:file("s.sh", "#!/cc-turtles/bin/craftix\n# a script\necho \"$0 $# $1\"\nargs \"$@\"\nshift\nargs $*\nexit 5\n")
 r = W:run("craftix", "s.sh", "a b", "c")
 check("a script: $0 $# $1 \"$@\" shift $*, exit", r.out == "s.sh 2 a b\n[a b][c]\n[c]\n" and r.status == 5,
     show(r.out))

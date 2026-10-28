@@ -4,7 +4,7 @@
 -- input (the keyboard and a pipe), "-", headers for several files, bad
 -- files and bad numbers, and tail -f following a file that grows.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check

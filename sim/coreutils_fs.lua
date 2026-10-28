@@ -3,7 +3,7 @@
 -- df, du and find in a shellworld: their options, the POSIX output
 -- formats, missing operands (a message and status 1) and bad usage.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check

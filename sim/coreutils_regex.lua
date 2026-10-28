@@ -5,7 +5,7 @@
 -- groups, back-references, case folding, leftmost-longest find and the
 -- errors for malformed patterns.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local check = M.check
 local regex = require("regex")

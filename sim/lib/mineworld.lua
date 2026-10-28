@@ -440,7 +440,7 @@ function Mine.contents(c) return M.contents(c, SIZE) end
 -- afterwards; the "Segment ..." lines are left out of the report.
 function Mine.runner(proj)
     local stoppedHere
-    return M.runner(Mine, proj .. "/mine.lua", {
+    return M.runner(Mine, proj .. "/turtle/mine.lua", {
         before = function() SPLIT, DIGS = 0, 0 end,
         after = function()
             if WATERY then Mine.settleWater() end

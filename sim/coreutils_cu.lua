@@ -4,7 +4,7 @@
 -- Guidelines have it, reading lines from files, the keyboard and a pipe,
 -- exit statuses; then cat, more and echo run in a shellworld.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check
@@ -196,4 +196,4 @@ r = W:sh('echo "a  b" c')
 check("through the shell: double quotes make one word", r.out == "a  b c\n", show(r.out))
 r = W:sh("ls")
 check("shell: ls is the rom's list (stub), aliases and path work", r.ok and r.err[1] == nil
-    and W.shell.resolveProgram("ls") == "rom/programs/list.lua" and W.shell.resolveProgram("echo") == "cc-turtles/echo.lua")
+    and W.shell.resolveProgram("ls") == "rom/programs/list.lua" and W.shell.resolveProgram("echo") == "cc-turtles/bin/echo.lua")

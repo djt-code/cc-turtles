@@ -4,7 +4,7 @@
 -- options, files against standard input (the keyboard and a pipe), "-",
 -- missing files, and the output formats POSIX gives.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check

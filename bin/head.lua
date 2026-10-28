@@ -1,0 +1,59 @@
+-- head.lua -- copy the first part of files to standard output (POSIX head)
+--
+--   head [-c number | -n number] [file...]
+--
+-- Writes the first `number` lines (-n, 10 by default) or bytes (-c) of
+-- each file; "-" or no files at all reads standard input (from the
+-- keyboard: hold Ctrl+T to end it early).  The last -c or -n wins.  With
+-- more than one file, each one starts with a "==> name <==" header, and a
+-- blank line separates them.  A file that can't be read is reported and
+-- skipped, and head exits 1 at the end.  "head -5" is taken as
+-- "head -n 5", as most systems do.
+
+package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+local cu = require("cu").init("head", "head [-c number | -n number] [file...]")
+local args = { ... }
+if args[1] and args[1]:match("^%-%d+$") then
+    args[1] = "-n" .. args[1]:sub(2)
+end
+local _, files, order = cu.getopt(args, "c:n:")
+
+local bytes, count = false, 10
+for _, o in ipairs(order) do
+    local n = cu.int(o[2])
+    if not n or n < 0 then cu.usageError("invalid count: " .. o[2]) end
+    bytes, count = o[1] == "c", math.min(n, 0x7fffffff)
+end
+
+-- Copy the first `count` lines or bytes of h; yield now and then so a
+-- long copy to the screen can't run "too long without yielding".
+local function copy(h)
+    local left = count
+    while left > 0 do
+        local s
+        if bytes and h ~= io.stdin then
+            s = h:read(math.min(left, 4096))
+        else
+            s = cu.readLine(h, true)
+        end
+        if not s then return end
+        if bytes then
+            s = s:sub(1, left)
+            left = left - #s
+        else
+            left = left - 1
+        end
+        io.write(s)
+        if left % 256 == 0 then os.queueEvent("head"); os.pullEvent("head") end
+    end
+end
+
+local first = true
+cu.each(files, function(h, name)
+    if #files > 1 then
+        io.write(first and "" or "\n", "==> ", name, " <==\n")
+    end
+    first = false
+    copy(h)
+end)
+return cu.exit()

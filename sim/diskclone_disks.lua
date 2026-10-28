@@ -117,7 +117,7 @@ local function floppy(label, tree, cap) return { label = label, tree = tree or {
 
 local function run(...)
     print("== diskclone " .. table.concat({ ... }, " "))
-    local ok, err = pcall(assert(loadfile(PROJ .. "/diskclone.lua")), ...)
+    local ok, err = pcall(assert(loadfile(PROJ .. "/pc/diskclone.lua")), ...)
     if not ok and err ~= "" then print("   error: " .. tostring(err)) end
     for i, d in ipairs(out) do
         local files = d.floppy and table.concat(fs_list_tree(d.tree), " ") or "-"

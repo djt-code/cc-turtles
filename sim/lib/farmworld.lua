@@ -380,7 +380,7 @@ function F.runner(proj, opts)
     opts.stopped = opts.stopped or function(err)
         if err == "STOP" then return "(stopped by the simulator)" end
     end
-    return M.runner(F, proj .. "/farm.lua", opts)
+    return M.runner(F, proj .. "/turtle/farm.lua", opts)
 end
 
 -- The home chest: "64 dirt, 128 wheat seeds" (sorted), and the totals.

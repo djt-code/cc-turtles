@@ -4,7 +4,7 @@
 -- true, false, sleep, which and xargs -- their options, operands, output
 -- formats, diagnostics and exit statuses.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local SW = require("shellworld")
 local check = M.check
@@ -158,13 +158,13 @@ check("touch resolves against the shell's directory", W:read("a/rel") == "")
 W:install("cat")
 r = W:run("which", "cat", "edit")
 check("which: absolute paths on the shell's path", r.status == 0
-    and r.out == "/cc-turtles/cat.lua\n/rom/programs/edit.lua\n", show(r.out))
+    and r.out == "/cc-turtles/bin/cat.lua\n/rom/programs/edit.lua\n", show(r.out))
 r = W:run("which", "ls")
 check("which follows an alias", r.out == "/rom/programs/list.lua\n", show(r.out))
 W:file("cat.lua", "-- mine")
 r = W:run("which", "-a", "cat")
 check("which -a: every match in path order (. first)", r.status == 0
-    and r.out == "/cat.lua\n/cc-turtles/cat.lua\n", show(r.out))
+    and r.out == "/cat.lua\n/cc-turtles/bin/cat.lua\n", show(r.out))
 W.files["cat.lua"] = nil
 W:file("bin/tool.lua", "-- tool")
 r = W:run("which", "bin/tool", "./bin/tool.lua")
@@ -205,11 +205,11 @@ r = W:run("xargs", "false", { pipe = true, stdin = "x\n" })
 check("xargs: a failing run gives status 1", r.ok and r.status == 1, r.status)
 r = W:run("xargs", "-n1", "nosuchprog", { pipe = true, stdin = "x\n" })
 check("xargs: unknown utility gives 127", r.status == 127 and r.err[1] == "xargs: nosuchprog: No such program")
-W:file("cc-turtles/die.lua", "_G.POSIX_STATUS = 255; error('', 0)")
+W:file("cc-turtles/bin/die.lua", "_G.POSIX_STATUS = 255; error('', 0)")
 r = W:run("xargs", "-n1", "die", { pipe = true, stdin = "a b\n" })
 check("xargs: a 255 status stops it", r.status == 1 and #r.err == 1
     and r.err[1] == "xargs: die: exited with status 255; aborting", show(r.errText))
-W:file("cc-turtles/tally.lua", "_G.TALLY = (_G.TALLY or 0) + 1")
+W:file("cc-turtles/bin/tally.lua", "_G.TALLY = (_G.TALLY or 0) + 1")
 _G.TALLY = 0
 r = W:run("xargs", "-n", "1", "tally", { pipe = true, stdin = "a b c\n" })
 check("xargs runs non-cu programs", r.status == 0 and _G.TALLY == 3)
@@ -252,7 +252,7 @@ W.shell.setAlias("cat", "edit")
 r = W:run("which", "cat")
 r2 = W:run("which", "-a", "cat")
 check("which: an alias shadows the path; -a lists both", r.out == "/rom/programs/edit.lua\n"
-    and r2.out == "/rom/programs/edit.lua\n/cc-turtles/cat.lua\n", show(r2.out))
+    and r2.out == "/rom/programs/edit.lua\n/cc-turtles/bin/cat.lua\n", show(r2.out))
 W.shell.clearAlias("cat"); W.shell.clearAlias("zz")
 
 r = W:run("xargs", "-L", "2", "echo", { pipe = true, stdin = "a b\n\nc \nd\ne\n" })
@@ -274,10 +274,10 @@ check("xargs -p: y runs, anything else skips", r.status == 0 and r.out == "a\n"
 -- without reading ahead)
 r = W:run("xargs", "-n", "2", "echo", { stdin = "a b\nc d\n" })
 check("xargs -n 2 from the keyboard: two runs", r.out == "a b\nc d\n", show(r.out))
-W:file("cc-turtles/crash.lua", "require('cu').init('crash'); error('boom')")
+W:file("cc-turtles/bin/crash.lua", "package.path = '/cc-turtles/lib/?.lua;' .. package.path; require('cu').init('crash'); error('boom')")
 r = W:run("xargs", "crash", { pipe = true, stdin = "a\n" })
 check("xargs: a cu program that crashes counts as a failure", r.ok and r.status == 1, r.status)
-W:file("cc-turtles/slow.lua", "sleep(3)")
+W:file("cc-turtles/bin/slow.lua", "sleep(3)")
 r = W:run("xargs", "-n1", "slow", { pipe = true, stdin = "a b c\n" })
 check("xargs yields during long runs", r.ok and r.status == 0 and #r.events == 0, tostring(r.error))
 local long = string.rep("x", 20000)

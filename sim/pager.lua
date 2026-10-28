@@ -4,7 +4,7 @@
 -- scripted key presses: what each key does to the view, the status line,
 -- sideways scrolling without wrapping, and q giving the keyboard back.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
 local check = M.check
 

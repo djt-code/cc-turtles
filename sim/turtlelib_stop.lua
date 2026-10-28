@@ -8,7 +8,7 @@
 -- the program stops once the turn is saved.  Without it, the saved
 -- heading is off by one.
 local PROJ = ...
-package.path = PROJ .. "/?.lua;" .. package.path
+package.path = PROJ .. "/turtle/?.lua;" .. package.path
 
 local realPrint = print
 local files = {}

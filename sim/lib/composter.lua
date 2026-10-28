@@ -81,7 +81,7 @@ os.pullEvent = function() error("IDLE", 0) end
 -- Run autocompost.lua until it waits, and report: what stopped it, the
 -- time it took, the bone meal, what's left in the turtle and the chest.
 function C.run(proj)
-    local ok, err = pcall(assert(loadfile(proj .. "/autocompost.lua")))
+    local ok, err = pcall(assert(loadfile(proj .. "/turtle/autocompost.lua")))
     print("stopped: " .. tostring(err))
     local left = {}
     for s = 1, 16 do if C.inv[s] then left[#left + 1] = C.inv[s].count .. " " .. C.inv[s].name end end

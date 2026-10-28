@@ -4,22 +4,32 @@ Turtle programs for [CC: Tweaked](https://tweaked.cc/), built around a shared
 navigation library. Written for a single cheap turtle that swaps its tool
 upgrade in software.
 
+The repo is in four folders:
+
+- `turtle/`: the turtle programs and `turtlelib`, the library they share;
+- `pc/`: programs for a plain computer;
+- `bin/`: the shell's utilities, `git` and Craftix, for any computer;
+- `lib/`: the modules the `bin/` programs require (`cu`, `regex`, `pager`).
+
+`deploy/install` puts `bin/` and `turtle/` (or `pc/`) on the path; see
+[Install](#install).
+
 | Program | What it does |
 |---|---|
-| `mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
-| `farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot, sugar cane) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
-| `mine.lua` | Digs a tunnel of any width and height, as long as asked or as long as its supplies last, following every ore vein it touches. It builds a new home from chests every so often, carries its supplies forward, and brings the valuables back to the start at the end. |
-| `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
-| `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
-| `git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
-| `cat.lua`, `more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
-| `pager.lua` | Library: a `less`-style viewer for `more` and `git log`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
-| `echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
-| POSIX utilities | `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks. `cu.lua` is their shared option parser and exit status; `regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
-| `craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
-| `claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
-| `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
-| `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
+| `turtle/mow.lua` | Mows every grass/fern/dead-bush tile in a rectangle, following rough terrain and routing around walls, chests and holes. |
+| `turtle/farm.lua` | Learns the layout of a crop farm inside a bounding box, including which crop (wheat, carrots, potatoes, beetroot, sugar cane) grows on each tile, then loops: harvest ripe crops, replant, repair damage, dump into a chest, sleep. |
+| `turtle/mine.lua` | Digs a tunnel of any width and height, as long as asked or as long as its supplies last, following every ore vein it touches. It builds a new home from chests every so often, carries its supplies forward, and brings the valuables back to the start at the end. |
+| `turtle/turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
+| `turtle/home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
+| `bin/git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
+| `bin/cat.lua`, `bin/more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
+| `lib/pager.lua` | Library: a `less`-style viewer for `more` and `git log`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
+| `bin/echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
+| POSIX utilities (`bin/`) | `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks. `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
+| `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
+| `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
+| `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
+| `pc/diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
 
 ## Hardware
 
@@ -77,7 +87,7 @@ farm layout is kept).
 On the turtle, with HTTP enabled on the server:
 
 ```
-wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/git.lua git
+wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/bin/git.lua git
 git clone https://github.com/djt-code/cc-turtles
 cd cc-turtles
 ```
@@ -89,24 +99,33 @@ in the pager (see `pager.lua` above; `q` quits).
 If HTTP is disabled on the server, drop the files into
 `<world>/computercraft/computer/<id>/cc-turtles/` by hand.
 
-To run the programs from any directory, put `cc-turtles` on the shell's
-search path:
+To run the programs from any directory, put them on the shell's search
+path:
 
 ```
 cc-turtles/deploy/install
 ```
 
-It adds a line to the top of `/startup.lua` (or writes
-`/startup/00-cc-turtles.lua` if `/startup` is a directory) that puts the
-repo's directory on the path at boot, then reboots. `--no-reboot` puts it on
-the path in the current shell instead. Running it again changes nothing.
-`deploy/` itself isn't on the path, so `install` doesn't become a command.
+It adds lines to the top of `/startup.lua` (or writes
+`/startup/00-cc-turtles.lua` if `/startup` is a directory) that put the
+repo's `bin/` on the path at boot, and `turtle/` on a turtle or `pc/` on a
+computer, then reboots. `--no-reboot` puts them on the path in the current
+shell instead. Running it again changes nothing. `deploy/` and `lib/`
+aren't on the path, so `install` and `cu` don't become commands.
 `--craftix` also starts [Craftix](#craftix) at every boot.
 
 The shell looks a program name up in each directory on the path in turn,
-`.lua` optional. Run from anywhere, a program still finds `turtlelib` and
+`.lua` optional. Run from anywhere, a program still finds its modules
+(`turtlelib` beside the turtle programs, `cu` and the rest in `lib/`) and
 keeps its files (`.turtlepos`, `mine.job`, `farm.map`, `claude.key` ...)
-next to itself in `cc-turtles`, not in the current directory.
+next to itself in `turtle/`, not in the current directory.
+
+**Upgrading from before the folders** (2026-10-28, when everything was in
+the repo's top folder): after `git pull`, run `cc-turtles/deploy/install`
+again. It swaps the old path line (and an old Craftix line) for the new
+ones. A job's files left in the top folder (`.turtlepos`, `mine.job`,
+`mine.seg`, `farm.map`, `claude.key`) are moved into `turtle/` the first
+time the program looks for them, so `mine --resume` and `reset` carry on.
 
 ## git
 
@@ -202,7 +221,7 @@ What CraftOS can't do:
 - Bytes are characters (C locale only): `-m` is `-c`, ranges and sorting
   go by byte value, and `-i` folds ASCII letters only.
 - Lua numbers are doubles: `printf` and `expr` are exact up to 2^53.
-- `[` is the file `[.lua`, which runs `test.lua` next to it, so the two
+- `[` is the file `bin/[.lua`, which runs `test.lua` next to it, so the two
   have to stay together.
 
 `cat` is the POSIX one now: it writes the files out whole, with no paging,
@@ -235,7 +254,7 @@ A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
 | Globs | `*`, `?`, `[abc]`, `[!a-z]`; names starting with `.` only match an explicit dot |
 | Substitution | `$(cmd)`, `` `cmd` `` |
 | Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export name=value`, `. file` |
-| Scripts | `craftix file [args]`, `craftix -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/craftix` run by name |
+| Scripts | `craftix file [args]`, `craftix -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/bin/craftix` run by name |
 
 A line ending in `\`, `|`, `&&` or `||`, or inside quotes, carries on at a
 `>` prompt. Tab completes as in the stock shell, for the command after
@@ -813,7 +832,7 @@ it has nothing left to compost it sleeps until you give it more.
 - If the composter stays full for 10 seconds it asks whether the hopper below is
   full or missing, and keeps waiting.
 - To start it at boot: `echo "shell.run('autocompost')" >> /startup.lua`
-  (`shell.run('/cc-turtles/autocompost')` if `cc-turtles` isn't on the path).
+  (`shell.run('/cc-turtles/turtle/autocompost')` if `turtle/` isn't on the path).
 
 ## diskclone
 
@@ -839,7 +858,9 @@ empty) or `count` disks have been written.
 
 ## Library
 
-`turtlelib.lua` is self-contained. A minimal program:
+`turtle/turtlelib.lua` is self-contained. A program next to it in
+`turtle/` just requires it (CC's `require` looks in the program's own
+folder first). A minimal program:
 
 ```lua
 local T = require("turtlelib")
@@ -904,6 +925,17 @@ own. A 2,000-line program with 180 top-level locals leaves 20 for every
 function inside it, and `mine.lua` hit that. `python sim/run.py --check`
 counts the way CC does and fails a file before a turtle would. Write new
 programs of any size this way; small ones can stay as they are.
+
+### Programs in bin/
+
+CC's `require` looks in the running program's own folder, so a program in
+`bin/` that uses a module in `lib/` adds that folder to its search path
+first, in one line before the first `require`:
+
+```lua
+package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path
+local cu = require("cu").init("cat", "cat [-u] [file...]")
+```
 
 ## Simulators
 
