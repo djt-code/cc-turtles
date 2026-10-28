@@ -306,7 +306,7 @@ mine <width> <height> [length] [--spacing N] [--no-lights] [--here]
 mine --resume
 mine haul
 mine ... --new
-mine reset [--to-start | --here]
+mine reset [--home N | --to-start | --here]
 ```
 
 Digs a tunnel `width` blocks wide (to the right; negative: to the left) and
@@ -356,7 +356,12 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   the start's top chest with chests and fuel and run `mine --resume`. It
   carries the new supplies out to the last home and carries on from there.
   Run from the last home (where `mine reset` leaves it), it just carries on
-  from there. To start a fresh tunnel somewhere else instead, add `--new`.
+  from there. Run from an earlier home (`mine reset --home N`), it goes over
+  the tunnel from that home again. It digs out whatever's in the way, dries
+  out any water and seals it off, and passes the homes already built
+  without building them again, then carries on past the last one. Use this
+  when part of the tunnel has flooded. To start a fresh tunnel somewhere
+  else instead, add `--new`.
 - **Haul:** `mine haul` shuttles the valuables in the homes back to the start
   whenever you like. Run it from the start or from the last home. It walks
   out to the last home, then back collecting from every home (the most
@@ -475,7 +480,9 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   restart, `mine reset` brings the turtle to the **last home it built**, even
   from inside a vein: it digs straight back into the tunnel, then follows it.
   From there `mine --resume` carries on, or `mine haul` brings the valuables
-  back. `mine reset --to-start` goes all the way back to the start instead.
+  back. `mine reset --home N` goes to home N instead (0 is the start; homes
+  are numbered from the start, every `--spacing` blocks), and
+  `mine reset --to-start` all the way back to the start.
   It only counts as arrived if the home's chests are there; if not, its
   saved position or heading must be wrong and it stops and says so.
   - **Ctrl+T is safe:** a turtle command (a move or a turn) waits for the

@@ -1005,6 +1005,47 @@ P.x, P.y, P.z, P.d = 0, 1, 20, 1
 files[".turtlepos"] = "0 1 20 0 flat"
 run("reset", "--to-start")
 check("--to-start went to the start", atStart())
+-- 13c. the last home (2, z=32) flooded: `mine reset --home 1` takes it
+--      back a home, and `mine --resume` carries on from there, going over
+--      the flooded segment again, drying it out and sealing it, on past
+--      home 2 (there already: not built again) to the end
+dugTunnel()
+files["mine.job"] = "3 3 40 16 2 active"
+for x = -2, 4 do for y = -1, 4 do for z = 22, 36 do
+    if not chestAt(x, y, z) then set(x, y, z, { name = "minecraft:water", level = 0 }) end
+end end end
+for x = -2, 4 do for z = 21, 37 do set(x, 5, z, { name = "minecraft:stone" }) end end
+for _, it in ipairs(stock(2, 64)) do table.insert(chestAt(-1, 0, 32), it) end     -- the supplies, out there
+for _ = 1, 3 do table.insert(chestAt(0, -1, 16), { name = "minecraft:cobblestone", count = 64 }) end
+P.x, P.y, P.z, P.d = 0, 0, 32, 3
+set(0, 0, 32, nil)
+files[".turtlepos"] = "0 0 32 3 flat"
+FUEL = 3000
+run("reset", "--home", "1")
+check("reset --home 1 went back to home 1 (z=16), facing its wall", P.x == 0 and P.y == 0 and P.z == 16 and P.d == 3)
+run("reset", "--home", "3")
+check("there's no home 3: said so", logHas("no home 3"))
+WATERY, PLACED = true, 0
+run("--resume")
+WATERY = false
+check("resumed from home 1, and went on to home 2 without building it again",
+    logHas("On to home 2") and not logHas("Built home 2"))
+local wetIn, wetOpen = 0, 0
+for x = -3, 5 do for y = -2, 6 do for z = 1, 41 do
+    local b = get(x, y, z)
+    if isWater(b) then
+        if x >= 0 and x <= 2 and y >= 0 and y <= 2 then wetIn = wetIn + 1 end
+        for _, d in ipairs({ { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }) do
+            if not get(x + d[1], y + d[2], z + d[3]) then wetOpen = wetOpen + 1 end
+        end
+    end
+end end end
+check("no water left in the tunnel", wetIn == 0, wetIn .. " blocks")
+check("no water touching open space (sealed off)", wetOpen == 0, wetOpen .. " open faces")
+check("tunnel dug to the end", leftIn(0, 2, 0, 2, 1, 40) == 0, leftIn(0, 2, 0, 2, 1, 40) .. " blocks left")
+check("home 2's chests still there", chestAt(-1, 0, 32) and chestAt(0, -1, 32))
+check("finished", logHas("^Done"))
+check("back at the start", atStart())
 
 -- 14. in the middle of a 3-wide tunnel every way is open, so it can't
 --     tell: it goes by the (wrong) saved heading, but stops, finding no

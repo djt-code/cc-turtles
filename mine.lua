@@ -98,7 +98,7 @@
 --  * Never digs chests, barrels, shulker boxes, spawners or ComputerCraft
 --    blocks (other turtles, computers).
 --  * Position is saved after every move, so `mine reset` can bring it to
---    its last home (or `--to-start`, the start) after a Ctrl+T or a server
+--    its last home (`--home N`: home N; `--to-start`: the start) after a Ctrl+T or a server
 --    restart, checking the home's chests are there when it arrives.  It runs under T.run, so a
 --    Ctrl+T in the middle of a move or turn waits for it to be saved.
 --    `mine reset` checks the heading against the tunnel first, and stops
@@ -124,10 +124,13 @@ local forceHere = T.popFlag(args, "--here")
 local resume = T.popFlag(args, "--resume")
 local fresh = T.popFlag(args, "--new")
 local lights = not T.popFlag(args, "--no-lights")
-local spacingArg
+local spacingArg, homeArg
 for i = #args - 1, 1, -1 do
     if args[i] == "--spacing" then
         spacingArg = tonumber(args[i + 1])
+        table.remove(args, i + 1); table.remove(args, i)
+    elseif args[i] == "--home" then
+        homeArg = tonumber(args[i + 1])
         table.remove(args, i + 1); table.remove(args, i)
     end
 end
@@ -138,7 +141,7 @@ local WIDTH, HEIGHT, LENGTH = tonumber(args[1]), tonumber(args[2]), tonumber(arg
 
 local function usage()
     print("Usage: mine <width> <height> [length] [--spacing N] [--no-lights] [--here]")
-    print("       mine --resume | mine haul | mine reset [--to-start | --here]")
+    print("       mine --resume | mine haul | mine reset [--home N | --to-start | --here]")
     print("width: + right / - left; height: + up / - down;")
     print("no length: dig until out of chests, fuel or room")
 end
@@ -968,11 +971,12 @@ end
 -- supplies there from this one.  The turtle starts and ends at a home.
 local function advance()
     local next = homeAt(home.k + 1)
+    local exists = next.k <= lastHome  -- going over the tunnel again (resumed from an earlier home)
     local have = T.countItem("minecraft:chest") + T.countItem("minecraft:barrel")
     for name, n in pairs(chestCounts(home.val)) do
         if CHEST_ITEMS[name] then have = have + n end
     end
-    if have < 2 then stop("Out of chests to build the next home (needs 2).") end
+    if have < 2 and not exists then stop("Out of chests to build the next home (needs 2).") end
     if not fuelToGoOn(next.z - home.z + 4 * SPACING) then
         stop("Not enough fuel to build the next home and still get back.")
     end
@@ -1002,10 +1006,14 @@ local function advance()
         T.face(home.face)
     end
     home = next
-    lastHome = home.k
-    stats.homes = stats.homes + 1
-    saveJob("active")
-    print(string.format("Built home %d at z=%d.", home.k, home.z))
+    if exists then
+        print(string.format("On to home %d at z=%d.", home.k, home.z))
+    else
+        lastHome = home.k
+        stats.homes = stats.homes + 1
+        saveJob("active")
+        print(string.format("Built home %d at z=%d.", home.k, home.z))
+    end
     refuel()
     restockKit()                   -- the torches went in with the supplies
     inTrip = false
@@ -1741,10 +1749,16 @@ if doReset then
     local saved = T.loadPos()
     if not saved then print("No saved position; the turtle hasn't moved since its last job."); return end
     T.pos.x, T.pos.y, T.pos.z, T.dir = saved.x, saved.y, saved.z, saved.dir
-    -- where to: the last home it built, or the start (asked for, no homes
-    -- yet, or it's at the start already)
+    -- where to: the last home it built, the one asked for (--home N), or
+    -- the start (asked for, no homes yet, or it's at the start already)
     local target = homeAt(job.homes)
-    if toStart or saved.z <= 0 then target = homeAt(0) end
+    if homeArg then
+        if homeArg ~= math.floor(homeArg) or homeArg < 0 or homeArg > job.homes then
+            print(string.format("There's no home %s: they go from 0 (the start) to %d.", tostring(homeArg), job.homes))
+            return
+        end
+        target = homeAt(homeArg)
+    elseif toStart or saved.z <= 0 then target = homeAt(0) end
     if T.pos.x == target.x and T.pos.y == target.y and T.pos.z == target.z then
         T.face(target.face)
         print(target.k == 0 and "At the start already." or ("At home " .. target.k .. " already."))
@@ -1790,7 +1804,8 @@ if doReset then
     if T.pos.x == 0 and T.pos.y == 0 and T.pos.z == target.z then
         if target.k == 0 then print("At the start.")
         else
-            print(string.format("At home %d (z=%d). `mine --resume` carries on from here;", target.k, target.z))
+            print(string.format("At home %d (z=%d). `mine --resume` carries on from here%s;", target.k, target.z,
+                target.k < job.homes and " (going over the tunnel to the last home again, drying out any water)" or ""))
             print("`mine haul` brings the valuables back to the start.")
         end
     else
@@ -1799,12 +1814,17 @@ if doReset then
     return
 end
 
--- Where a run starts: at the start, or (resuming or hauling) at the last
--- home, where `mine reset` leaves it.  nil (having said why) if neither.
+-- Where a run starts: at the start, or (resuming or hauling) at the home
+-- `mine reset` left it at (the last, or one asked for with --home).  nil
+-- (having said why) if neither.
 local function startingHome(fromLast)
     local saved = T.loadPos()
-    local last = homeAt(lastHome)
-    if fromLast and lastHome > 0 and saved and saved.x == 0 and saved.y == 0 and saved.z == last.z then
+    local last
+    if fromLast and saved and saved.x == 0 and saved.y == 0 and saved.z > 0 and saved.z % SPACING == 0
+            and saved.z / SPACING <= lastHome then
+        last = homeAt(math.floor(saved.z / SPACING))
+    end
+    if last then
         T.pos.x, T.pos.y, T.pos.z, T.dir = 0, 0, last.z, saved.dir
         T.face(last.face)
         if not (containerOn("front") and containerOn(last.bulk)) then
