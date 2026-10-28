@@ -1,6 +1,6 @@
 -- sim/pager.lua
 --
--- pager.lua (and cat, which uses it) on the turtle's 39 x 13 screen, with
+-- pager.lua (and more, which uses it) on the turtle's 39 x 13 screen, with
 -- scripted key presses: what each key does to the view, the status line,
 -- sideways scrolling without wrapping, and q giving the keyboard back.
 local PROJ = ...
@@ -80,22 +80,25 @@ check("l and right 8 columns right, $ to the end of the widest line",
 check("h and left 8 back, 0 to the left edge, not past it",
     shows(5, #full - 46) and shows(6, #full - 54) and shows(7, 1) and shows(8, 1))
 
--- 4. cat: files one after another in the pager
-S.files = { ["a.txt"] = "first\n", ["b.txt"] = "" }
-for i = 1, 30 do S.files["b.txt"] = S.files["b.txt"] .. "b" .. i .. "\n" end
-fs = M.fsApi(S)
-fs.isDir = function() return false end
-shell = M.shellApi("cat.lua")
-local errs = {}
-printError = function(s) errs[#errs + 1] = s end
-T.events = { { "char", "G" }, { "char", "q" } }
-local pull, atQ = os.pullEvent, nil
-os.pullEvent = function() if #T.events == 1 then atQ = T.text(13) end return pull() end
-package.loaded.pager = nil
-assert(loadfile(PROJ .. "/cat.lua"))("a.txt", "nope", "b.txt")
-os.pullEvent = pull
-check("cat pages the files together", T.text(1) == "b19" and T.text(12) == "b30" and atQ:find("20%-31/31") ~= nil, atQ)
-check("and names a file that isn't there", errs[1] == "cat: no such file: nope")
-S.log = {}
-assert(loadfile(PROJ .. "/cat.lua"))("a.txt")
-check("a short file is just printed", S.log[1] == "first" and #S.log == 1)
+-- 4. more: files one after another in the pager (cat just copies them)
+local SW = require("shellworld")
+local W = SW.new(PROJ)
+W:file("a.txt", "first\n")
+local b = ""
+for i = 1, 30 do b = b .. "b" .. i .. "\n" end
+W:file("b.txt", b)
+local atQ
+local r = W:run("more", "a.txt", "nope", "b.txt", { events = { { "char", "G" }, { "char", "q" } },
+    onPull = function(w) if #w.T.events == 1 then atQ = w.T.text(13) end end })
+-- 3 header lines + "first" + 3 header lines + 30 lines = 37
+check("more pages the files together, each under its name",
+    W.T.text(1) == "b19" and W.T.text(12) == "b30" and atQ:find("26%-37/37") ~= nil, atQ)
+check("and names a file that isn't there, exit status 1",
+    r.err[1] == "more: nope: No such file or directory" and r.status == 1, r.err[1])
+r = W:run("more", "a.txt")
+check("a short file is just printed", r.out == "first\n" and r.status == 0, (r.out:gsub("\n", "|")))
+r = W:run("more", "a.txt", "b.txt", { pipeOut = true })
+check("not to the screen: copied like cat", r.out == "first\n" .. b and #r.events == 0)
+r = W:run("cat", "a.txt", "nope", "b.txt")
+check("cat copies the files with no paging", r.out == "first\n" .. b and r.status == 1
+    and r.err[1] == "cat: nope: No such file or directory")

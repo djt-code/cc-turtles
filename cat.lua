@@ -1,30 +1,22 @@
--- cat.lua -- show files, a screenful at a time
+-- cat.lua -- concatenate files to standard output (POSIX cat)
 --
--- CraftOS has no cat (or more).  `cat <file> [file ...]` shows the files
--- one after another in the pager (pager.lua: space/PgDn a page, j/k or
--- the arrows a line, h/l sideways, q to quit); what fits on the screen is
--- just printed.  Handy for claude.log, mine.job, .turtlepos and the like.
+--   cat [-u] [file...]
+--
+-- Writes each file in turn, byte for byte; "-" or no files at all reads
+-- standard input (from the keyboard: hold Ctrl+T to end it).  A file that
+-- can't be read is reported and skipped, and cat exits 1 at the end.
+-- -u (unbuffered) is accepted: output is never buffered here anyway.
+-- To read a long file a screenful at a time, use more.
 
-local pager = require("pager")
+local cu = require("cu").init("cat", "cat [-u] [file...]")
+local _, files = cu.getopt({ ... }, "u")
 
-local files = { ... }
-if #files == 0 then
-    print("Usage: cat <file> [file ...]")
-    return
-end
-
-local lines = {}
-for _, name in ipairs(files) do
-    local path = shell.resolve(name)
-    if not fs.exists(path) then printError("cat: no such file: " .. name)
-    elseif fs.isDir(path) then printError("cat: " .. name .. " is a directory")
+cu.each(files, function(h)
+    if h == io.stdin then
+        -- the keyboard: echo each line as it is typed
+        for l in function() return cu.readLine(h, true) end do io.write(l) end
     else
-        local f = fs.open(path, "r")
-        local text = f.readAll()
-        f.close()
-        if text ~= "" then
-            for _, l in ipairs(pager.lines(text)) do lines[#lines + 1] = l end
-        end
+        io.write(cu.readAll(h))
     end
-end
-if #lines > 0 then pager.page(lines) end
+end)
+return cu.exit()
