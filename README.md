@@ -12,6 +12,7 @@ upgrade in software.
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
+| `claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
 
@@ -574,6 +575,48 @@ recognise. Needs a pickaxe, equipped or in the inventory.
 A second turtle working as a courier is planned: it would shuttle between
 the start and the newest home, bringing chests and fuel out and valuables
 back, so the miner can go on for as long as the start is kept stocked.
+
+## claude
+
+```
+claude [goal words...] [--model id] [--effort low|medium|high] [--steps N] [--confirm]
+claude dig a 3 by 3 tunnel 20 blocks ahead and come back
+```
+
+Claude (the model, over the Anthropic API) drives the turtle. It gets one
+tool that matters, `lua`: the code it writes runs on the turtle with
+`turtle`, `peripheral` and `turtlelib` as `T` in scope, and whatever the
+code prints or returns goes back to it. Two more tools: `status` (where it
+is, fuel, what's in front, above and below, the inventory) and `ask_user`
+(it asks you at the keyboard). It works at the goal call by call, says what
+it did when it stops, and then waits for the next thing to do; an empty
+line quits. Ctrl+T stops it, and because it runs under `T.run` the saved
+position stays right, so `home` works afterwards. It picks up `.turtlepos`
+from the last job if there is one; otherwise where it starts is `(0,0,0)`
+facing `+z`.
+
+Setup:
+
+- Put an API key in `claude.key` next to the program (`edit claude.key`,
+  paste, save). Make it a key of its own with a spending limit: anything on
+  a computer's disk can be read by whoever can open the turtle or the
+  server's save folder. The file is in `.gitignore` and `git pull` never
+  touches untracked files.
+- The server's CC:Tweaked config must let HTTP reach `api.anthropic.com`,
+  the same `http.rules` allow-list that lets `git` reach your host.
+
+Each tool call is one API round trip carrying the whole conversation, so a
+long job is many calls; the system prompt and tools are marked for prompt
+caching, and the token totals are printed when a goal ends. The defaults
+are `claude-opus-5-5` at `medium` effort and at most 60 tool calls per goal
+(it's then told to stop and sum up); `--confirm` shows each piece of code
+and asks before running it. A refusal by the model's safety classifiers is
+retried server-side on a fallback model (the API's `fallbacks: "default"`),
+so an odd phrasing doesn't end the job. The code it runs can't reach `fs`,
+`http` or `shell`, so a slip can't read the key or rewrite the programs;
+it can do anything the turtle can, though, so keep valuables out of reach
+the first few times, and `claude.log` keeps every piece of code it ran
+and what came back.
 
 ## autocompost
 
