@@ -36,7 +36,8 @@ local ROM = {
 }
 local ALIASES = { ls = "list", dir = "list", cp = "copy", mv = "move", rm = "delete", clr = "clear",
                   rs = "redstone", sh = "shell" }
-local PATH = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/rom/programs/rednet:/rom/programs/fun:/cc-turtles"
+-- a plain turtle's path (rom/startup.lua: rednet and fun are for non-turtles)
+local PATH = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/cc-turtles"
 
 -- A path as fs keeps it: root-relative, no "." or "..", no illegal
 -- characters ("*" kept only for patterns).
