@@ -1366,6 +1366,28 @@ check("no torch washed away after the resume, and they're all up", WASHED == 0 a
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 40) == 0, leftIn(0, 2, 0, 2, 1, 40) .. " blocks left")
 check("back at the start", atStart())
 
+-- 13i. stopped before the middle column's bottom lane is done (lane 4 of
+--      8), then lichen in the left wall at floor level leaks into the
+--      finished left column: the resume goes over that column's floor
+--      instead (the middle one's isn't dug yet), finds the water, and
+--      seals the lichen
+holeWorld()
+STOP_AT_DIG = 200
+run("3", "3", "40")
+STOP_AT_DIG = nil
+set(-1, 0, 10, { name = "minecraft:glow_lichen", waterlogged = true })
+WATERY = true
+flow(-1, 0, 10)
+settleWater()
+run("reset")
+run("--resume")
+WATERY = false
+local wetI = 0
+for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then wetI = wetI + 1 end end end end
+check("went over the finished left column's floor, found the leak and sealed it",
+    logHas("Carrying on with lane 4") and wetI == 0 and (get(-1, 0, 10) or {}).name ~= "minecraft:glow_lichen",
+    wetI .. " tunnel blocks wet")
+
 -- 14. in the middle of a 3-wide tunnel every way is open, so it can't
 --     tell: it goes by the (wrong) saved heading, but stops, finding no
 --     home chests where it ends up (or digging through far more rock than

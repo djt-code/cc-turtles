@@ -1797,7 +1797,8 @@ end
 -- Go over part of the tunnel dug before, from the home, for water getting
 -- in: first along the floor of the middle of every three columns (water in
 -- the tunnel ends up on the floor and spreads across it, so it reaches
--- one of them), checking the floor too, then, if that found any, along
+-- one of them; if the middle one's floor isn't dug yet, another of the
+-- three that is), checking the floor too, then, if that found any, along
 -- all its other lanes.  Water it finds is getting in,
 -- so it follows it to where it comes in and seals that (see dry); torches
 -- washed away are put back.  Nothing else is looked at again.  `done`
@@ -1823,10 +1824,16 @@ local function repair(z1, z2, done)
         end
     end
     local xs, xn = T.sgn(WIDTH)
+    local floorDug = {}                    -- x of the columns whose bottom lane is dug
+    for i, lane in ipairs(lanes) do
+        if lane.y == Y0 and (not done or done(i)) then floorDug[lane.x] = true end
+    end
     local middle = {}
-    for c = 1, xn - 1, 3 do middle[c * xs] = true end
-    local last = xn - 1
-    if not middle[last * xs] and not middle[(last - 1) * xs] then middle[last * xs] = true end
+    for g = 0, xn - 1, 3 do                -- each three columns: the middle, else a side
+        for _, c in ipairs({ g + 1, g, g + 2 }) do
+            if c <= xn - 1 and floorDug[c * xs] then middle[c * xs] = true; break end
+        end
+    end
     local function first(lane) return lane.y == Y0 and middle[lane.x] end
     local before = stats.wet
     walk(first)

@@ -369,8 +369,10 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   from an earlier home, and the finished part of the segment it carries on
   with) it walks first along the floor of the middle column (the middle of
   every three, for a wider tunnel). Water in the tunnel ends up on the
-  floor and spreads across it, so it reaches the middle. If that finds
-  any, it walks all the other lanes too. It follows any water it finds
+  floor and spreads across it, so it reaches the middle. If the middle
+  column's floor isn't dug yet (it was stopped partway), it walks a side
+  column's floor that is. If that finds any water, it walks all the other
+  lanes too. It follows any water it finds
   to where it comes in, a hole in the ceiling or a waterlogged block say,
   and seals that. It also fills any hole or water in the floor it walks
   over, and puts back torches that were washed away. Once it has sealed
