@@ -336,10 +336,14 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   in one chest, at most 64 blocks (64 for a 3x3 tunnel); `--spacing N`
   overrides it.
 - **Supplies move forward:** building a home, the turtle carries the spare
-  chests and all the fuel from the old home to the new one, in as many trips
-  as it takes. Coal it mines goes into the home's chest and fuels it too.
-  Bulk stays in the home it was mined near. Valuables stay in their home's
-  chest until the end.
+  chests and the fuel from the old home to the new one, in as many trips
+  as it takes, leaving a stock of 8 fuel items in every home along the
+  way, so a resume from any home finds fuel there. Coal it mines goes into
+  the home's chest and fuels it too: coal ore is ore like any other, so
+  every coal vein the tunnel touches (and, with a scanner, every one in
+  reach) ends up in the chests, and the surplus travels forward with the
+  supplies. Bulk stays in the home it was mined near. Valuables stay in
+  their home's chest until the end.
 - **Stopping:** it stops when:
   - it runs out of chests for the next home;
   - it doesn't have enough fuel to go on and still get back;
@@ -467,11 +471,14 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   fills, it first merges part stacks of the same item, which often saves
   the trip (see [Library](#library)). It carries up to 32 fuel items (coal)
   from its home and burns them as it goes, so a low tank seldom means a
-  trip. It also carries 64 bulk blocks for sealing, or 192 once drying out
-  water has used them up. Resumed from an earlier home than the last, it
-  first fetches fuel from the last home, where the supplies are. Going on
-  to a home that's already built only needs the fuel to get there, since
-  the supplies are there.
+  trip; the fuel it carries counts whenever it works out whether it can
+  afford a trip. It also carries 64 bulk blocks for sealing, or 192 once
+  drying out water has used them up. Resumed from the start of a long
+  tunnel, it fills its tank from the start's chest for the walk out to the
+  last home and back before setting off. Resumed from an earlier home than
+  the last, it first fetches fuel from the last home, where the supplies
+  are. Going on to a home that's already built only needs the fuel to get
+  there, since the supplies are there.
 - **Geo Scanner:** put an Advanced Peripherals Geo Scanner in the start's
   top chest and the turtle takes it along and uses it instead of checking
   every wall block by hand. There's no slot to spare for it: one side holds

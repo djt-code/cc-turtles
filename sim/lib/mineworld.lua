@@ -561,8 +561,10 @@ function Mine.checkStart()
 end
 
 -- Homes every `sp` blocks, for a tunnel up and right: a wall chest at
--- x=-1 and a floor chest at y=-1.  Supplies only in the last home, no
+-- x=-1 and a floor chest at y=-1.  Supplies only in the last home, apart
+-- from a small stock of coal (1 to FUEL_STOCK) in each earlier one; no
 -- valuables left in any, only bulk in the floor chests.
+Mine.FUEL_STOCK = 8
 function Mine.checkHomes(sp, count)
     local bad = {}
     for h = 1, count do
@@ -571,11 +573,14 @@ function Mine.checkHomes(sp, count)
         if not (wall and floor) then bad[#bad + 1] = "home " .. h .. " missing a chest"
         else
             local _, wn = Mine.contents(wall)
-            for name in pairs(wn) do
+            for name, n in pairs(wn) do
                 local short = name:gsub("^%a+:", "")
-                if h < count and SUPPLY[short] then bad[#bad + 1] = short .. " left in home " .. h end
+                if h < count and SUPPLY[short] and not (short == "coal" and n <= Mine.FUEL_STOCK) then
+                    bad[#bad + 1] = short .. " left in home " .. h
+                end
                 if not SUPPLY[short] then bad[#bad + 1] = short .. " not brought back from home " .. h end
             end
+            if h < count and not wn["minecraft:coal"] then bad[#bad + 1] = "no fuel stock in home " .. h end
             local _, fn = Mine.contents(floor)
             for name in pairs(fn) do
                 if not BULKY[name:gsub("^%a+:", "")] then bad[#bad + 1] = name .. " in home " .. h .. "'s bulk chest" end

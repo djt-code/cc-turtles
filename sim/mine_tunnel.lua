@@ -134,7 +134,9 @@ local _, h1left = contents(chestAt(-1, 0, 8))
 check("hauled the rest of home 1's string back", (got2["minecraft:string"] or 0) == 640 and not h1left["minecraft:string"],
     (got2["minecraft:string"] or 0) .. " string at the start")
 check("said everything's at the start", logHas("All the valuables are at the start"))
-check("left the supplies in the last home", (select(2, contents(chestAt(-1, 0, 40)))["minecraft:coal"] or 0) > 0)
+local coalOut = 0
+for k = 1, 5 do coalOut = coalOut + (select(2, contents(chestAt(-1, 0, k * 8)))["minecraft:coal"] or 0) end
+check("left the supplies (the fuel stocks) in the homes", coalOut > 0, coalOut .. " coal in the homes")
 check("back at the start", atStart())
 
 -- 4d. stopped between homes 4 and 5: `mine reset` goes on to home 5 (the
@@ -688,6 +690,31 @@ for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then w
 check("went over the finished left column's floor, found the leak and sealed it",
     logHas("Carrying on with lane 4") and wetI == 0 and (get(-1, 0, 10) or {}).name ~= "minecraft:glow_lichen",
     wetI .. " tunnel blocks wet")
+
+-- 13j. resuming from the start of a long tunnel (6 homes 64 apart, all
+--      dug): the walk out to home 6 and back takes more than a segment's
+--      fuel, so the tank is filled from the start's chest for it rather
+--      than giving up; the fuel stocks left in homes 1-5 are untouched
+setup(stock(2, 64))
+for x = 0, 2 do for y = 0, 2 do for z = 1, 384 do set(x, y, z, nil) end end end
+for k = 1, 6 do
+    set(-1, 0, k * 64, chest({ { name = "minecraft:coal", count = 8 } }))
+    set(0, -1, k * 64, chest())
+end
+Mine.files = { ["mine.job"] = "3 3 384 64 6 active" }
+Mine.inv = {}
+EQ = { right = "minecraft:diamond_pickaxe" }
+startAt()
+Mine.files[".turtlepos"] = "0 0 0 0 flat"
+FUEL, DRY = 500, 0
+run("--resume")
+check("filled up at the start and walked out to home 6 instead of giving up",
+    logHas("Back at home 6") and not logHas("Not enough fuel"))
+local stocks = 0
+for k = 1, 5 do stocks = stocks + (select(2, contents(chestAt(-1, 0, k * 64)))["minecraft:coal"] or 0) end
+check("the fuel stocks in homes 1-5 are still there", stocks == 40, stocks .. " coal")
+check("finished and back at the start", logHas("^Done") and atStart())
+check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 
 -- 14. in the middle of a 3-wide tunnel every way is open, so it can't
 --     tell: it goes by the (wrong) saved heading, but stops, finding no

@@ -121,6 +121,7 @@ local ROOM = 2             -- empty slots wanted before each dig
 local FILLER_KEEP = 64     -- bulk blocks kept on board for sealing...
 local FILLER_KEEP_WET = 192 -- ...once it has run out drying out water
 local FUEL_KEEP = 32       -- fuel items carried, so it tops up on the way instead of going home
+local FUEL_STOCK = 8       -- fuel items left in each home when moving on: a stock along the tunnel
 local FUEL_WORK = 100      -- fuel for some work after a trip back out
 local MAX_SPACING = 64     -- most blocks between homes
 
@@ -983,9 +984,11 @@ end
 
 local function refuel() T.refuelFrom(home.val, fuelGoal + home.z) end
 
--- Enough fuel to do some work and still get back to the start?
+-- Enough fuel to do some work and still get back to the start?  The fuel
+-- it carries counts: the tank is topped up from it on the way (T.ensureFuel).
 local function fuelToGoOn(extra)
-    return T.hasFuel(home.z + T.cfg.fuelMargin + (extra or FUEL_WORK))
+    local need = home.z + T.cfg.fuelMargin + (extra or FUEL_WORK)
+    return T.hasFuel(need) or T.totalFuelAvailable() >= need
 end
 
 -- Go home, unload and refuel, and come back to this exact spot and
@@ -1014,20 +1017,33 @@ function trip(why)
 end
 
 -- Take supplies (chests and fuel) from the home's valuables chest while
--- there's room.  Returns how many it took, and whether any are left.
+-- there's room, leaving a stock of FUEL_STOCK fuel items in every home but
+-- the start, so there's fuel along the tunnel for a resume from any home
+-- (and the next tunnel's turtle).  Returns how many it took, and whether
+-- any are left to come back for (the stock doesn't count).
 local function takeSupplies()
-    local took = 0
+    local took, stock = 0, home.k > 0 and FUEL_STOCK or 0
     local counts = chestCounts(home.val)
+    local function leaveOf(name, n)
+        if not T.fuel[name] then return 0 end
+        local leave = math.min(n, stock)
+        stock = stock - leave
+        return leave
+    end
     for _, name in ipairs(T.sortedKeys(counts)) do
         local n = counts[name]
         if isSupply(name) then
-            local before = T.countItem(name)
-            T.restockFrom(home.val, name, before + n, { quiet = true, room = 1 })
-            took = took + T.countItem(name) - before
+            local want = n - leaveOf(name, n)
+            if want > 0 then
+                local before = T.countItem(name)
+                T.restockFrom(home.val, name, before + want, { quiet = true, room = 1 })
+                took = took + T.countItem(name) - before
+            end
         end
     end
-    for name in pairs(chestCounts(home.val)) do
-        if isSupply(name) then return took, true end
+    counts, stock = chestCounts(home.val), home.k > 0 and FUEL_STOCK or 0
+    for _, name in ipairs(T.sortedKeys(counts)) do
+        if isSupply(name) and counts[name] > leaveOf(name, counts[name]) then return took, true end
     end
     return took, false
 end
@@ -2123,6 +2139,9 @@ T.withTool(pickaxe, function()
         -- resuming from the start: carry its new supplies out to the last home
         if resume and job.homes > 0 and home.k == 0 then
             local last = homeAt(job.homes)
+            -- the walk out and back is longer than a segment's work: fill
+            -- the tank for it from the start's chest first
+            T.refuelFrom(home.val, 2 * last.z + T.cfg.fuelMargin + FUEL_WORK)
             if not fuelToGoOn(2 * last.z) then stop("Not enough fuel to get back out to home " .. last.k .. ".") end
             inTrip, repairing = true, true  -- through tunnel dug before: water there is getting in
             takeSupplies()
