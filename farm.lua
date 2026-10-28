@@ -81,16 +81,23 @@
 --    learned obstacle map and BFS re-routing.  Position is saved to disk
 --    after every move so `farm reset` can bring it home after a Ctrl+T.
 
-local T = require("turtlelib")
+-- What this file defines at the top level goes in a table of its own,
+-- not in local variables: CC's Lua counts every local still in scope in
+-- the enclosing functions against the 200 a function may have, and a
+-- program this size runs out.  Names read as before; anything not
+-- defined here comes from the shell's environment and _G.
+local _ENV = setmetatable({}, { __index = _ENV })
 
-local MAP_FILE = T.dataPath("farm.map")
+T = require("turtlelib")
+
+MAP_FILE = T.dataPath("farm.map")
 
 --------------------------------------------------------------------------
 -- Arguments
 --------------------------------------------------------------------------
-local args = { ... }
-local forceLearn, doClone, doRepair, doReset = false, false, false, false
-local forceHere = T.popFlag(args, "--here")
+args = { ... }
+forceLearn, doClone, doRepair, doReset = false, false, false, false
+forceHere = T.popFlag(args, "--here")
 if args[1] == "learn" then forceLearn = true; table.remove(args, 1)
 elseif args[1] == "repair" then doRepair = true; table.remove(args, 1)
 elseif args[1] == "clone" then doClone = true; forceHere = true; table.remove(args, 1)
@@ -99,7 +106,7 @@ elseif args[1] == "reset" then
     doReset = true                       -- once the map can be read (below)
 end
 
-local WIDTH, LENGTH, REPEAT
+WIDTH, LENGTH, REPEAT = nil
 if #args >= 2 then
     WIDTH, LENGTH, REPEAT = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
 else
@@ -107,31 +114,31 @@ else
 end
 if REPEAT == nil then REPEAT = 20 end   -- minutes; 0 = single pass
 
-local CRUISE_MOVES_PER_TILE = 1.2
-local MAX_SEEDS = 256           -- never carry more than this many seeds
-local ROOM = 3                  -- empty slots to have before working a tile: its
+CRUISE_MOVES_PER_TILE = 1.2
+MAX_SEEDS = 256           -- never carry more than this many seeds
+ROOM = 3                  -- empty slots to have before working a tile: its
                                 -- drops (up to two kinds) plus one for tool swaps
 
 -- Crops grown on farmland: block -> item that plants it, age when ripe.
 -- compost: the seed isn't the harvest, so surplus seeds can be composted.
 -- meal: bone meal to grow one from seed, near the worst case (each adds
 -- 2-5 stages; beetroot only advances one stage, three times in four).
-local CROPS = {
+CROPS = {
     ["minecraft:wheat"]     = { seed = "minecraft:wheat_seeds",    ripe = 7, meal = 4, name = "wheat", compost = true },
     ["minecraft:carrots"]   = { seed = "minecraft:carrot",         ripe = 7, meal = 4, name = "carrots" },
     ["minecraft:potatoes"]  = { seed = "minecraft:potato",         ripe = 7, meal = 4, name = "potatoes" },
     ["minecraft:beetroots"] = { seed = "minecraft:beetroot_seeds", ripe = 3, meal = 6, name = "beetroot", compost = true },
 }
-local BONE_MEAL = "minecraft:bone_meal"
-local MAX_MEAL = 192           -- bone meal carried at once (3 stacks)
-local MEAL_PER_TILE = 10       -- give up on a tile after this many
-local DEFAULT_CROP = "minecraft:wheat"   -- for a farm with nothing growing yet
+BONE_MEAL = "minecraft:bone_meal"
+MAX_MEAL = 192           -- bone meal carried at once (3 stacks)
+MEAL_PER_TILE = 10       -- give up on a tile after this many
+DEFAULT_CROP = "minecraft:wheat"   -- for a farm with nothing growing yet
 
 -- Sugar cane is planted with the item itself, on any of these grounds, and
 -- only takes with a water source beside the ground block.  Its bottom block
 -- is never cut: that is the part that regrows.
-local CANE = "minecraft:sugar_cane"      -- the block and the item
-local CANE_GROUND = {
+CANE = "minecraft:sugar_cane"      -- the block and the item
+CANE_GROUND = {
     ["minecraft:dirt"] = true, ["minecraft:grass_block"] = true,
     ["minecraft:coarse_dirt"] = true, ["minecraft:podzol"] = true,
     ["minecraft:rooted_dirt"] = true, ["minecraft:mycelium"] = true,
@@ -139,19 +146,19 @@ local CANE_GROUND = {
     ["minecraft:muddy_mangrove_roots"] = true, ["minecraft:sand"] = true,
     ["minecraft:red_sand"] = true, ["minecraft:suspicious_sand"] = true,
 }
-local CANE_TRAVEL_Y = 2    -- travel height over a farm with cane: above 3-high cane
-local LANE_BUCKETS = 4     -- buckets carried for lane work, if the chest has them
+CANE_TRAVEL_Y = 2    -- travel height over a farm with cane: above 3-high cane
+LANE_BUCKETS = 4     -- buckets carried for lane work, if the chest has them
 
-local SEEDS = { CANE }                   -- planting items, sorted
+SEEDS = { CANE }                   -- planting items, sorted
 for _, c in pairs(CROPS) do SEEDS[#SEEDS + 1] = c.seed end
 table.sort(SEEDS)
-local DIRT = "minecraft:dirt"
-local WATER = "minecraft:water"
-local FARMLAND = "minecraft:farmland"
-local CHEST_SIDE = "bottom"    -- the output chest is always below home
-local BUCKET, WATER_BUCKET = "minecraft:bucket", "minecraft:water_bucket"
-local HOE, PICKAXE = "minecraft:diamond_hoe", "minecraft:diamond_pickaxe"
-local TILLABLE = {
+DIRT = "minecraft:dirt"
+WATER = "minecraft:water"
+FARMLAND = "minecraft:farmland"
+CHEST_SIDE = "bottom"    -- the output chest is always below home
+BUCKET, WATER_BUCKET = "minecraft:bucket", "minecraft:water_bucket"
+HOE, PICKAXE = "minecraft:diamond_hoe", "minecraft:diamond_pickaxe"
+TILLABLE = {
     ["minecraft:dirt"] = true, ["minecraft:grass_block"] = true,
     ["minecraft:coarse_dirt"] = true, ["minecraft:dirt_path"] = true,
     ["minecraft:rooted_dirt"] = true,
@@ -166,17 +173,17 @@ T.diggable = {}            -- never dig while moving
 -- for crop tiles crops[key] = the crop block planned there.
 -- (the learning pass also uses "hole" and "dirt" until resolveLayout)
 --------------------------------------------------------------------------
-local tiles = {}
-local crops = {}
-local wet = {}             -- tiles that actually hold water right now
-local pendingFills = {}    -- holes (or clone targets) still to build
+tiles = {}
+crops = {}
+wet = {}             -- tiles that actually hold water right now
+pendingFills = {}    -- holes (or clone targets) still to build
 
-local keyXZ = T.keyXZ
+keyXZ = T.keyXZ
 
 -- The crop planned for a tile (maps saved before crops were tracked: wheat).
-local function cropAt(k) return crops[k] or DEFAULT_CROP end
+function cropAt(k) return crops[k] or DEFAULT_CROP end
 
-local function saveMap()
+function saveMap()
     local f = fs.open(MAP_FILE, "w")
     f.writeLine(WIDTH .. " " .. LENGTH)
     for _, k in ipairs(T.sortedKeys(tiles)) do
@@ -185,7 +192,7 @@ local function saveMap()
     f.close()
 end
 
-local function loadMap()
+function loadMap()
     if not fs.exists(MAP_FILE) then return false end
     local f = fs.open(MAP_FILE, "r")
     local w, l = (f.readLine() or ""):match("(-?%d+) (-?%d+)")
@@ -203,14 +210,14 @@ local function loadMap()
     return true
 end
 
-local function countKind(kind)
+function countKind(kind)
     local n = 0
     for _, k in pairs(tiles) do if k == kind then n = n + 1 end end
     return n
 end
 
 -- "12 wheat, 6 carrots": what the layout grows.
-local function cropSummary()
+function cropSummary()
     local n, order = {}, {}
     for k, kind in pairs(tiles) do
         if kind == "crop" then
@@ -228,7 +235,7 @@ local function cropSummary()
 end
 
 -- How many tiles planting item `seed` is planted on.
-local function plantedWith(seed)
+function plantedWith(seed)
     if seed == CANE then return countKind("cane") end
     local n = 0
     for k, kind in pairs(tiles) do
@@ -239,13 +246,13 @@ end
 
 -- How many of planting item `seed` to carry: one per tile it grows on
 -- plus a margin, capped.  Zero for crops the farm doesn't grow.
-local function seedTarget(seed)
+function seedTarget(seed)
     local n = plantedWith(seed)
     return n == 0 and 0 or math.min(MAX_SEEDS, n + 16)
 end
 
 -- Is a planting item the farm needs completely missing from the inventory?
-local function lacksSeeds()
+function lacksSeeds()
     for _, seed in ipairs(SEEDS) do
         if seedTarget(seed) > 0 and T.countItem(seed) == 0 then return true end
     end
@@ -255,30 +262,30 @@ end
 --------------------------------------------------------------------------
 -- Tile primitives (all start and end at cruise height)
 --------------------------------------------------------------------------
-local below = T.below
+below = T.below
 
 -- Is the block below a water SOURCE?  Lanes are all sources; flowing
 -- water (level > 0) counts as damage and gets a bucket poured into it.
-local function sourceBelow()
+function sourceBelow()
     local name, d = below()
     return name == WATER and not (d.state and (tonumber(d.state.level) or 0) > 0)
 end
 
-local function plantDown(seed)
+function plantDown(seed)
     if not T.selectItem(seed) then return false end
     return turtle.placeDown()
 end
 
-local function placeDirtDown()
+function placeDirtDown()
     return T.selectItem(DIRT) and turtle.placeDown()
 end
 
 -- Height for getting around: cruise height, or CANE_TRAVEL_Y over a farm
 -- with sugar cane, which grows into cruise height.
-local travelY = 0
+travelY = 0
 
 -- Travel to (tx,tz) at travel height, then sink to cruise height.
-local function goToCruise(tx, tz)
+function goToCruise(tx, tz)
     T.toY(travelY)
     return T.goTo(tx, tz) and T.toY(0)
 end
@@ -289,8 +296,8 @@ function T.homeCost()
     return math.abs(T.pos.x) + math.abs(T.pos.z) + math.abs(travelY - T.pos.y) + travelY + 4
 end
 
-local warnedLow = false
-local function warnLow()
+warnedLow = false
+function warnLow()
     if not warnedLow then
         warnedLow = true
         print("Note: ground is directly below cruise height; the turtle is one block")
@@ -307,7 +314,7 @@ end
 -- harvest = false only plants (repair mode's inspection).
 -- Returns: harvested | growing | planted | empty | noseeds | damaged | blocked
 -- (damaged: no farmland or dirt to plant on; blocked: something in the way)
-local function workCrop(harvest, crop)
+function workCrop(harvest, crop)
     local seed = CROPS[crop].seed
     local name, d = below()
     local here = CROPS[name]
@@ -342,7 +349,7 @@ end
 -- plant it if it's missing.  A planting that fails with cane on board
 -- means no ground, or no water next to it: damage.
 -- Returns: harvested | growing | planted | noseeds | damaged | blocked
-local function workCane(harvest)
+function workCane(harvest)
     local name = below()
     if name == CANE then
         if harvest then turtle.digDown(); return "harvested" end
@@ -367,7 +374,7 @@ end
 -- resolveLayout), plus the crop block for a tile with a crop growing on it,
 -- plus true for a gap the farming pass won't fix by itself: missing
 -- ground, or lane water that isn't a source.
-local function learnTile()
+function learnTile()
     while T.pos.y > 0 do
         local name = below()
         if name == CANE then return "cane" end
@@ -397,22 +404,22 @@ end
 --------------------------------------------------------------------------
 -- Home chest: dump produce, restock seeds / dirt / buckets
 --------------------------------------------------------------------------
-local function dirtNeeded()
+function dirtNeeded()
     local n = 0
     for _, f in ipairs(pendingFills) do n = n + (f.want == "water" and 4 or 1) end
     return math.min(n, 192)
 end
 
-local wantWaterBuckets = 0     -- buckets the lane builder carries
-local needWaterBuckets = 0     -- ...of which it can't do without
-local wantBoneMeal = 0         -- bone meal to carry, during a grow pass
-local fuelGoal = 0             -- fuel to set out with: about one pass
-local FUEL_WORK = 100          -- least fuel worth setting out with, beyond the trip
+wantWaterBuckets = 0     -- buckets the lane builder carries
+needWaterBuckets = 0     -- ...of which it can't do without
+wantBoneMeal = 0         -- bone meal to carry, during a grow pass
+fuelGoal = 0             -- fuel to set out with: about one pass
+FUEL_WORK = 100          -- least fuel worth setting out with, beyond the trip
 
 -- What stays on board at every visit home: seeds for a pass, fuel, the
 -- tools, and dirt and buckets only while a repair needs them.  Everything
 -- else goes into the chest.
-local function keepPolicy(item, alreadyKept)
+function keepPolicy(item, alreadyKept)
     local target = seedTarget(item.name)
     if target > 0 then return math.max(0, target - alreadyKept) end
     if item.name == DIRT then return math.max(0, dirtNeeded() - alreadyKept) end
@@ -427,17 +434,16 @@ local function keepPolicy(item, alreadyKept)
 end
 
 -- Restock from the chest below, leaving ROOM slots free for drops.
-local function restockItem(name, target, label, quiet)
+function restockItem(name, target, label, quiet)
     T.restockFrom(CHEST_SIDE, name, target, { label = label, quiet = quiet, room = ROOM })
 end
 
-local regenTile                -- defined with the lanes below
 
 -- Buckets for lane work: wantWaterBuckets of them if the chest has them,
 -- warning below needWaterBuckets.  Empty ones will do when a lane tile can
 -- refill them; otherwise full ones are fetched first.
-local warnedBuckets = false
-local function restockBuckets()
+warnedBuckets = false
+function restockBuckets()
     local want, need = wantWaterBuckets, needWaterBuckets
     if want <= 0 then return end
     local canScoop = regenTile() ~= nil
@@ -462,11 +468,11 @@ end
 -- than twice the farm's planting of go into it (only seeds that aren't the
 -- harvest: wheat and beetroot).  Bone meal is up to the hopper chain.
 --------------------------------------------------------------------------
-local compostHopper = false
-local layoutReady = false      -- surplus means nothing until the layout is known
+compostHopper = false
+layoutReady = false      -- surplus means nothing until the layout is known
 
 -- Is there a hopper directly behind home?  Called at home, cruise height.
-local function findCompostHopper()
+function findCompostHopper()
     T.face(2)
     local ok, d = turtle.inspect()
     T.face(0)
@@ -476,7 +482,7 @@ end
 
 -- Empty slots in the compost hopper: how many whole stacks it can take.
 -- Called at home facing forward, so the hopper is at the turtle's back.
-local function hopperSlotsFree()
+function hopperSlotsFree()
     local h = peripheral and peripheral.wrap("back")
     if not (h and h.list and h.size) then return 0 end
     local n = h.size()
@@ -488,7 +494,7 @@ end
 -- `room` stacks (what the hopper has space for).  Returns whether the
 -- turtle now carries some for the hopper, and whether there is surplus
 -- left in the chest after that.
-local function pullSurplusSeeds(room)
+function pullSurplusSeeds(room)
     local any, more = false, false
     for _, c in pairs(CROPS) do
         local have = c.compost and T.countContainer(CHEST_SIDE, c.seed)
@@ -509,7 +515,7 @@ end
 -- compostable seeds into the hopper behind, adding what went in to
 -- `fed[name]`.  What doesn't fit stays on board and goes back to the
 -- chest at the next visit.
-local function feedCompost(fed)
+function feedCompost(fed)
     T.face(2)
     local full = false
     for _, c in pairs(CROPS) do
@@ -534,7 +540,7 @@ end
 
 -- From home at cruise height, sink until the chest is below (up to 3),
 -- and tidy it up before anything is taken or moved.
-local function toChest()
+function toChest()
     for _ = 1, 3 do
         if T.containerBelow() then break end
         if turtle.detectDown() or not T.down() then break end
@@ -544,7 +550,7 @@ local function toChest()
     return true
 end
 
-local function dumpAtHome()
+function dumpAtHome()
     goToCruise(0, 0)
     T.face(0)
     if toChest() then
@@ -567,8 +573,8 @@ end
 -- topped up with surplus seeds from the chest meanwhile: every
 -- COMPOST_CHECK seconds, if the hopper has an empty slot, fill it.  Once
 -- there's no surplus left it just sleeps out the rest.
-local COMPOST_CHECK = 10
-local function waitAndCompost(seconds)
+COMPOST_CHECK = 10
+function waitAndCompost(seconds)
     local wake = os.clock() + seconds
     if compostHopper and layoutReady then
         local fed, more = {}, true
@@ -600,7 +606,7 @@ end
 
 -- Wait at home until the tank holds `enough`, refuelling from the
 -- inventory and the chest whenever something changes (or every 10 s).
-local function waitForFuel(enough)
+function waitForFuel(enough)
     if T.hasFuel(enough) then return end
     print(string.format("Need %d fuel, have %d: put fuel (coal, charcoal, lava...) in the chest or the turtle.",
         enough, turtle.getFuelLevel()))
@@ -622,14 +628,14 @@ end
 -- seconds, the rest of the pass is stale (crops behind the turtle have
 -- ripened again meanwhile), so the trip raises RESTART_PASS instead of
 -- going back, and the pass starts over from home.
-local restartAfter = nil
-local RESTART_PASS = {}
+restartAfter = nil
+RESTART_PASS = {}
 
 -- T.ensureFuel calls this before a move that would leave too little fuel
 -- to get home: go home, empty out and refuel, then come back to the exact
 -- spot and facing so whatever was under way carries on.  With no fuel to
 -- be had it waits at home, not out in the field.
-local function fuelTrip()
+function fuelTrip()
     local x, y, z, d = T.pos.x, T.pos.y, T.pos.z, T.dir
     print(string.format("Low on fuel (%d) at %s: going home to refuel.", turtle.getFuelLevel(), T.posString()))
     local started = os.clock()
@@ -654,7 +660,7 @@ end
 
 -- Make sure the next tile's drops will fit, so nothing is left on the
 -- ground: with fewer than `need` empty slots, go home and empty out first.
-local function ensureRoom(need)
+function ensureRoom(need)
     T.ensureRoom(need or ROOM, keepPolicy, dumpAtHome,
         "No room for more drops and nothing to empty (or no chest); harvest may spill.")
 end
@@ -667,7 +673,7 @@ end
 -- repair and clone rebuild tiles to match the map.  Lanes are built
 -- floor+walls first, then watered.
 --------------------------------------------------------------------------
-local function lineTally(filter)
+function lineTally(filter)
     local t = { crop = 0, cane = 0, water = 0, other = 0 }
     for k, kind in pairs(tiles) do
         if t[kind] then                      -- gaps don't count
@@ -679,7 +685,7 @@ local function lineTally(filter)
 end
 
 -- The kind a line of tiles is a strip of: crop, cane or water (or nil).
-local function classifyLine(t)
+function classifyLine(t)
     local land = t.crop + t.cane
     if t.water == 0 and land > 0 and land >= t.other then
         return t.cane > t.crop and "cane" or "crop"
@@ -689,13 +695,13 @@ local function classifyLine(t)
 end
 
 -- Lane axis of a water tile: "z" if its column is water, else "x".
-local function laneAxis(x, z)
+function laneAxis(x, z)
     local col = lineTally(function(px, pz) return px == x and pz ~= z end)
     if col.water > 0 and col.crop + col.cane == 0 then return "z" end
     return "x"
 end
 
-local function sortFills(list)
+function sortFills(list)
     table.sort(list, function(a, b)
         if a.x ~= b.x then return math.abs(a.x) < math.abs(b.x) end
         return math.abs(a.z) < math.abs(b.z)
@@ -706,7 +712,7 @@ end
 -- takes the kind of the strip it lies in.  Bare dirt outside any strip is
 -- farmed; a hole outside any strip is left alone.  Returns the number of
 -- gaps settled.
-local function resolveLayout()
+function resolveLayout()
     local settled = {}
     for k, kind in pairs(tiles) do
         if kind == "hole" or kind == "dirt" then
@@ -722,7 +728,7 @@ local function resolveLayout()
 end
 
 -- Direction the farm's lanes run, "x" or "z" ("z" if it has none).
-local function farmAxis()
+function farmAxis()
     for k, kind in pairs(tiles) do
         if kind == "water" then return laneAxis(keyXZ(k)) end
     end
@@ -732,7 +738,7 @@ end
 -- Give every crop tile learned with nothing growing on it (bare farmland,
 -- settled gaps) the crop most of its strip grows, else the crop most of
 -- the farm grows, else wheat.  Returns the number of tiles assigned.
-local function assignCrops()
+function assignCrops()
     local function majority(filter)
         local n, best = {}, nil
         for k, c in pairs(crops) do
@@ -761,10 +767,10 @@ local function assignCrops()
 end
 
 -- What each kind of tile is rebuilt as.
-local BUILD = { crop = "land", cane = "cane", water = "water" }
+BUILD = { crop = "land", cane = "cane", water = "water" }
 
 -- Repair planning: rebuild each damaged tile as the layout says.
-local function planRepair(damaged)
+function planRepair(damaged)
     pendingFills = {}
     for _, t in ipairs(damaged) do
         local kind = tiles[T.ckey(t.x, t.z)]
@@ -778,7 +784,7 @@ local function planRepair(damaged)
 end
 
 -- Clone planning: every mapped tile is a target.
-local function planClone()
+function planClone()
     pendingFills = {}
     for k, kind in pairs(tiles) do
         if BUILD[kind] then
@@ -794,18 +800,18 @@ local function planClone()
 end
 
 -- Does the map say (x,z) is lane?  Used to decide where walls go.
-local function isLane(x, z) return tiles[T.ckey(x, z)] == "water" end
+function isLane(x, z) return tiles[T.ckey(x, z)] == "water" end
 
 ----------------------------------------------------------------- water --
 -- Lane tiles left unpoured between two sources, counted on to turn into
 -- sources themselves; cleared once one is seen to have.
-local expected = {}
+expected = {}
 
 -- Already down at lane level (y = -1) and (x,z) further along the same
 -- lane?  Then go straight there at that height instead of climbing out and
 -- back in.  The cells above a lane are clear; crops beside it would block
 -- the way, so only a run of lane tiles counts.  True once there.
-local function laneHop(x, z)
+function laneHop(x, z)
     if T.pos.y ~= -1 then return false end
     local dx, dz = x - T.pos.x, z - T.pos.z
     if dx ~= 0 and dz ~= 0 then return false end
@@ -826,7 +832,7 @@ end
 
 -- Get down over lane tile (x,z), at y = -1: along the lane if already
 -- down in it, else by way of cruise height.
-local function downAtLane(x, z)
+function downAtLane(x, z)
     return laneHop(x, z) or (goToCruise(x, z) and T.down())
 end
 
@@ -851,7 +857,7 @@ function regenTile(nx, nz)
 end
 
 -- Would there be a regenerating tile with addK filled and removeK emptied?
-local function regenIf(addK, removeK)
+function regenIf(addK, removeK)
     local a, r = wet[addK], wet[removeK]
     wet[addK], wet[removeK] = true, nil
     local ok = regenTile() ~= nil
@@ -859,7 +865,7 @@ local function regenIf(addK, removeK)
     return ok
 end
 
-local borrowed = {}        -- lane sources emptied, to be refilled afterwards
+borrowed = {}        -- lane sources emptied, to be refilled afterwards
 
 -- Fill up to `want` empty buckets at (x,z) in one stop.  A regenerating
 -- tile is waited on between scoops (the source comes back on the next
@@ -868,7 +874,7 @@ local borrowed = {}        -- lane sources emptied, to be refilled afterwards
 -- nowhere to put one.  A regenerating tile that doesn't come back after
 -- all goes on `borrowed`.  Stays down at lane level.  Returns how many were
 -- filled.
-local function scoopAt(x, z, want, regen)
+function scoopAt(x, z, want, regen)
     local got = 0
     if downAtLane(x, z) then
         if sourceBelow() then expected[T.ckey(x, z)] = nil end
@@ -901,7 +907,7 @@ end
 -- regenerating tile, water is moved from one of the farm's own sources to
 -- the target when that creates one; the source it came from goes on
 -- `borrowed` to be refilled afterwards.
-local function ensureWater(n, target)
+function ensureWater(n, target)
     local function scoop()
         while T.countItem(WATER_BUCKET) < n and T.countItem(BUCKET) > 0 do
             local r = target and regenTile(target.x, target.z) or regenTile()
@@ -936,13 +942,13 @@ local function ensureWater(n, target)
     return T.countItem(WATER_BUCKET) >= n
 end
 
-local newGround = {}       -- crop/cane tiles that got a dirt wall; plant them
+newGround = {}       -- crop/cane tiles that got a dirt wall; plant them
 
 -- Prepare a lane tile: ground level clear, dirt floor beneath, dirt walls on
 -- every side the map doesn't call lane.  Ends at cruise height.  Returns
 -- true when ready for water, "mine" when a block fills the lane or sits
 -- above it (see mineLanes), or false.
-local function prepLane(t)
+function prepLane(t)
     if not goToCruise(t.x, t.z) then return false end
     if not T.down() then return "mine" end               -- something above the lane
     local k = T.ckey(t.x, t.z)
@@ -979,7 +985,7 @@ end
 -- Dig out whatever fills these lane tiles, and anything sitting above
 -- them, with the pickaxe (the hoe would only till dirt).  Returns the
 -- tiles it cleared.
-local function mineLanes(list)
+function mineLanes(list)
     if T.countItem(PICKAXE) == 0 then
         print(#list .. " lane tiles are filled in; give the turtle a diamond pickaxe to dig them out.")
         return {}
@@ -1005,7 +1011,7 @@ end
 -- Pour one bucket at a prepared lane tile.  Pouring into flowing water
 -- turns it into a source.  Stays down at lane level, so the next tile
 -- along the lane is one move away.
-local function waterLane(t)
+function waterLane(t)
     if not downAtLane(t.x, t.z) then return false end
     local ok = false
     local g = below()
@@ -1016,7 +1022,7 @@ local function waterLane(t)
 end
 
 -- Group water targets into lanes (same axis + same line), sorted along the lane.
-local function groupLanes(list)
+function groupLanes(list)
     local lanes, order = {}, {}
     for _, t in ipairs(list) do
         local id = (t.axis == "z") and ("z" .. t.x) or ("x" .. t.z)
@@ -1033,7 +1039,7 @@ local function groupLanes(list)
 end
 
 -- Build all pending water tiles.  Returns list of the ones not completed.
-local function buildLanes(list)
+function buildLanes(list)
     local remaining = {}
     local lanes, order = groupLanes(list)
     for _, id in ipairs(order) do
@@ -1162,7 +1168,7 @@ end
 ------------------------------------------------------------------ land --
 -- Make (x,z) farmland with its planned crop on it.  Handles air (needs
 -- dirt), water (dirt replaces it), tillable ground and existing farmland.
-local function buildLand(t)
+function buildLand(t)
     if not (goToCruise(t.x, t.z) and T.down()) then return false end
     local g = below()
     if g == "air" or g == WATER then
@@ -1177,7 +1183,7 @@ end
 
 -- Make (x,z) cane ground with sugar cane planted on it.  Runs after the
 -- lanes are rebuilt, since cane only takes with water beside it.
-local function buildCane(t)
+function buildCane(t)
     if not (goToCruise(t.x, t.z) and T.down()) then return false end
     local g = below()
     if g == "air" or g == WATER then
@@ -1190,7 +1196,7 @@ end
 
 -- Work through pendingFills: land first (so lane walls exist), then lanes,
 -- then cane (which needs the water).
-local function buildPending(label)
+function buildPending(label)
     if #pendingFills == 0 then return end
     local land, water, cane = {}, {}, {}
     for _, t in ipairs(pendingFills) do
@@ -1240,7 +1246,7 @@ end
 --------------------------------------------------------------------------
 -- Clone phase 1 (pickaxe): clear crop level, trench lanes, remove stone.
 --------------------------------------------------------------------------
-local function clonePrepare()
+function clonePrepare()
     print("Clone phase 1: clearing and trenching with the pickaxe")
     local plan = T.serpentine(WIDTH, LENGTH)
     T.withTool(PICKAXE, function()
@@ -1277,7 +1283,7 @@ end
 --------------------------------------------------------------------------
 -- Passes
 --------------------------------------------------------------------------
-local function learnPass()
+function learnPass()
     print(string.format("Learning layout: %dx%d", WIDTH, LENGTH))
     tiles, crops, wet = {}, {}, {}
     travelY = CANE_TRAVEL_Y              -- cane could be anywhere until we know
@@ -1318,7 +1324,7 @@ end
 -- one line at a time along the lanes, each line entered from the end
 -- nearest the previous line's last tile, so no line is flown back over
 -- empty and lines with nothing to visit are skipped.
-local function passOrder(lanes)
+function passOrder(lanes)
     local alongX = farmAxis() == "x"
     local sx, w = T.sgn(WIDTH)
     local sz, l = T.sgn(LENGTH)
@@ -1349,13 +1355,13 @@ end
 -- Height each kind of tile is worked from: crops from cruise height, lanes
 -- from crop level (to see the water), cane from one above cruise height
 -- (above its bottom two blocks).
-local WORK_Y = { crop = 0, water = -1, cane = 1 }
+WORK_Y = { crop = 0, water = -1, cane = 1 }
 
 -- Get to tile t at its working height.  Between neighbouring tiles worked
 -- from the same height the turtle moves straight across; otherwise it
 -- goes by travel height.  A third block of cane in the way is cut (that's
 -- harvest, and it lands in the inventory).
-local function visit(t, kind)
+function visit(t, kind)
     local y = WORK_Y[kind]
     if T.pos.y == y and math.abs(t.x - T.pos.x) + math.abs(t.z - T.pos.z) == 1 then
         T.faceToward(t.x, t.z)
@@ -1378,7 +1384,7 @@ end
 -- Is the water still there?  Called over a lane tile at cruise height or
 -- already down at crop level.  Returns lane | dry | blocked; dry covers
 -- no water, flowing water and a block filling the lane.
-local function checkLane(t)
+function checkLane(t)
     local k = T.ckey(t.x, t.z)
     if T.pos.y == 0 and not T.down() then wet[k] = nil; return "blocked" end
     if sourceBelow() then wet[k] = true; return "lane" end
@@ -1388,7 +1394,7 @@ end
 
 -- Bone meal the crop below until it's ripe, or the bone meal on board
 -- runs out.  Returns how many were used.
-local function growCrop()
+function growCrop()
     local used = 0
     for _ = 1, MEAL_PER_TILE do
         local name, d = below()
@@ -1400,7 +1406,7 @@ local function growCrop()
     return used
 end
 
-local mealUsed = 0             -- bone meal used by the last grow pass
+mealUsed = 0             -- bone meal used by the last grow pass
 
 -- One sweep over the farm.  The farming pass (harvest, no lanes) visits
 -- crop tiles only; the repair inspection (no harvest, lanes) also checks
@@ -1409,7 +1415,7 @@ local mealUsed = 0             -- bone meal used by the last grow pass
 -- ripe before they're harvested and replanted (sugar cane is skipped:
 -- bone meal doesn't grow it).  Returns the damaged tiles (ground or
 -- water missing, or something in the way).
-local function farmPass(harvest, lanes, grow)
+function farmPass(harvest, lanes, grow)
     local plan = passOrder(lanes)
     if grow then
         local only = {}
@@ -1478,7 +1484,7 @@ end
 
 -- Repair mode: rebuild the damaged tiles to match the layout.  Starts and
 -- ends at home.
-local function repair(damaged)
+function repair(damaged)
     print(#damaged .. " damaged tiles: repairing.")
     planRepair(damaged)
     buildPending("Repair")
@@ -1491,14 +1497,14 @@ local function repair(damaged)
 end
 
 -- Bone meal the chest holds, counted from home; nil if it can't be read.
-local function chestBoneMeal()
+function chestBoneMeal()
     local n = toChest() and T.countContainer(CHEST_SIDE, BONE_MEAL)
     T.toStartHeight()
     return n
 end
 
 -- Bone meal a grow pass may need: near the worst case for every crop tile.
-local function mealNeeded()
+function mealNeeded()
     local n = 0
     for k, kind in pairs(tiles) do
         if kind == "crop" then n = n + CROPS[cropAt(k)].meal end
@@ -1509,7 +1515,7 @@ end
 -- After a farming pass, at home: while the chest holds enough bone meal
 -- to grow the whole farm, do grow passes (bone meal every crop until
 -- ripe, harvest, replant).  Stops if a pass uses none.
-local function growPasses()
+function growPasses()
     local need = mealNeeded()
     if need == 0 then return end
     while true do
@@ -1536,7 +1542,7 @@ end
 
 -- Full repair pass: inspect every crop and lane tile (nothing harvested),
 -- then rebuild whatever is damaged.  Starts and ends at home.
-local function fullRepair()
+function fullRepair()
     print("Full repair pass: inspecting every tile")
     local damaged = farmPass(false, true)
     dumpAtHome()
@@ -1552,11 +1558,11 @@ end
 -- farm on the wrong axis.  So before working from a saved map, look at a
 -- few farm tiles near the turtle (as learning does, changing nothing) and
 -- see which way round they fit the map.
-local HEADING_PROBES = 5
-local HEADING_REACH = 4        -- probe tiles at most this far away
+HEADING_PROBES = 5
+HEADING_REACH = 4        -- probe tiles at most this far away
 
 -- (x,z) turned r quarter turns to the right about (px,pz).
-local function turned(x, z, px, pz, r)
+function turned(x, z, px, pz, r)
     local dx, dz = x - px, z - pz
     for _ = 1, r do dx, dz = dz, -dx end
     return px + dx, pz + dz
@@ -1564,8 +1570,8 @@ end
 
 -- Does what learnTile saw fit a map tile of this kind (nil: off the map)?
 -- Anything that isn't crop, cane or water fits the rest.
-local FARMED = { crop = true, cane = true, water = true }
-local function fits(seen, kind)
+FARMED = { crop = true, cane = true, water = true }
+function fits(seen, kind)
     if FARMED[kind] then return seen == kind end
     return not FARMED[seen]
 end
@@ -1573,7 +1579,7 @@ end
 -- The heading that fits: the one whose score is within a tile of all the
 -- tiles seen (one off is allowed for: damage, a block left on the farm)
 -- and two clear of every other; nil if none does.
-local function fittingHeading(score, seen)
+function fittingHeading(score, seen)
     if seen < 3 then return nil end
     for r = 0, 3 do
         local clear = score[r] >= seen - 1
@@ -1591,7 +1597,7 @@ end
 -- The tiles looked at are the farm tiles nearest the turtle, as they lie
 -- with the turtle facing each way in turn (from home, the wrong ways all
 -- face off the farm), the saved heading first: if those fit, that's it.
-local function checkHeading()
+function checkHeading()
     local px, py, pz = T.pos.x, T.pos.y, T.pos.z
     local near = {}
     for k, kind in pairs(tiles) do
@@ -1663,7 +1669,7 @@ if doReset then
     return
 end
 
-local haveMap = (not forceLearn) and loadMap()
+haveMap = (not forceLearn) and loadMap()
 if haveMap and resolveLayout() + assignCrops() > 0 then saveMap() end   -- older maps
 if haveMap and countKind("cane") > 0 then travelY = CANE_TRAVEL_Y end
 layoutReady = haveMap and true or false
@@ -1683,7 +1689,7 @@ end
 if not T.requireHome(forceHere, "farm") then return end
 
 T.cfg.width, T.cfg.length = WIDTH, LENGTH
-local perTile = doClone and 5 or CRUISE_MOVES_PER_TILE
+perTile = doClone and 5 or CRUISE_MOVES_PER_TILE
 fuelGoal = math.floor(math.abs(WIDTH * LENGTH) * perTile)
            + 2 * countKind("water")                   -- worst case: a dip per lane tile
            + 2 * countKind("cane")                    -- dropping down to check cane
