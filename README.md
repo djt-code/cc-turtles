@@ -91,14 +91,33 @@ wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup
 ```
 
 That fetches `git`, clones the repo into `/cc-turtles` and runs
-`deploy/install` (below), which puts the programs on the path and
-reboots. Add `--craftix` to start [Craftix](#craftix) at boot,
-`--no-reboot` to skip the reboot. The clone leaves out what the device
-doesn't run, since a computer's disk holds 1 MB and the whole repo nearly
-fills it: `sim/` always, `pc/` on a turtle and `turtle/` on a computer
-(`--all` for everything). Run the same line again to update, or to finish
-a clone that filled the disk: it pulls an existing checkout, and clears
-what a half-done clone left in the folders it leaves out.
+`deploy/install` (below), which puts the programs on the path and their
+help on the help path, and reboots. With nothing named it takes
+everything the device runs: a computer's disk holds 1 MB and the whole
+repo nearly fills it, so it leaves out `sim/` always, `pc/` on a turtle
+and `turtle/` on a computer (`--all` for everything). Name apps to take
+just those, with what they need and their help:
+
+| App | What comes |
+|---|---|
+| `mine` `farm` `mow` `autocompost` `claude` | the program, with `turtlelib`, `home` and `autostart` |
+| `coreutils` | the utilities in `bin/` and their modules in `lib/` |
+| `craftix` | [Craftix](#craftix), started at every boot |
+| `diskclone` | for a computer with a disk drive |
+
+`git` and `deploy/` always come. Options: `--autostart <app>` (a turtle
+runs it at every boot, see [Autostart](#autostart)), `--craftix` (Craftix
+at boot without naming it), `--no-reboot`, `--all`, `--skip <dir>`.
+
+```
+wget run .../deploy/setup.lua mine --autostart mine     a miner that carries on after reboots
+wget run .../deploy/setup.lua farm coreutils craftix    a farmer you can also work in
+```
+
+Run it again to update: naming apps again changes what's there, naming
+none keeps the choice. It also finishes a clone that filled the disk: it
+pulls an existing checkout, and clears what a half-done clone left in
+the folders it leaves out.
 
 By hand, the same is:
 
@@ -126,10 +145,13 @@ cc-turtles/deploy/install
 It adds lines to the top of `/startup.lua` (or writes
 `/startup/00-cc-turtles.lua` if `/startup` is a directory) that put the
 repo's `bin/` on the path at boot, and `turtle/` on a turtle or `pc/` on a
-computer, then reboots. `--no-reboot` puts them on the path in the current
-shell instead. Running it again changes nothing. `deploy/` and `lib/`
-aren't on the path, so `install` and `cu` don't become commands.
-`--craftix` also starts [Craftix](#craftix) at every boot.
+computer, and `help/` on the help path (`help mine`, `help grep`; `help
+cc-turtles` lists them all), then reboots. `--no-reboot` puts them on the
+path in the current shell instead. Running it again changes nothing.
+`deploy/` and `lib/` aren't on the path, so `install` and `cu` don't
+become commands. At the end of startup, on a turtle, goes the
+[autostart](#autostart) (`--autostart <app>` picks what it runs), then
+Craftix with `--craftix`.
 
 The shell looks a program name up in each directory on the path in turn,
 `.lua` optional. Run from anywhere, a program still finds its modules
@@ -143,6 +165,46 @@ again. It swaps the old path line (and an old Craftix line) for the new
 ones. A job's files left in the top folder (`.turtlepos`, `mine.job`,
 `mine.seg`, `farm.map`, `claude.key`) are moved into `turtle/` the first
 time the program looks for them, so `mine --resume` and `reset` carry on.
+
+## Settings and autostart
+
+`mine`, `farm` and `mow` keep their sizes in CraftOS's settings, so
+`set` lists them with what they mean and `set mine.length 64` changes one:
+
+| Setting | Default | |
+|---|---|---|
+| `mine.width`, `mine.height`, `mine.length` | 3, 3, 32 | the tunnel `mine` digs when given no size (length 0: until it can't go on) |
+| `mine.spacing`, `mine.lights` | 0, true | blocks between homes (0: chosen from the size); torches in the walls |
+| `farm.width`, `farm.length` | none | the box `farm` learns when there's no saved farm |
+| `farm.repeat` | 20 | minutes between passes (0: one) |
+| `mow.width`, `mow.length`, `mow.repeat`, `mow.torches` | 16, 16, 0, true | the lawn, minutes between passes (0: one), torches |
+| `cc-turtles.autostart` | "" | what a turtle runs at boot |
+| `craftix.login` | false | Craftix at boot |
+
+A size given on the command line is saved: after `farm learn 9 12` or
+`mine 5 3 64`, plain `farm` or `mine` (and the autostart) uses it again.
+
+### Autostart
+
+A turtle restarts whenever its chunk loads again (a player comes back, the
+server restarts), and a job then stops where it was. With
+`cc-turtles.autostart` set (`setup ... --autostart mine`, `install
+--autostart mine`, or `set cc-turtles.autostart mine`), startup runs
+`turtle/autostart`, which waits 5 seconds (any key cancels, for the
+prompt) and then:
+
+- `mine`: a tunnel it was digging when it went down: back to the last home
+  if it's elsewhere, then `mine --resume`. No tunnel yet: one as the
+  settings say (3x3, 32 long unless changed). A tunnel it finished, or
+  stopped itself (out of chests or fuel): it says so and waits for you, so
+  a reboot doesn't send it off on a trip that can't go anywhere.
+- `farm`: a saved farm: `farm reset` if it's away from home, then `farm`.
+  No farm yet: `farm`, which learns the box in `farm.width`/`farm.length`.
+- `mow`: a pass cut short: `mow reset`, then `mow`. On repeat
+  (`mow.repeat` > 0): `mow`. Otherwise nothing: the lawn was mowed.
+- `autocompost`: `autocompost`.
+
+`set cc-turtles.autostart ""` turns it off.
 
 ## git
 
