@@ -16,6 +16,7 @@ upgrade in software.
 | `pager.lua` | Library: a `less`-style viewer for `more` and `git log`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
 | `echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
 | POSIX utilities | `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks. `cu.lua` is their shared option parser and exit status; `regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
+| `craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
 | `claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
@@ -100,6 +101,7 @@ It adds a line to the top of `/startup.lua` (or writes
 repo's directory on the path at boot, then reboots. `--no-reboot` puts it on
 the path in the current shell instead. Running it again changes nothing.
 `deploy/` itself isn't on the path, so `install` doesn't become a command.
+`--craftix` also starts [Craftix](#craftix) at every boot.
 
 The shell looks a program name up in each directory on the path in turn,
 `.lua` optional. Run from anywhere, a program still finds `turtlelib` and
@@ -135,7 +137,7 @@ departs from POSIX.
 |---|---|
 | `cat` | `-u`; files byte for byte |
 | `more` | `-c -s -u`; pages in the pager, a `::::` header per file |
-| `echo` | no options; XSI escapes (`\n \t \c \0num` ...); `> file` and `>> file` |
+| `echo` | no options; XSI escapes (`\n \t \c \0num` ...); `> file` and `>> file` (outside Craftix) |
 | `head` | `-n N`, `-c N` (and `-N`) |
 | `tail` | `-n [+-]N`, `-c [+-]N`, `-f` (polls once a second), `-r` |
 | `grep` | `-E -F -c -e -f -i -l -n -q -s -v -x`; basic regexes by default |
@@ -163,8 +165,8 @@ departs from POSIX.
 | `xargs` | `-0 -E -I -L -n -p -r -s -t -x` |
 | `which` | `-a` (not POSIX: which file the shell would run) |
 
-They all work the same way, so a shell with pipes could join them up
-later. With no file operands, or the operand `-`, a utility reads standard
+They all work the same way, so [Craftix](#craftix) can join them up with
+pipes. With no file operands, or the operand `-`, a utility reads standard
 input (`io.input()`, the keyboard in the stock shell). The keyboard has no
 end of file: hold Ctrl+T to end the input (inside these programs Ctrl+T
 ends the input, not the program). Output goes through `io.write`, so to
@@ -185,7 +187,7 @@ What CraftOS can't do:
   backslash escapes. It splits words on spaces and strips double quotes,
   so `grep "two words" notes.txt` works but `*` reaches the program as is.
   `echo` does `>` and `>>` itself, since that's how you'd write a file at
-  the prompt.
+  the prompt. [Craftix](#craftix) adds all of these.
 - The ROM's programs come first on the path, so `ls`, `cp`, `mv`, `rm`,
   `mkdir`, `cd`, `clear`, `edit`, `type`, `set` and `alias` are always the
   CraftOS ones; there is no POSIX version of those here.
@@ -208,6 +210,64 @@ the same on the screen as anywhere else. `more` is the pager (what `cat`
 used to be): it shows a long file a screenful at a time with `pager.lua`'s
 keys, prints text that fits, and copies its input like `cat` when the
 output isn't the screen.
+
+## Craftix
+
+A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
+(or hold Ctrl+T at its prompt) to get back to the stock shell.
+`deploy/install --craftix` starts it at every boot, until you
+`set craftix.login false`.
+
+```
+/$ wc -l *.lua | sort -n | tail -n 3
+/$ grep -c diamond mine.log > count.txt 2>/dev/null || echo none
+/$ echo "$(wc -l < farm.map) lines in the map"
+/$ cd cc-turtles && git pull && cd /
+```
+
+| | |
+|---|---|
+| Pipes | `a \| b \| c` |
+| Redirects | `< f`, `> f`, `>> f`, `2> f`, `2>> f`, `2>&1`, `>&2`, `n>&-`; `/dev/null` |
+| Lists | `a ; b`, `a && b`, `a \|\| b`, `! a`; a newline is a `;` |
+| Quoting | `'single'`, `"double $X"`, `\x`; `#` comments |
+| Variables | `X=value`, `$X`, `${X}`, `${X:-default}`, `$?`, `$#`, `$1`..`$9`, `$@`, `"$@"`, `$*`, `$$`, `$0`; `$PATH` is the shell's path (setting it changes the path), `$PWD` its directory |
+| Globs | `*`, `?`, `[abc]`, `[!a-z]`; names starting with `.` only match an explicit dot |
+| Substitution | `$(cmd)`, `` `cmd` `` |
+| Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export name=value`, `. file` |
+| Scripts | `craftix file [args]`, `craftix -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/craftix` run by name |
+
+A line ending in `\`, `|`, `&&` or `||`, or inside quotes, carries on at a
+`>` prompt. Tab completes as in the stock shell, for the command after
+the last `|` or `;`. Ctrl+T while a command runs stops it and the rest of
+the line, with status 130.
+
+How it works: Craftix runs inside the stock shell and has it find and run
+programs, so the path, aliases, `cd`, `alias`, `set` and the programs'
+`shell` API are the stock ones. A pipe runs each command to the end and
+then hands what it wrote to the next one. While a command runs, its
+`io.input()`, `io.output()`, `print`, `write`, `term` and `printError` point
+at its pipe or file. They are put back whenever it waits, so other
+multishell tabs don't see them. That lets stock programs be piped as
+well as the utilities.
+
+Not yet: `if`/`while`/`for`/`case`, functions, `&` (background jobs),
+`( )` subshells, here-documents, `$(( ))` arithmetic, `~`. And what
+CraftOS rules out:
+
+- Nothing streams: `a | head` still runs all of `a`, holding its output
+  in memory.
+- CraftOS has no environment, so programs can't see shell variables, and
+  `X=1 cmd` ignores the `X=1`.
+- `/dev/null` only works in redirects; there's no such file.
+- Stock programs lay out text as they would on the screen: `ls` writes
+  columns, so `ls | wc -l` counts rows, not files.
+- Full-screen programs (`edit`, `paint`) need the screen; don't pipe them.
+- From the stock shell, `craftix -c 'a; b'` works (Craftix joins the
+  pieces back up), but use double quotes for anything with double quotes
+  or runs of spaces in it.
+- `exit` is Craftix's own: the stock `exit` program would end the stock
+  shell under it, which shuts the computer down.
 
 ## mow
 
