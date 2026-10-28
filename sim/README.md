@@ -20,7 +20,9 @@ may have more than 200 in scope, counting those of the functions around
 it, so a big program's top-level locals use up the allowance of every
 function inside it. Standard Lua counts each function on its own, so the
 simulators never hit this; on a turtle the program won't load. It warns
-within 15 of the limit.
+within 15 of the limit. `mine.lua` and `farm.lua` stay far under it by
+defining their top-level names in a private `_ENV` table instead of
+locals (see the README's Library section).
 
 Or on a ComputerCraft computer or turtle that has the repo (`git clone`),
 no Python needed:

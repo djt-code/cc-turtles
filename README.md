@@ -885,6 +885,26 @@ a heading a program has worked out, `T.lookAround()` turns on the spot to
 see all four sides, and `T.sortedKeys(t)` gives a table's keys in a set
 order (so what a program does doesn't depend on `pairs`).
 
+### Big programs: no top-level locals
+
+`mine.lua` and `farm.lua` start with
+
+```lua
+local _ENV = setmetatable({}, { __index = _ENV })
+```
+
+and then define everything at the top level as plain names: `function
+go(d)`, `SCAN_RADIUS = 8`, not `local`. Those go into the file's own
+table (which falls back to the shell's environment and `_G` for
+everything else), so they cost no local-variable slots, and inside the
+file they read exactly as before. The reason is a quirk of CC's Lua: it
+counts every local still in scope in the enclosing functions against the
+200 a function may have, where standard Lua counts each function on its
+own. A 2,000-line program with 180 top-level locals leaves 20 for every
+function inside it, and `mine.lua` hit that. `python sim/run.py --check`
+counts the way CC does and fails a file before a turtle would. Write new
+programs of any size this way; small ones can stay as they are.
+
 ## Simulators
 
 `sim/` holds offline simulators for testing changes without a Minecraft
