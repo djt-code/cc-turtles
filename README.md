@@ -12,7 +12,8 @@ upgrade in software.
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
-| `cat.lua` | Prints files a screenful at a time (CraftOS has no `cat`): `cat claude.log`. |
+| `cat.lua` | Shows files in the pager (CraftOS has no `cat`): `cat claude.log`. |
+| `pager.lua` | Library: a `less`-style viewer for `cat` and `git log`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
 | `echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
 | `claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
@@ -82,7 +83,7 @@ cd cc-turtles
 Later, `git pull` inside the directory fetches only the files that changed.
 `git status` shows the checked-out commit and whether the remote has moved on;
 `git log` lists recent commits on the branch, marking the one checked out,
-a screenful at a time (press a key for the next).
+in the pager (see `pager.lua` above; `q` quits).
 If HTTP is disabled on the server, drop the files into
 `<world>/computercraft/computer/<id>/cc-turtles/` by hand.
 

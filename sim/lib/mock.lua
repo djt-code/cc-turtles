@@ -596,6 +596,50 @@ function M.consoleApi(S, answers)
     return answers
 end
 
+-- A w x h screen (the turtle's is 39 x 13): term draws into T.rows (one
+-- string per row), T.inverse[r] says a row was last written black on
+-- white.  os.pullEvent takes the next of T.events, { "char", "q" } or
+-- { "key", keys.up } (an error when there is none: the program waited for
+-- a key nobody pressed).  keys holds the CC key codes the programs use.
+function M.termApi(w, h)
+    local T = { rows = {}, inverse = {}, events = {}, x = 1, y = 1, w = w, h = h }
+    for r = 1, h do T.rows[r] = string.rep(" ", w) end
+    local bg = "black"
+    colours = colours or { black = "black", white = "white" }
+    colors = colors or colours
+    keys = keys or { up = 200, down = 208, left = 203, right = 205, pageUp = 201, pageDown = 209,
+                     home = 199, ["end"] = 207, enter = 28 }
+    term = {
+        getSize = function() return T.w, T.h end,
+        setCursorPos = function(x, y) T.x, T.y = x, y end,
+        getCursorPos = function() return T.x, T.y end,
+        setBackgroundColour = function(c) bg = c end,
+        setTextColour = function() end,
+        isColour = function() return false end,
+        clearLine = function() T.rows[T.y] = string.rep(" ", T.w); T.inverse[T.y] = bg == "white" end,
+        write = function(s)
+            s = tostring(s)
+            local row = T.rows[T.y]
+            if row then
+                local from, to = math.max(T.x, 1), math.min(T.x + #s - 1, T.w)
+                if to >= from then
+                    T.rows[T.y] = row:sub(1, from - 1) .. s:sub(from - T.x + 1, to - T.x + 1) .. row:sub(to + 1)
+                end
+                T.inverse[T.y] = bg == "white"
+            end
+            T.x = T.x + #s
+        end,
+    }
+    term.setBackgroundColor, term.setTextColor, term.isColor = term.setBackgroundColour, term.setTextColour, term.isColour
+    os.pullEvent = function()
+        if #T.events == 0 then error("os.pullEvent with no event scripted") end
+        return table.unpack(table.remove(T.events, 1))
+    end
+    -- the screen's text rows, trailing spaces trimmed
+    function T.text(r) return (T.rows[r]:gsub("%s+$", "")) end
+    return T
+end
+
 -- The print the simulator keeps for itself; the program's print goes to
 -- S.log (see M.capturePrint).
 M.realPrint = print

@@ -34,6 +34,20 @@ local function die(msg)
     error("", 0)
 end
 
+-- Show lines in pager.lua when it can be found (next to this file, or on
+-- the shell's path: the bootstrap copy of git sits on its own), otherwise
+-- a screenful at a time with textutils.pagedPrint.
+local function page(lines)
+    local ok, pager = pcall(require, "pager")
+    if not ok then
+        local path = shell.resolveProgram and shell.resolveProgram("pager")
+        local chunk = path and loadfile(path)
+        pager = chunk and chunk()
+    end
+    if type(pager) == "table" and pager.page then pager.page(lines)
+    else textutils.pagedPrint(table.concat(lines, "\n")) end
+end
+
 local function encodeSegment(s)
     return (s:gsub("[^%w%-%._~]", function(c)
         return string.format("%%%02X", c:byte())
@@ -294,7 +308,6 @@ local function cmdLog(pos, opts)
     local dir, state, R = openCheckout(pos)
     local n = opts.count or 10
     local commits = R.log(state.branch, n)
-    -- a screenful at a time: pagedPrint waits for a key when it fills
     local lines = {}
     for _, c in ipairs(commits) do
         local marker = (c.sha == state.commit) and "*" or " "
@@ -304,7 +317,7 @@ local function cmdLog(pos, opts)
     end
     if #commits == 0 then lines[#lines + 1] = "No commits." end
     lines[#lines + 1] = "(* = checked out)"
-    textutils.pagedPrint(table.concat(lines, "\n"))
+    page(lines)          -- a screenful at a time
 end
 
 --------------------------------------------------------------------------
