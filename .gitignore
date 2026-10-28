@@ -3,3 +3,4 @@ farm.map
 sim/logs/
 claude.key
 claude.log
+__pycache__/
