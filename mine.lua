@@ -112,7 +112,9 @@ local SCAN_RADIUS = 8      -- Geo Scanner radius (free of fuel up to 8)
 local SCAN_REACH = 6       -- with a scanner: how far out from the tunnel ore is fetched
 local SCAN_EVERY = 15      -- blocks between scans along a segment's first lane
 local ROOM = 2             -- empty slots wanted before each dig
-local FILLER_KEEP = 64     -- bulk blocks kept on board for sealing
+local FILLER_KEEP = 64     -- bulk blocks kept on board for sealing...
+local FILLER_KEEP_WET = 192 -- ...once it has run out drying out water
+local FUEL_KEEP = 32       -- fuel items carried, so it tops up on the way instead of going home
 local FUEL_WORK = 100      -- fuel for some work after a trip back out
 local MAX_SPACING = 64     -- most blocks between homes
 
@@ -427,6 +429,7 @@ local opened = {}          -- key(p) = true: known to be air (dug or visited)
 local trail = {}           -- directions moved out of the tunnel into a vein
 local inTrip = false
 local fuelGoal = 0
+local fillerKeep = FILLER_KEEP  -- FILLER_KEEP_WET once water has used it up
 local stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, homes = 0, fetched = 0 }
 -- From the Geo Scanner (see there): the world direction of the tunnel's +z
 -- once lined up, this segment's blocks touching the tunnel ("rock",
@@ -607,6 +610,7 @@ function dry(d)
         local ok, data = look(d)
         if not (ok and FLUID[data.name]) then return true end
         if not selectItem(function(n) return FILLER[n] end) then
+            fillerKeep = FILLER_KEEP_WET   -- wet ground: carry more from now on
             trip("Out of blocks to seal water with")
             ok, data = look(d)
             if not (ok and FLUID[data.name]) then return true end
@@ -824,8 +828,9 @@ end
 -- filler from the bulk chest (floors and seals), torches from the
 -- valuables chest.
 local function restockKit()
-    for _, want in ipairs({ { side = home.bulk, set = FILLER, keep = FILLER_KEEP },
-                            { side = home.val, set = TORCHES, keep = TORCH_KEEP } }) do
+    for _, want in ipairs({ { side = home.bulk, set = FILLER, keep = fillerKeep },
+                            { side = home.val, set = TORCHES, keep = TORCH_KEEP },
+                            { side = home.val, set = T.fuel, keep = FUEL_KEEP } }) do
         local test = function(n) return want.set[n] end
         for name, n in pairs(chestCounts(want.side)) do
             local have = carried(test)
@@ -845,17 +850,20 @@ end
 -- everything fit.
 local function unload(only)
     if not (containerOn(home.val) and containerOn(home.bulk)) then return false, "missing" end
-    local fits, kept, torches = true, 0, 0
+    local fits, kept, torches, fuel = true, 0, 0, 0
     for s = 1, 16 do
         local it = turtle.getItemDetail(s, true)
         if it and not T.isTool(it.name) then
             local keep = 0
-            if FILLER[it.name] and kept < FILLER_KEEP and only ~= "everything" then
-                keep = math.min(it.count, FILLER_KEEP - kept)
+            if FILLER[it.name] and kept < fillerKeep and only ~= "everything" then
+                keep = math.min(it.count, fillerKeep - kept)
                 kept = kept + keep
             elseif TORCHES[it.name] and torches < TORCH_KEEP and only ~= "everything" then
                 keep = math.min(it.count, TORCH_KEEP - torches)
                 torches = torches + keep
+            elseif T.fuel[it.name] and fuel < FUEL_KEEP and only ~= "everything" then
+                keep = math.min(it.count, FUEL_KEEP - fuel)
+                fuel = fuel + keep
             elseif isScanner(it.name) and only ~= "everything" then
                 keep = it.count
             end
@@ -1286,7 +1294,9 @@ local function lineUp(blocks)
     for _, f in ipairs(WORLD_DIRS) do
         local hits = 0
         for _, e in ipairs(blocks) do
-            if (e.x ~= 0 or e.y ~= 0 or e.z ~= 0) and knownAir(toTunnel(f, e)) then hits = hits + 1 end
+            if (e.x ~= 0 or e.y ~= 0 or e.z ~= 0) and not FLUID[e.name] and knownAir(toTunnel(f, e)) then
+                hits = hits + 1
+            end
         end
         if hits < bestHits then best, nextHits, bestHits = f, bestHits, hits
         elseif hits < nextHits then nextHits = hits end
@@ -1464,17 +1474,32 @@ local function scanNow(z1, z2)
     if blocks[1] and blocks[1].f and blocks[1].r and blocks[1].u then
         -- right, up, forward from the turtle (Advanced Peripherals 0.8):
         -- straight into tunnel coordinates by its heading.  If that puts
-        -- blocks where it knows it has dug, its heading is off: skip it.
-        local ahead, right = DELTA[T.dir], DELTA[(T.dir + 1) % 4]
-        toCell = function(e)
-            return { x = T.pos.x + e.f * ahead[1] + e.r * right[1], y = T.pos.y + e.u,
-                     z = T.pos.z + e.f * ahead[3] + e.r * right[3] }
+        -- blocks where it knows it has dug, and some other heading would
+        -- fit far better, its heading is off: skip it.  (A few blocks
+        -- where it dug are no sign: gravel falls, and water and lava,
+        -- which don't count, flow in.)
+        local function cellsFor(dir)
+            local ahead, right = DELTA[dir], DELTA[(dir + 1) % 4]
+            return function(e)
+                return { x = T.pos.x + e.f * ahead[1] + e.r * right[1], y = T.pos.y + e.u,
+                         z = T.pos.z + e.f * ahead[3] + e.r * right[3] }
+            end
         end
-        local hits = 0
-        for _, e in ipairs(blocks) do
-            if (e.r ~= 0 or e.u ~= 0 or e.f ~= 0) and knownAir(toCell(e)) then hits = hits + 1 end
+        local function hitsFor(cell)
+            local hits = 0
+            for _, e in ipairs(blocks) do
+                if (e.r ~= 0 or e.u ~= 0 or e.f ~= 0) and not FLUID[e.name] and knownAir(cell(e)) then
+                    hits = hits + 1
+                end
+            end
+            return hits
         end
+        toCell = cellsFor(T.dir)
+        local hits, other = hitsFor(toCell), math.huge
         if hits >= 4 then
+            for k = 1, 3 do other = math.min(other, hitsFor(cellsFor((T.dir + k) % 4))) end
+        end
+        if hits >= 4 and other * 2 < hits then
             if not warnedScan then
                 warnedScan = true
                 print("Geo scanner: the scan puts blocks where it has dug, so its heading looks off; skipping scans.")
@@ -1911,6 +1936,29 @@ T.withTool(pickaxe, function()
             restockKit()
             inTrip = false
             print(string.format("Back at home %d (z=%d).", home.k, home.z))
+        end
+        -- resuming from an earlier home: the supplies (fuel among them) are
+        -- in the last one, so fill up and take some fuel there first
+        local level = turtle.getFuelLevel()
+        if resume and home.k > 0 and home.k < job.homes and level ~= "unlimited"
+                and level < fuelGoal + home.z then
+            local here, last = home, homeAt(job.homes)
+            if not fuelToGoOn(2 * (last.z - here.z)) then
+                stop("Not enough fuel to fetch more from home " .. last.k .. ": put some in home " .. here.k .. ".")
+            end
+            print(string.format("Fetching fuel from home %d (z=%d) first.", last.k, last.z))
+            inTrip = true
+            alongAxis("z", last.z)
+            T.face(last.face)
+            if containerOn("front") then
+                home = last
+                refuel()
+                restockKit()
+                home = here
+            end
+            alongAxis("z", here.z)
+            T.face(here.face)
+            inTrip = false
         end
         while home.z < LENGTH do
             segEnd = math.min(home.z + SPACING, LENGTH)

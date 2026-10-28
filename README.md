@@ -405,7 +405,11 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   through blocks it has already dug, so nothing is dug, and nothing can
   spill, on the way. It never drops items on the ground. Whenever a slot
   fills, it first merges part stacks of the same item, which often saves
-  the trip (see [Library](#library)).
+  the trip (see [Library](#library)). It carries up to 32 fuel items (coal)
+  from its home and burns them as it goes, so a low tank seldom means a
+  trip. It also carries 64 bulk blocks for sealing, or 192 once drying out
+  water has used them up. Resumed from an earlier home than the last, it
+  first fetches fuel from the last home, where the supplies are.
 - **Geo Scanner:** put an Advanced Peripherals Geo Scanner in the start's
   top chest and the turtle takes it along and uses it instead of checking
   every wall block by hand. There's no slot to spare for it: one side holds
@@ -415,7 +419,12 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   - **Lining up:** a scan reports blocks along the world's directions
     (north, east...), which a turtle doesn't know. So the turtle tries all
     four ways round, and keeps the one that puts none of the scanned blocks
-    where it knows it has already dug.
+    where it knows it has already dug. A scanner that gives offsets from
+    the turtle's own facing (Advanced Peripherals 0.8) needs no lining up.
+    It's only skipped as "heading looks off" if another heading would fit
+    the dug blocks far better. Water and lava don't count, since what it
+    dug can fill with them, and a few stray blocks (fallen gravel) don't
+    matter.
   - **Walls and veins:** it only turns to look at blocks the scan says are
     ore, lava or water, both in the walls and round each block of a vein.
     In tests it turned about a fifth as often.

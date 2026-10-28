@@ -291,6 +291,7 @@ local function front() return P.x + DX[P.d], P.y, P.z + DZ[P.d] end
 -- Upgrades on each side; equipping swaps the selected slot with one.
 EQ = { right = "minecraft:diamond_pickaxe" }
 SCANNER = "advancedperipherals:geo_scanner"
+SCAN_TURN = 0
 -- (as in game, a freshly equipped scanner may not show up as a
 -- peripheral at once: here not until it's been asked for once)
 function equip(side)
@@ -324,8 +325,9 @@ local function geoScanner()
                         out[#out + 1] = { x = tz + 1000, y = ty + 1000, z = tx + 1000, name = b.name, tags = tags }
                     else
                         out[#out + 1] = { x = tz + 0.0, y = ty + 0.0, z = tx + 0.0, name = b.name, tags = tags,
-                            f = tx * DX[P.d] + tz * DZ[P.d] + 0.0, u = ty + 0.0,
-                            r = tx * DX[(P.d + 1) % 4] + tz * DZ[(P.d + 1) % 4] + 0.0 }
+                            -- SCAN_TURN: a scanner whose idea of forward is turned
+                            f = tx * DX[(P.d + SCAN_TURN) % 4] + tz * DZ[(P.d + SCAN_TURN) % 4] + 0.0, u = ty + 0.0,
+                            r = tx * DX[(P.d + SCAN_TURN + 1) % 4] + tz * DZ[(P.d + SCAN_TURN + 1) % 4] + 0.0 }
                     end
                 end
             end end end
@@ -933,8 +935,12 @@ check("back at the start", atStart())
 --      blocks water sources, with more round them) and then under a lake
 --      above its ceiling.  Water flows back into what it digs, so it
 --      fills the sources and seals what feeds them, and leaves a dry
---      tunnel that no water gets into, without going round in circles
+--      tunnel that no water gets into, without going round in circles.
+--      With a scanner, the water in what it dug doesn't make it think its
+--      heading is off; with a little fuel in the tank and coal in the
+--      chest, the coal it carries keeps it from going home to refuel
 setup(stock(4, 64))
+table.insert(chestAt(0, 1, 0), { name = SCANNER, count = 1 })
 for x = -3, 5 do for y = -2, 4 do for z = 8, 13 do set(x, y, z, { name = "minecraft:water", level = 0 }) end end end
 for x = -2, 4 do for y = 3, 5 do for z = 18, 23 do set(x, y, z, { name = "minecraft:water", level = 0 }) end end end
 for x = -3, 5 do for z = 7, 24 do set(x, 6, z, { name = "minecraft:stone" }) end end
@@ -943,10 +949,12 @@ for _, it in ipairs({ { name = "minecraft:cobblestone", count = 64 }, { name = "
 end
 startAt(); inv, files = {}, {}
 EQ = { right = "minecraft:diamond_pickaxe" }
-FUEL, DRY, PLACED = 3000, 0, 0
+FUEL, DRY, PLACED, SCANS = 300, 0, 0, 0
 WATERY = true
 run("3", "3", "30")
 WATERY = false
+check("scanned, and never thought its heading was off", SCANS > 0 and not logHas("heading looks off"), SCANS .. " scans")
+check("no trips home to refuel (it carries coal)", not logHas("Low on fuel"))
 local wetIn, wetOpen = 0, 0
 for x = -4, 6 do for y = -3, 6 do for z = 1, 31 do
     local b = get(x, y, z)
@@ -963,6 +971,19 @@ check("tunnel clear", leftIn(0, 2, 0, 2, 1, 30) == 0, leftIn(0, 2, 0, 2, 1, 30) 
 checkFloor(0, 2, -1, 1, 30)
 check("didn't go round in circles placing blocks", PLACED < 400, PLACED .. " blocks placed")
 check("finished", logHas("^Done"))
+check("back at the start", atStart())
+
+-- 11e. a scan whose forward is really the turtle's right (as if its
+--      heading were off): it says so and stops trusting scans
+setup({ { name = SCANNER, count = 1 }, { name = "minecraft:chest", count = 4 }, { name = "minecraft:coal", count = 64 } })
+startAt(); inv, files = {}, {}
+EQ = { right = "minecraft:diamond_pickaxe" }
+FUEL, DRY, SCANS = 2000, 0, 0
+SCAN_TURN = 1
+run("3", "3", "30")
+SCAN_TURN = 0
+check("a scan turned from its heading: said so, and skipped it", logHas("heading looks off"))
+check("still dug the tunnel, by hand", leftIn(0, 2, 0, 2, 1, 30) == 0)
 check("back at the start", atStart())
 
 -- 12. low on fuel with a scanner: the only fuel is coal 5 out from the
@@ -1022,6 +1043,7 @@ set(0, 0, 32, nil)
 files[".turtlepos"] = "0 0 32 3 flat"
 FUEL = 3000
 run("reset", "--home", "1")
+FUEL = 400                              -- low: the fuel is out in home 2
 check("reset --home 1 went back to home 1 (z=16), facing its wall", P.x == 0 and P.y == 0 and P.z == 16 and P.d == 3)
 run("reset", "--home", "3")
 check("there's no home 3: said so", logHas("no home 3"))
@@ -1044,8 +1066,27 @@ check("no water left in the tunnel", wetIn == 0, wetIn .. " blocks")
 check("no water touching open space (sealed off)", wetOpen == 0, wetOpen .. " open faces")
 check("tunnel dug to the end", leftIn(0, 2, 0, 2, 1, 40) == 0, leftIn(0, 2, 0, 2, 1, 40) .. " blocks left")
 check("home 2's chests still there", chestAt(-1, 0, 32) and chestAt(0, -1, 32))
+check("fetched fuel from home 2 first, and carried some: no trips home to refuel",
+    logHas("Fetching fuel from home 2") and not logHas("Low on fuel"))
 check("finished", logHas("^Done"))
 check("back at the start", atStart())
+-- 13d. resumed at home 1 with water standing in the tunnel behind it
+--      (flood water spreads back along the floor) and a scanner on board:
+--      scans show the water where it dug, which is no sign its heading's off
+dugTunnel()
+files["mine.job"] = "3 3 40 16 2 active"
+for x = 0, 2 do for y = 0, 2 do for z = 10, 16 do
+    if not (x == 0 and y == 0 and z == 16) then set(x, y, z, { name = "minecraft:water", level = 0 }) end
+end end end
+for _, it in ipairs(stock(2, 64)) do table.insert(chestAt(-1, 0, 16), it) end
+P.x, P.y, P.z, P.d = 0, 0, 16, 3
+files[".turtlepos"] = "0 0 16 3 flat"
+inv = { { name = SCANNER, count = 1 } }
+FUEL, SCANS = 3000, 0
+run("--resume")
+check("scanned, and the water behind didn't make it think its heading was off",
+    SCANS > 0 and not logHas("heading looks off"), SCANS .. " scans")
+check("finished", logHas("^Done"))
 
 -- 14. in the middle of a 3-wide tunnel every way is open, so it can't
 --     tell: it goes by the (wrong) saved heading, but stops, finding no
