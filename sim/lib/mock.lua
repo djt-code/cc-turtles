@@ -378,8 +378,8 @@ function M.fsApi(S)
         exists = function(p) return S.files[p] ~= nil end,
         delete = function(p) S.files[p] = nil end,
         open = function(p, mode)
-            if mode == "w" then
-                local buf = {}
+            if mode == "w" or mode == "a" then
+                local buf = { mode == "a" and S.files[p] or nil }
                 return {
                     write = function(s) buf[#buf + 1] = s end,
                     writeLine = function(s) buf[#buf + 1] = s .. "\n" end,
@@ -406,6 +406,194 @@ end
 
 function M.shellApi(prog)
     return { getRunningProgram = function() return prog end, resolve = function(p) return p end }
+end
+
+--------------------------------------------------------------------------
+-- JSON, as textutils.serialiseJSON/unserialiseJSON do it: a table with
+-- keys 1..n is an array, any other table an object (keys in order, so the
+-- output repeats), null reads as nil.
+--------------------------------------------------------------------------
+local json = {}
+M.json = json
+
+local function isArray(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n > 0 and n == #t
+end
+
+local ESC = { ['"'] = '\\"', ["\\"] = "\\\\", ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t" }
+function json.encode(v)
+    local t = type(v)
+    if t == "nil" then return "null" end
+    if t == "boolean" then return tostring(v) end
+    if t == "number" then
+        if math.type and math.type(v) == "integer" or v == math.floor(v) then return string.format("%d", v) end
+        return string.format("%.14g", v)
+    end
+    if t == "string" then return '"' .. v:gsub('[%c"\\]', function(c) return ESC[c] or string.format("\\u%04x", c:byte()) end) .. '"' end
+    if t ~= "table" then error("can't serialise a " .. t) end
+    if v == M.EMPTY_ARRAY then return "[]" end
+    if isArray(v) then
+        local parts = {}
+        for i = 1, #v do parts[i] = json.encode(v[i]) end
+        return "[" .. table.concat(parts, ",") .. "]"
+    end
+    local keys = {}
+    for k in pairs(v) do keys[#keys + 1] = tostring(k) end
+    table.sort(keys)
+    local parts = {}
+    for _, k in ipairs(keys) do parts[#parts + 1] = json.encode(k) .. ":" .. json.encode(v[k]) end
+    return "{" .. table.concat(parts, ",") .. "}"
+end
+M.EMPTY_ARRAY = setmetatable({}, { __name = "empty_json_array" })
+
+function json.decode(s)
+    local pos = 1
+    local function skip() pos = s:find("%S", pos) or #s + 1 end
+    local value
+    local function str()
+        local out = {}
+        pos = pos + 1
+        while true do
+            local c = s:sub(pos, pos)
+            if c == "" then error("unterminated string") end
+            if c == '"' then pos = pos + 1; return table.concat(out) end
+            if c == "\\" then
+                local e = s:sub(pos + 1, pos + 1)
+                local map = { n = "\n", r = "\r", t = "\t", b = "\b", f = "\f", ['"'] = '"', ["\\"] = "\\", ["/"] = "/" }
+                if e == "u" then
+                    out[#out + 1] = utf8 and utf8.char(tonumber(s:sub(pos + 2, pos + 5), 16)) or "?"
+                    pos = pos + 6
+                else
+                    out[#out + 1] = map[e] or e
+                    pos = pos + 2
+                end
+            else
+                out[#out + 1] = c
+                pos = pos + 1
+            end
+        end
+    end
+    function value()
+        skip()
+        local c = s:sub(pos, pos)
+        if c == "{" then
+            local t = {}
+            pos = pos + 1
+            skip()
+            if s:sub(pos, pos) == "}" then pos = pos + 1; return t end
+            while true do
+                skip()
+                local k = str()
+                skip()
+                assert(s:sub(pos, pos) == ":", "expected : at " .. pos)
+                pos = pos + 1
+                t[k] = value()
+                skip()
+                local d = s:sub(pos, pos)
+                pos = pos + 1
+                if d == "}" then return t end
+                assert(d == ",", "expected , at " .. pos)
+            end
+        elseif c == "[" then
+            local t = {}
+            pos = pos + 1
+            skip()
+            if s:sub(pos, pos) == "]" then pos = pos + 1; return t end
+            while true do
+                t[#t + 1] = value()
+                skip()
+                local d = s:sub(pos, pos)
+                pos = pos + 1
+                if d == "]" then return t end
+                assert(d == ",", "expected , at " .. pos)
+            end
+        elseif c == '"' then
+            return str()
+        else
+            local lit = s:match("^-?%d+%.?%d*[eE]?[-+]?%d*", pos)
+            if lit and lit ~= "" then pos = pos + #lit; return tonumber(lit) end
+            for word, v in pairs({ ["true"] = true, ["false"] = false, ["null"] = json.NULL }) do
+                if s:sub(pos, pos + #word - 1) == word then pos = pos + #word; return v end
+            end
+            error("bad JSON at " .. pos .. ": " .. s:sub(pos, pos + 20))
+        end
+    end
+    local v = value()
+    return v
+end
+json.NULL = nil                -- null reads as nil, as textutils does by default
+
+-- textutils, as far as the programs use it.
+function M.textutilsApi()
+    local function serialise(v, opts)
+        if type(v) ~= "table" then
+            if type(v) == "string" then return string.format("%q", v) end
+            return tostring(v)
+        end
+        local parts = {}
+        local keys = {}
+        for k in pairs(v) do keys[#keys + 1] = k end
+        table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+        for _, k in ipairs(keys) do
+            local key = type(k) == "string" and k:match("^[%a_][%w_]*$") and k or ("[" .. serialise(k) .. "]")
+            parts[#parts + 1] = key .. "=" .. serialise(v[k], opts)
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    return {
+        serialiseJSON = function(v) return json.encode(v) end,
+        serializeJSON = function(v) return json.encode(v) end,
+        unserialiseJSON = function(s) local ok, v = pcall(json.decode, s); if ok then return v end; return nil, v end,
+        unserializeJSON = function(s) local ok, v = pcall(json.decode, s); if ok then return v end; return nil, v end,
+        serialise = serialise, serialize = serialise,
+        empty_json_array = M.EMPTY_ARRAY,
+    }
+end
+
+--------------------------------------------------------------------------
+-- A scripted http: each post takes the next reply off H.queue and keeps
+-- the request (its decoded body and headers) in H.requests.  A reply is
+-- { code = 200, body = <table> }, or { fail = "reason" } for no
+-- connection; an empty queue is an error.
+--------------------------------------------------------------------------
+function M.httpApi()
+    local H = { queue = {}, requests = {} }
+    local function handle(code, text)
+        return {
+            getResponseCode = function() return code end,
+            readAll = function() return text end,
+            close = function() end,
+        }
+    end
+    H.api = {
+        post = function(req, body, headers)
+            if type(req) == "table" then body, headers = req.body, req.headers; req = req.url end
+            H.requests[#H.requests + 1] = { url = req, headers = headers, body = json.decode(body) }
+            local r = table.remove(H.queue, 1)
+            if not r then error("http.post with nothing scripted for it (request " .. #H.requests .. ")") end
+            if r.fail then return nil, r.fail, nil end
+            local text = type(r.body) == "string" and r.body or json.encode(r.body)
+            if r.code == 200 then return handle(200, text) end
+            return nil, "HTTP " .. r.code, handle(r.code, text)
+        end,
+        get = function() error("http.get isn't scripted") end,
+        checkURL = function() return true end,
+    }
+    return H
+end
+
+-- The keyboard: read() takes the next answer off `answers` (an error
+-- when there is none: the program asked something unexpected); write()
+-- shows up in the program's output.
+function M.consoleApi(S, answers)
+    read = function()
+        if #answers == 0 then error("read() with no answer scripted") end
+        return table.remove(answers, 1)
+    end
+    write = function(s) print(s) end
+    return answers
 end
 
 -- The print the simulator keeps for itself; the program's print goes to
