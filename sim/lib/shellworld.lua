@@ -18,7 +18,10 @@
 -- user holds Ctrl+T (read raises "Terminated").  Writing to the screen
 -- (write, print, io.stdout) is collected as text, not drawn; term.write
 -- draws into W.T as mock.termApi does.  printError and io.stderr go to the
--- error lines.
+-- error lines.  read, write, print and printError are put in _G for the
+-- length of a run, as the BIOS has them (print looks write up live), so a
+-- shell can swap them; term.redirect works.  W.yieldEvents = true makes
+-- os.pullEvent inside a coroutine yield for its event as the real one does.
 
 local M = require("mock")
 local SW = {}
@@ -519,6 +522,13 @@ end
 local function osApi(W)
     local T = W.T
     local function pull(raw, filter)
+        -- W.yieldEvents: inside a coroutine, yield for the event as the
+        -- real os.pullEvent does (a shell resuming the program gives it)
+        if W.yieldEvents and coroutine.isyieldable() then
+            local e = table.pack(coroutine.yield(filter))
+            if e[1] == "terminate" and not raw then error("Terminated", 0) end
+            return table.unpack(e, 1, e.n)
+        end
         if W.onPull then W.onPull(W, filter) end
         for i, e in ipairs(T.events) do
             if filter == nil or e[1] == filter or e[1] == "terminate" then
@@ -583,6 +593,23 @@ local function fillTerm(T)
     for k, v in pairs(more) do if keys[k] == nil then keys[k] = v end end
     colours.red, colours.yellow, colours.lightGrey, colours.grey = colours.red or "red", colours.yellow or "yellow",
         colours.lightGrey or "lightGrey", colours.grey or "grey"
+
+    -- term.redirect as the term API does it: every term.x calls the
+    -- current target's x; native() is the screen
+    local native, target = {}, nil
+    for k, v in pairs(term) do if type(v) == "function" then native[k] = v end end
+    target = native
+    for k in pairs(native) do term[k] = function(...) return target[k](...) end end
+    term.redirect = function(t)
+        for k in pairs(native) do
+            if type(t[k]) ~= "function" then t[k] = function() error("Redirect object is missing method " .. k .. ".", 2) end end
+        end
+        local old = target
+        target = t
+        return old
+    end
+    term.current = function() return target end
+    term.native = function() return native end
 end
 
 --------------------------------------------------------------------------
@@ -603,6 +630,22 @@ function SW.new(proj, opts)
     }, W_)
     for k, v in pairs(ALIASES) do W.aliases[k] = v end
     W.kbRead = W:readFn()
+    -- the printing globals, put in _G while a session runs (as the BIOS
+    -- has them there, so a shell can swap them); print and printError
+    -- look write up live, as the BIOS ones do
+    W.g = {
+        read = W.kbRead,
+        write = function(s)
+            if type(s) ~= "string" and type(s) ~= "number" then
+                error("bad argument #1 (string or number expected, got " .. type(s) .. ")", 2)
+            end
+            s = tostring(s)
+            W._tty[#W._tty + 1] = s
+            return select(2, s:gsub("\n", ""))
+        end,
+        print = function(...) return _G.write(join(...) .. "\n") end,
+        printError = function(...) W._err[#W._err + 1] = join(...) .. "\n" end,
+    }
     W.T = M.termApi(opts.w or 39, opts.h or 13)
     fillTerm(W.T)
     W.fs = fsApi(W)
@@ -692,16 +735,6 @@ function W_:env(path, args)
     local env = setmetatable({}, { __index = _G })
     env.fs, env.io, env.shell, env.os, env.term = W.fs, W.io, W.shell, W.os, term
     env.multishell = nil
-    env.read = W.kbRead
-    env.write = function(s)
-        if type(s) ~= "string" and type(s) ~= "number" then
-            error("bad argument #1 (string or number expected, got " .. type(s) .. ")", 2)
-        end
-        W._tty[#W._tty + 1] = tostring(s)
-        return 0
-    end
-    env.print = function(...) W._tty[#W._tty + 1] = join(...) .. "\n"; return 1 end
-    env.printError = function(...) W._err[#W._err + 1] = join(...) .. "\n" end
     env.sleep = function(n) W:advance(n) end
     env.loadfile = function(p, mode, e)
         if type(mode) == "table" and e == nil then mode, e = nil, mode end
@@ -750,9 +783,12 @@ function W_:session(opts, body)
     for i, e in ipairs(opts.events or {}) do self.T.events[i] = e end
     self.onPull = opts.onPull
     _G.POSIX_STATUS = nil
+    local saved = {}
+    for k, v in pairs(self.g) do saved[k] = rawget(_G, k); _G[k] = v end
 
     local ok, e, value = body()
 
+    for k in pairs(self.g) do _G[k] = saved[k] end
     local status
     if ok then status = _G.POSIX_STATUS or 0
     elseif e == "" then ok, status = true, _G.POSIX_STATUS or 1
