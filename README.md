@@ -12,9 +12,10 @@ upgrade in software.
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
-| `cat.lua` | Shows files in the pager (CraftOS has no `cat`): `cat claude.log`. |
-| `pager.lua` | Library: a `less`-style viewer for `cat` and `git log`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
+| `cat.lua`, `more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
+| `pager.lua` | Library: a `less`-style viewer for `more` and `git log`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
 | `echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
+| POSIX utilities | `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks. `cu.lua` is their shared option parser and exit status; `regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
 | `claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
@@ -121,6 +122,92 @@ downloads only blobs whose SHA changed, deletes tracked files removed
 upstream, and never touches untracked files (so `farm.map` survives).
 Works with GitHub and Forgejo/Gitea (any host). `--token` is only needed for
 private repos and is saved in `.gitlite` for later pulls.
+
+## Utilities
+
+CraftOS has `ls`, `cp`, `mv`, `rm`, `mkdir`, `cd`, `edit` and not much
+else for working with files. These fill the gap with the basic options of
+the POSIX.1-2024 utilities: the ones you'd reach for, not every one in the
+standard. Each file's header comment lists what it supports and where it
+departs from POSIX.
+
+| Utility | Options |
+|---|---|
+| `cat` | `-u`; files byte for byte |
+| `more` | `-c -s -u`; pages in the pager, a `::::` header per file |
+| `echo` | no options; XSI escapes (`\n \t \c \0num` ...); `> file` and `>> file` |
+| `head` | `-n N`, `-c N` (and `-N`) |
+| `tail` | `-n [+-]N`, `-c [+-]N`, `-f` (polls once a second), `-r` |
+| `grep` | `-E -F -c -e -f -i -l -n -q -s -v -x`; basic regexes by default |
+| `wc` | `-c -l -m -w` |
+| `sort` | `-b -c -C -d -f -i -k -m -n -o -r -t -u` |
+| `uniq` | `-c -d -u -f N -s N`, `[input [output]]` |
+| `cut` | `-b -c -f` lists, `-d -s -n` |
+| `tr` | `-c -C -d -s`; ranges, `[:class:]`, `[c*n]`, `\ooo` |
+| `tee` | `-a -i` |
+| `od` | `-A d/o/x/n`, `-t a c d o u x` with sizes, `-j -N -v`, `-b -c -d -o -s -x` |
+| `strings` | `-a -n N -t d/o/x` |
+| `printf` | `%b %c %d %i %o %u %x %X %e %f %g %s %%`, widths, precision, escapes |
+| `cmp` | `-l -s` |
+| `diff` | normal, `-u`/`-U n`, `-c`/`-C n`, `-e`, `-f`, `-b`, `-q`, `-r` |
+| `find` | `-name -path -type -size -mtime -newer -print -print0 -prune -depth -xdev -exec -ok -maxdepth -mindepth`, `! -a -o ( )` |
+| `du` | `-a -s -k -x` |
+| `df` | `-k -P` |
+| `touch` | `-a -c -m -r -t -d` |
+| `pwd` | `-L -P` |
+| `basename`, `dirname` | none |
+| `test`, `[` | `-e -f -d -s -r -w -x -n -z -t -nt -ot -ef`, `= != < >`, `-eq -ne -lt -le -gt -ge`, `! -a -o ( )` |
+| `expr` | `\| & = != < <= > >= + - * / %`, `:` with a basic regex, `( )` |
+| `true`, `false` | none |
+| `sleep` | seconds, decimals allowed |
+| `xargs` | `-0 -E -I -L -n -p -r -s -t -x` |
+| `which` | `-a` (not POSIX: which file the shell would run) |
+
+They all work the same way, so a shell with pipes could join them up
+later. With no file operands, or the operand `-`, a utility reads standard
+input (`io.input()`, the keyboard in the stock shell). The keyboard has no
+end of file: hold Ctrl+T to end the input (inside these programs Ctrl+T
+ends the input, not the program). Output goes through `io.write`, so to
+`io.output()`; messages are `name: message` through `printError`. Options
+follow the POSIX syntax guidelines: `-abc` groups flags, `-n5` and `-n 5`
+both work, `--` ends the options. The exit status is 0 for success, 1
+for a file that couldn't be read (or "false", "no match", "different"),
+and 2 for a usage error; `grep`, `cmp`, `diff`, `sort`, `test` and `expr`
+use 2 for any trouble, as POSIX has them. It is left in
+`_G.POSIX_STATUS`, and any status but 0 makes `shell.run` return false.
+`cu.lua` holds all this; `regex.lua` is a POSIX regex engine (basic and
+extended, bracket expressions and classes, intervals, back-references)
+that `grep` and `expr` share.
+
+What CraftOS can't do:
+
+- The stock shell has no pipes, redirects, globbing, single quotes or
+  backslash escapes. It splits words on spaces and strips double quotes,
+  so `grep "two words" notes.txt` works but `*` reaches the program as is.
+  `echo` does `>` and `>>` itself, since that's how you'd write a file at
+  the prompt.
+- The ROM's programs come first on the path, so `ls`, `cp`, `mv`, `rm`,
+  `mkdir`, `cd`, `clear`, `edit`, `type`, `set` and `alias` are always the
+  CraftOS ones; there is no POSIX version of those here.
+- There is no separate stderr: messages go to the screen (in red on an
+  advanced computer).
+- No file times can be set, no permissions, owners, links or devices:
+  `touch` creates a missing file and rewrites an existing one to bump its
+  modified time; `-r`/`-t`/`-d` are checked but can't be applied. `test -r`
+  is any existing file, `-w` anything outside `/rom`, `-x` a directory or a
+  `.lua`/extensionless file. `find` has no `-perm`, `-user`, `-links` or
+  `-atime`.
+- Bytes are characters (C locale only): `-m` is `-c`, ranges and sorting
+  go by byte value, and `-i` folds ASCII letters only.
+- Lua numbers are doubles: `printf` and `expr` are exact up to 2^53.
+- `[` is the file `[.lua`, which runs `test.lua` next to it, so the two
+  have to stay together.
+
+`cat` is the POSIX one now: it writes the files out whole, with no paging,
+the same on the screen as anywhere else. `more` is the pager (what `cat`
+used to be): it shows a long file a screenful at a time with `pager.lua`'s
+keys, prints text that fits, and copies its input like `cat` when the
+output isn't the screen.
 
 ## mow
 
@@ -743,8 +830,9 @@ order (so what a program does doesn't depend on `pairs`).
 `sim/` holds offline simulators for testing changes without a Minecraft
 server: each sets a scenario up in one of the mock worlds in `sim/lib/` (a
 farm, rock to tunnel through, a composter: the CC:Tweaked APIs around a
-small block world), runs the real program and prints what happened. They
-need Python and [lupa](https://pypi.org/project/lupa/) (`pip install lupa`):
+small block world; for the utilities, a CraftOS computer with its
+shell), runs the real program and prints what happened. They need Python
+and [lupa](https://pypi.org/project/lupa/) (`pip install lupa`):
 
 ```
 python sim/run.py                  # all of them, with a summary
