@@ -580,18 +580,10 @@ local function retreat(d)
     return go(OPP[d])
 end
 
-local function selectItem(test)
-    for s = 1, 16 do
-        local it = turtle.getItemDetail(s)
-        if it and test(it.name) then turtle.select(s); return true end
-    end
-    return false
-end
-
 -- Put a bulk block in direction d (into air or a fluid; with nothing to
 -- place it against, a turtle places it against itself).
 local function putFiller(d)
-    if not selectItem(function(n) return FILLER[n] end) then return false end
+    if not T.selectItem(function(n) return FILLER[n] end) then return false end
     local ok = placeDir(d)
     turtle.select(1)
     return ok
@@ -727,7 +719,7 @@ function dry(d)
         local ok, data = look(d)
         if not (ok and FLUID[data.name]) then return true end
         stats.wet = stats.wet + 1
-        if not selectItem(function(n) return FILLER[n] end) then
+        if not T.selectItem(function(n) return FILLER[n] end) then
             fillerKeep = FILLER_KEEP_WET   -- wet ground: carry more from now on
             trip("Out of blocks to seal water with")
             ok, data = look(d)
@@ -775,7 +767,7 @@ local function fill(d)
     local ok, data = look(d)
     if ok and not leaky(data) then return true end
     if ok and not FLUID[data.name] then room(); digDir(d) end
-    if not selectItem(function(n) return FILLER[n] end) then trip("Out of blocks to fill the floor") end
+    if not T.selectItem(function(n) return FILLER[n] end) then trip("Out of blocks to fill the floor") end
     if putFiller(d) then
         stats.filled = stats.filled + 1
         return true
@@ -919,24 +911,8 @@ end
 --------------------------------------------------------------------------
 -- At a home
 --------------------------------------------------------------------------
--- How many of each item the chest on `side` holds.
-local function chestCounts(side)
-    local chest = peripheral.wrap(side)
-    local n = {}
-    if not (chest and chest.list) then return n end
-    for _, it in pairs(chest.list()) do n[it.name] = (n[it.name] or 0) + it.count end
-    return n
-end
-
--- How many of the items `test` picks the turtle carries.
-local function carried(test)
-    local n = 0
-    for s = 1, 16 do
-        local it = turtle.getItemDetail(s)
-        if it and test(it.name) then n = n + it.count end
-    end
-    return n
-end
+-- How many of each item the chest on `side` holds (none if it can't be read).
+local function chestCounts(side) return T.containerCounts(side) or {} end
 
 -- Top up what the turtle works with from the home's chests: a stack of
 -- filler from the bulk chest (floors and seals), torches from the
@@ -949,7 +925,7 @@ local function restockKit()
         local counts = chestCounts(want.side)
         for _, name in ipairs(T.sortedKeys(counts)) do
             local n = counts[name]
-            local have = carried(test)
+            local have = T.countItem(test)
             if have >= want.keep then break end
             if want.set[name] then
                 T.restockFrom(want.side, name, T.countItem(name) + math.min(n, want.keep - have),
@@ -1086,7 +1062,7 @@ local function placeChest(d)
         end
         if not digDir(d) then return false end
     end
-    if not selectItem(function(n) return CHEST_ITEMS[n] end) then return false end
+    if not T.selectItem(function(n) return CHEST_ITEMS[n] end) then return false end
     local ok = placeDir(d)
     turtle.select(1)
     return ok
@@ -1258,7 +1234,7 @@ local function lightHere()
     elseif torchWalls == 2 and T.pos.x == (WIDTH > 0 and X1 or X0) then d = (WALL + 2) % 4
     else return end
     local function isTorch(n) return TORCHES[n] end
-    if carried(isTorch) == 0 then
+    if T.countItem(isTorch) == 0 then
         if not warnedTorch then
             warnedTorch = true
             if stats.torches == 0 then
@@ -1302,8 +1278,8 @@ local function lightHere()
         eachAround(OPP[d], cutOff)
         retreat(d)
     end
-    local placed = selectItem(isTorch) and placeDir(d)
-    if not placed and supportNiche(d) then placed = selectItem(isTorch) and placeDir(d) end
+    local placed = T.selectItem(isTorch) and placeDir(d)
+    if not placed and supportNiche(d) then placed = T.selectItem(isTorch) and placeDir(d) end
     if placed then
         stats.torches = stats.torches + 1
     else
@@ -1955,18 +1931,6 @@ end
 --------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------
--- The pickaxe to mine with: one equipped, else one in the inventory.
-local function findPickaxe()
-    for _, side in ipairs({ "left", "right" }) do
-        local name = T.equipped(side)
-        if name and name:find("_pickaxe$") then return name end
-    end
-    for s = 1, 16 do
-        local it = turtle.getItemDetail(s)
-        if it and it.name:find("_pickaxe$") then return it.name end
-    end
-end
-
 local function useJob(job)
     WIDTH, HEIGHT, LENGTH, SPACING = job.width, job.height, job.length, job.spacing
     setBox()
@@ -2012,7 +1976,7 @@ end
 
 local function main()
 if doReset and forceHere then T.setHomeHere(); return end
-pickaxe = findPickaxe()
+pickaxe = T.findTool("_pickaxe$")      -- one equipped, else one in the inventory
 if not pickaxe then print("Needs a pickaxe, equipped or in the inventory."); return end
 local job = loadJob()
 
@@ -2157,11 +2121,11 @@ T.withTool(pickaxe, function()
         roomAboveChest(home)               -- a home built before chests got room above them
         -- a Geo Scanner in the top chest (or on board): use it
         for name in pairs(chestCounts("top")) do
-            if isScanner(name) and carried(isScanner) == 0 then
+            if isScanner(name) and T.countItem(isScanner) == 0 then
                 T.restockFrom("top", name, 1, { quiet = true, room = 1 })
             end
         end
-        hasScanner = carried(isScanner) > 0 or (T.equipped("left") or ""):find("geo_scanner") ~= nil
+        hasScanner = T.countItem(isScanner) > 0 or (T.equipped("left") or ""):find("geo_scanner") ~= nil
             or (T.equipped("right") or ""):find("geo_scanner") ~= nil
         if hasScanner then
             print("Geo scanner on board: scanning instead of checking every wall block.")

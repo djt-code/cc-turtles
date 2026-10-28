@@ -12,7 +12,8 @@
 --   * a learned 2D obstacle map with BFS routing (T.goTo)
 --   * two column-stepping strategies: flat (fixed height) and terrain
 --     (climb steps, follow the ground, refuse crevasses)
---   * inventory helpers, tool hot-swapping, serpentine plan generation
+--   * inventory helpers (items by name or by a test), tool hot-swapping,
+--     serpentine plan generation
 --   * chest-below helpers: dump with a keep policy, count, restock,
 --     merge part stacks
 --
@@ -285,18 +286,27 @@ function T.isTool(name)
     return false
 end
 
-local function findEmptySlot()
+-- `what`, here and in the inventory helpers below, names an item or is a
+-- function(name, item) that picks one.
+local function picks(what, it)
+    if type(what) == "function" then return what(it.name, it) end
+    return it.name == what
+end
+
+-- The first empty slot, or the first holding `what`; nil if none.
+function T.emptySlot()
     for slot = 1, 16 do
         if turtle.getItemCount(slot) == 0 then return slot end
     end
 end
 
-local function findItemSlot(name)
+function T.findSlot(what)
     for slot = 1, 16 do
         local it = turtle.getItemDetail(slot)
-        if it and it.name == name then return slot end
+        if it and picks(what, it) then return slot end
     end
 end
+local findEmptySlot, findItemSlot = T.emptySlot, T.findSlot
 
 local function equipSide(side)
     if side == "left" then return turtle.equipLeft() else return turtle.equipRight() end
@@ -323,6 +333,17 @@ function T.equipped(side)
     end
     turtle.select(sel)
     return name
+end
+
+-- A tool whose name matches `pattern` (a Lua pattern: "_pickaxe$"): the
+-- one equipped, else the first in the inventory; nil if there's none.
+function T.findTool(pattern)
+    for _, side in ipairs({ "left", "right" }) do
+        local name = T.equipped(side)
+        if name and name:find(pattern) then return name end
+    end
+    local slot = T.findSlot(function(n) return n:find(pattern) ~= nil end)
+    return slot and turtle.getItemDetail(slot).name or nil
 end
 
 -- Equip `name` from the inventory if it isn't already, unequip any OTHER
@@ -846,19 +867,20 @@ end
 --------------------------------------------------------------------------
 -- Inventory
 --------------------------------------------------------------------------
-function T.selectItem(name)
-    for slot = 1, 16 do
-        local it = turtle.getItemDetail(slot)
-        if it and it.name == name then turtle.select(slot); return true end
-    end
-    return false
+-- Select the first slot holding `what` (a name, or a function(name,
+-- item)); false if there's none.
+function T.selectItem(what)
+    local slot = T.findSlot(what)
+    if slot then turtle.select(slot) end
+    return slot ~= nil
 end
 
-function T.countItem(name)
+-- How many of `what` the turtle carries.
+function T.countItem(what)
     local n = 0
     for slot = 1, 16 do
         local it = turtle.getItemDetail(slot)
-        if it and it.name == name then n = n + it.count end
+        if it and picks(what, it) then n = n + it.count end
     end
     return n
 end
@@ -1046,15 +1068,20 @@ function T.containerOn(side)
     return ok and T.isContainer(data.name)
 end
 
--- How many `name` the container on `side` holds, or nil if it can't be read.
-function T.countContainer(side, name)
+-- How many of each item the container on `side` holds ({ name = count }),
+-- or nil if it can't be read.
+function T.containerCounts(side)
     local chest = peripheral and peripheral.wrap(side)
     if not (chest and chest.list) then return nil end
-    local n = 0
-    for _, it in pairs(chest.list()) do
-        if it.name == name then n = n + it.count end
-    end
+    local n = {}
+    for _, it in pairs(chest.list()) do n[it.name] = (n[it.name] or 0) + it.count end
     return n
+end
+
+-- How many `name` the container on `side` holds, or nil if it can't be read.
+function T.countContainer(side, name)
+    local counts = T.containerCounts(side)
+    return counts and (counts[name] or 0)
 end
 
 -- What kind of thing an item is, for grouping like with like: the last
