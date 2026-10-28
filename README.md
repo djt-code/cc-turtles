@@ -395,7 +395,10 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   It fills the sources touching it inside, steps back, and tries again.
   Those fillings are dug out again later: ahead by the lanes, behind at the
   end of the segment, by when what fed them is sealed. Flowing water that
-  nothing feeds drains away. The ways it dug out to veins are sealed too if
+  nothing beside it feeds is left to drain away the first time. If it's
+  there again on a later pass, it's coming from further off, so the turtle
+  follows it upstream along the tunnel, at most as far as water flows, and
+  seals where it comes in. The ways it dug out to veins are sealed too if
   water got into them. In tests through an underground lake and under one,
   it left the tunnel dry with nothing leaking in.
 - **Trips home:** before a dig with fewer than 2 empty slots, or a move that
@@ -409,7 +412,9 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   from its home and burns them as it goes, so a low tank seldom means a
   trip. It also carries 64 bulk blocks for sealing, or 192 once drying out
   water has used them up. Resumed from an earlier home than the last, it
-  first fetches fuel from the last home, where the supplies are.
+  first fetches fuel from the last home, where the supplies are. Going on
+  to a home that's already built only needs the fuel to get there, since
+  the supplies are there.
 - **Geo Scanner:** put an Advanced Peripherals Geo Scanner in the start's
   top chest and the turtle takes it along and uses it instead of checking
   every wall block by hand. There's no slot to spare for it: one side holds

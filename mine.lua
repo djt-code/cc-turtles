@@ -604,6 +604,64 @@ local function eachAround(skip, fn)
     end
 end
 
+-- Seal the fluid in direction e if it feeds the tunnel: any outside it,
+-- a source inside it (a filling, dug out again later).  True if sealed.
+local function cutOff(e)
+    local m = neighbour(e)
+    local ok, data = look(e)
+    if not (ok and FLUID[data.name] and (isSource(data) or not inBox(m))) then return false, ok and data end
+    local was = opened[key(m)]
+    if not seal(e) then return false end
+    if inBox(m) and was then plugs[key(m)] = m end
+    return true
+end
+
+-- How strong flowing water or lava is: 0 for a source or falling (level 8
+-- and up), else its level (1 next to a source, weaker further on).
+local function strength(data)
+    local level = tonumber(data.state and data.state.level) or 0
+    return level >= 8 and 0 or level
+end
+
+-- The turtle is in flowing water (or lava) of the given level that nothing
+-- beside it feeds: it comes from further off, along the tunnel.  Follow it
+-- upstream through the tunnel (up, if it's falling; else to stronger
+-- water beside it), at most as far as water flows, to where it comes in
+-- from outside, seal that, and come back.  A source in the tunnel is left
+-- for drying out when it's reached.  True if it sealed something.
+local unfed = {}           -- key: true, flowing water found here with nothing beside it feeding it; "traced"
+local function stopFlow(level)
+    local path, sealed = {}, false
+    unfed[key(T.pos)] = "traced"
+    local tank = turtle.getFuelLevel()
+    if tank ~= "unlimited" and tank < T.homeCost() + T.cfg.fuelMargin + 40 then return false end
+    for _ = 1, 8 do
+        local up, upLevel, source = nil, nil, false
+        eachAround(nil, function(e)
+            local m = neighbour(e)
+            local ok, data = look(e)
+            if not (ok and FLUID[data.name]) then return end
+            if not inBox(m) then
+                if seal(e) then sealed = true end
+                return
+            end
+            if isSource(data) then source = true; return end
+            local s = (e == "up" and level >= 8) and -1 or strength(data)
+            if s < (level >= 8 and 0 or level) and (not upLevel or s < upLevel) then
+                up, upLevel = e, s
+            end
+        end)
+        if sealed or source or not up then break end
+        local ok, data = look(up)
+        level = ok and tonumber(data.state and data.state.level) or 0
+        if not moveDir(up) then break end
+        path[#path + 1] = up
+        unfed[key(T.pos)] = "traced"
+    end
+    for i = #path, 1, -1 do moveDir(OPP[path[i]]) end
+    return sealed
+end
+
 local warnedWet = false
 function dry(d)
     for _ = 1, 4 do
@@ -622,20 +680,22 @@ function dry(d)
             ok, data = look(d)
             if not (ok and FLUID[data.name]) then return true end
         end
-        -- something feeds it: step in and cut it off
+        -- something feeds it: step in and cut it off, or, with nothing
+        -- beside it to cut off, follow the flow to where it comes in
+        local level = tonumber(data.state and data.state.level) or 0
         if not moveDir(d) then break end
         local cut = 0
         eachAround(OPP[d], function(e)
-            local m = neighbour(e)
-            local okm, dm = look(e)
-            if okm and FLUID[dm.name] and (isSource(dm) or not inBox(m)) then
-                local was = opened[key(m)]
-                if seal(e) then
-                    cut = cut + 1
-                    if inBox(m) and was then plugs[key(m)] = m end
-                end
-            end
+            if cutOff(e) then cut = cut + 1 end
         end)
+        -- flowing water with nothing beside it to cut off: the first time,
+        -- likely left over and draining away; found here again, it comes
+        -- from further off, so follow it
+        local k = key(T.pos)
+        if cut == 0 and level > 0 then
+            if unfed[k] == true and stopFlow(level) then cut = 1 end
+            unfed[k] = unfed[k] or true
+        end
         local backed = false
         if d ~= "up" and d ~= "down" then T.face(d); backed = T.back() end
         if not backed then moveDir(OPP[d]) end
@@ -985,7 +1045,9 @@ local function advance()
         if CHEST_ITEMS[name] then have = have + n end
     end
     if have < 2 and not exists then stop("Out of chests to build the next home (needs 2).") end
-    if not fuelToGoOn(next.z - home.z + 4 * SPACING) then
+    -- onto a home that's there already, the supplies (fuel among them) are
+    -- there: only the fuel to get there is needed
+    if not fuelToGoOn(next.z - home.z + (exists and 0 or 4 * SPACING)) then
         stop("Not enough fuel to build the next home and still get back.")
     end
     inTrip = true                  -- no unloading trips while carrying supplies

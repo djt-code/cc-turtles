@@ -1087,6 +1087,28 @@ run("--resume")
 check("scanned, and the water behind didn't make it think its heading was off",
     SCANS > 0 and not logHas("heading looks off"), SCANS .. " scans")
 check("finished", logHas("^Done"))
+-- 13e. a source in the right wall at floor level near home 2, its water
+--      spread along the tunnel floor: walking out to home 2 (resumed from
+--      the start) it follows the flow back to where it comes in and seals it
+dugTunnel()
+files["mine.job"] = "3 3 40 16 2 active"
+for _, it in ipairs(stock(2, 64)) do table.insert(chestAt(0, 1, 0), it) end
+table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 })
+set(3, 0, 26, { name = "minecraft:water", level = 0 })
+WATERY = true
+flow(3, 0, 26)
+local spread = 0
+for x = 0, 2 do for z = 1, 40 do if isWater(get(x, 0, z)) then spread = spread + 1 end end end
+startAt()
+files[".turtlepos"] = "0 0 0 0 flat"
+FUEL = 3000
+run("--resume")
+WATERY = false
+local left = 0
+for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then left = left + 1 end end end end
+check("followed the flow to the wall and sealed it: no water in the tunnel",
+    spread > 5 and left == 0 and not isWater(get(3, 0, 26)), spread .. " floor blocks wet before, " .. left .. " after")
+check("finished", logHas("^Done"))
 
 -- 14. in the middle of a 3-wide tunnel every way is open, so it can't
 --     tell: it goes by the (wrong) saved heading, but stops, finding no
