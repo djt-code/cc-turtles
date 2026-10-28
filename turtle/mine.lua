@@ -5,7 +5,7 @@
 -- afterwards.  Optional: Advanced Peripherals Chunky Turtle upgrade so it
 -- keeps running unattended.
 --
--- Usage:  mine <width> <height> [length] [--spacing N] [--no-lights] [--here]
+-- Usage:  mine [<width> <height> [length]] [--spacing N] [--no-lights] [--here]
 --         mine --resume          keep digging the tunnel it stopped in (from
 --                                the start, or from the last home)
 --         mine ... --new         start a fresh tunnel, forgetting the old one
@@ -20,6 +20,12 @@
 -- height = blocks UP from the turtle (negative = DOWN)
 -- length = blocks the tunnel runs ahead; leave it out to keep going until
 --          the turtle can't (out of chests or fuel, a full chest, bedrock)
+--
+-- With no size, it digs the one in the settings: 3x3, 32 long unless
+-- changed (`set mine.width 5`, `set mine.length 0` for no end; also
+-- mine.height, mine.spacing, mine.lights).  A size given here is saved
+-- there, so the next `mine` (or the autostart) digs the same.
+--
 -- The turtle's own column and row are part of the tunnel: it stands in
 -- the mouth at one bottom (or top, for negative heights) corner, and the
 -- tunnel starts with the block in front of it.  `mine 3 3 32` digs a 3x3
@@ -143,6 +149,7 @@ forceHere = T.popFlag(args, "--here")
 resume = T.popFlag(args, "--resume")
 fresh = T.popFlag(args, "--new")
 lights = not T.popFlag(args, "--no-lights")
+    and T.setting("mine.lights", true, "Light mined tunnels with torches in wall niches")
 spacingArg, homeArg = nil
 for i = #args - 1, 1, -1 do
     if args[i] == "--spacing" then
@@ -157,9 +164,25 @@ doReset = args[1] == "reset"
 toStart = T.popFlag(args, "--to-start")
 doHaul = args[1] == "haul"
 WIDTH, HEIGHT, LENGTH = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
+SET = {
+    width = T.setting("mine.width", 3, "Tunnel width for mine: + right, - left"),
+    height = T.setting("mine.height", 3, "Tunnel height for mine: + up, - down"),
+    length = T.setting("mine.length", 32, "Tunnel length for mine; 0 = until it can't go on"),
+    spacing = T.setting("mine.spacing", 0, "Blocks between mine's homes; 0 = chosen from the size"),
+}
+if not (doReset or doHaul) and args[1] == nil then
+    -- no size given: the settings' tunnel
+    WIDTH, HEIGHT = SET.width, SET.height
+    LENGTH = SET.length ~= 0 and SET.length or nil
+    if not spacingArg and SET.spacing ~= 0 then spacingArg = SET.spacing end
+elseif not (doReset or doHaul or resume) and WIDTH and HEIGHT then
+    local keep = { ["mine.width"] = WIDTH, ["mine.height"] = HEIGHT, ["mine.length"] = LENGTH or 0 }
+    if spacingArg then keep["mine.spacing"] = spacingArg end
+    savedSize = keep                   -- saved once the size is checked
+end
 
 function usage()
-    print("Usage: mine <width> <height> [length] [--spacing N] [--no-lights] [--here]")
+    print("Usage: mine [<width> <height> [length]] [--spacing N] [--no-lights] [--here]")
     print("       mine --resume | mine haul | mine reset [--home N | --to-start | --here]")
     print("width: + right / - left; height: + up / - down;")
     print("no length: dig until out of chests, fuel or room")
@@ -169,6 +192,7 @@ if not (doReset or resume or doHaul) and (not (WIDTH and HEIGHT) or WIDTH == 0 o
     usage()
     return
 end
+if savedSize then T.saveSettings(savedSize) end
 
 --------------------------------------------------------------------------
 -- Blocks and items
@@ -2160,10 +2184,13 @@ if doHaul then
 end
 
 if resume then
-    if not (job and job.state == "active") then print("No stopped tunnel to resume."); return end
+    if not (job and (job.state == "active" or job.state == "stopped")) then
+        print("No stopped tunnel to resume.")
+        return
+    end
     useJob(job)
     lastHome = job.homes
-elseif job and job.state == "active" and job.homes > 0 and not fresh then
+elseif job and job.state ~= "done" and job.homes > 0 and not fresh then
     print(string.format("A %dx%d tunnel with %d homes was stopped here.", job.width, job.height, job.homes))
     print("Run `mine --resume` to keep digging it, or add --new to start a fresh tunnel.")
     return
@@ -2269,7 +2296,9 @@ T.withTool(pickaxe, function()
     end
     returnToStart()
 end)
-saveJob(stopped and "active" or "done")
+-- "stopped": it stopped itself and came back, so the autostart leaves it;
+-- "active" left behind means it went down mid-job, and the autostart resumes
+saveJob(stopped and "stopped" or "done")
 if not stopped then clearProgress() end
 print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid blocks sealed, %d floor holes filled%s%s.",
     stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled,

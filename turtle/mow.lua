@@ -5,7 +5,7 @@
 -- program runs and put back afterwards.  Optional: Advanced Peripherals
 -- Chunky Turtle upgrade so it keeps running unattended.
 --
--- Usage:  mow <width> <length> [repeatMinutes] [notorch] [--here]
+-- Usage:  mow [<width> <length> [repeatMinutes]] [notorch] [--here]
 --         mow reset                 return to home after a Ctrl+T
 --         mow reset --here          turtle was put back by hand: reset position
 --
@@ -13,6 +13,11 @@
 -- length = tiles AHEAD of the turtle (negative = BEHIND)
 -- Both are counted OUT from the turtle: its own row and column are not
 -- part of the lawn, so the box is x = 1..width, z = 1..length.
+--
+-- With no size it mows the one in the settings (mow.width, mow.length:
+-- 16 x 16 unless changed with `set mow.width 30`); mow.repeat is the
+-- minutes between passes (0 = once), mow.torches false keeps the torches.
+-- A size given here is saved there for the next `mow` (or the autostart).
 --
 -- Place the turtle diagonally outside one corner of the lawn, on the ground
 -- at grass level, facing along the LENGTH axis.
@@ -34,14 +39,21 @@ local T = require("turtlelib")
 
 local args = { ... }
 local TORCHES = not T.popFlag(args, "notorch")
+    and T.setting("mow.torches", true, "Light the lawn as mow goes")
 local HERE = T.popFlag(args, "--here")
 if args[1] == "reset" then
     if HERE then T.setHomeHere() else T.goHome() end
     return
 end
-local WIDTH  = tonumber(args[1]) or 16
-local LENGTH = tonumber(args[2]) or 16
-local REPEAT = tonumber(args[3])          -- minutes between passes; nil = once
+local SET_W = T.setting("mow.width", 16, "Lawn width for mow: tiles + right / - left of the turtle")
+local SET_L = T.setting("mow.length", 16, "Lawn length for mow: tiles + ahead / - behind the turtle")
+local SET_R = T.setting("mow.repeat", 0, "Minutes between mow passes; 0 = a single pass")
+local WIDTH  = tonumber(args[1]) or SET_W
+local LENGTH = tonumber(args[2]) or SET_L
+local REPEAT = tonumber(args[3]) or (SET_R > 0 and SET_R or nil)   -- minutes between passes; nil = once
+if tonumber(args[1]) and tonumber(args[2]) then
+    T.saveSettings({ ["mow.width"] = WIDTH, ["mow.length"] = LENGTH, ["mow.repeat"] = tonumber(args[3]) or 0 })
+end
 local MIN_FUEL = math.abs(WIDTH * LENGTH) + math.abs(WIDTH) + math.abs(LENGTH) + 150
 
 local TORCH = "minecraft:torch"

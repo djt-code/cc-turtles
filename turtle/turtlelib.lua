@@ -831,6 +831,24 @@ function T.sortedKeys(t, cmp)
     return keys
 end
 
+-- A setting from CC's settings (`set mine.width 5` at the prompt), defined
+-- here so `set` lists it with its description; its default where there is
+-- no settings API.
+function T.setting(name, default, description)
+    if not settings then return default end
+    settings.define(name, { description = description, default = default,
+                            type = default ~= nil and type(default) or nil })
+    return settings.get(name)
+end
+
+-- Keep values given on the command line ({ [name] = value }) as the
+-- settings, so the next run without them (or the autostart) uses them.
+function T.saveSettings(values)
+    if not settings or next(values) == nil then return end
+    for _, name in ipairs(T.sortedKeys(values)) do settings.set(name, values[name]) end
+    settings.save()
+end
+
 -- Remove every occurrence of `flag` from an argument list; true if found.
 function T.popFlag(args, flag)
     local found = false

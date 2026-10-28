@@ -25,6 +25,11 @@
 -- of the farm, so the box is x = 1..width, z = 1..length.
 -- repeatMinutes defaults to 20; 0 = single pass.
 --
+-- Settings (`set farm.repeat 30`): farm.width and farm.length are the box
+-- to learn when none is given (a size given is saved there, so a turtle
+-- that boots with no map can learn the same farm again), farm.repeat the
+-- minutes between passes.
+--
 -- Placement: put the turtle diagonally outside one corner of the farm,
 -- hovering TWO blocks above the farmland (one block above the crop tops).
 -- Put the output chest/barrel directly below the start position (up to 3
@@ -112,7 +117,18 @@ if #args >= 2 then
 else
     REPEAT = tonumber(args[1])
 end
-if REPEAT == nil then REPEAT = 20 end   -- minutes; 0 = single pass
+SET = {
+    width = T.setting("farm.width", nil, "Farm width to learn: tiles + right / - left of the turtle"),
+    length = T.setting("farm.length", nil, "Farm length to learn: tiles + ahead / - behind the turtle"),
+    ["repeat"] = T.setting("farm.repeat", 20, "Minutes between farm passes; 0 = a single pass"),
+}
+if WIDTH and LENGTH then
+    savedSize = { ["farm.width"] = WIDTH, ["farm.length"] = LENGTH }   -- saved once it's checked
+    if REPEAT then savedSize["farm.repeat"] = REPEAT end
+elseif not doClone then
+    WIDTH, LENGTH = tonumber(SET.width), tonumber(SET.length)
+end
+if REPEAT == nil then REPEAT = SET["repeat"] end   -- minutes; 0 = single pass
 
 CRUISE_MOVES_PER_TILE = 1.2
 MAX_SEEDS = 256           -- never carry more than this many seeds
@@ -1687,6 +1703,7 @@ if forceLearn and not (WIDTH and LENGTH) then
 end
 
 if not T.requireHome(forceHere, "farm") then return end
+if savedSize and (forceLearn or not haveMap) then T.saveSettings(savedSize) end
 
 T.cfg.width, T.cfg.length = WIDTH, LENGTH
 perTile = doClone and 5 or CRUISE_MOVES_PER_TILE

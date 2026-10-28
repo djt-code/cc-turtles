@@ -48,6 +48,38 @@ check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
 check("job done", jobState() == "done", tostring(jobState()))
 
+-- 1b. no size: the settings' tunnel, 3x3 and 32 long unless they say
+--     otherwise; a size given is saved in them
+setup(stock(4, 64)); remember()
+startAt(); Mine.inv, Mine.files = {}, {}
+FUEL, LOWEST, DRY, SPILLED = 1000, 1000, 0, 0
+run()
+check("no size, no settings API: a 3x3 tunnel 32 long", leftIn(0, 2, 0, 2, 1, 32) == 0 and get(0, 0, 33) ~= nil,
+    leftIn(0, 2, 0, 2, 1, 32) .. " blocks left")
+local SAVED = {}
+settings = {
+    define = function() end,
+    get = function(name) return SAVED[name] end,
+    set = function(name, v) SAVED[name] = v end,
+    save = function() SAVED.saved = true end,
+}
+SAVED["mine.width"], SAVED["mine.height"], SAVED["mine.length"], SAVED["mine.spacing"], SAVED["mine.lights"] = 2, 2, 6, 0, true
+setup(stock(4, 64)); remember()
+startAt(); Mine.inv, Mine.files = {}, {}
+run()
+check("no size: the one in the settings (2x2, 6 long)", leftIn(0, 1, 0, 1, 1, 6) == 0 and get(0, 0, 7) ~= nil
+    and get(2, 0, 1) ~= nil and get(0, 2, 1) ~= nil)
+setup(stock(4, 64)); remember()
+startAt(); Mine.inv, Mine.files = {}, {}
+run("2", "3", "5")
+check("a size given is kept in the settings", SAVED["mine.width"] == 2 and SAVED["mine.height"] == 3
+    and SAVED["mine.length"] == 5 and SAVED.saved)
+setup(stock(4, 64)); remember()
+startAt(); Mine.inv, Mine.files = {}, {}
+run("2", "2")
+check("and no length given is kept as 0, no end", SAVED["mine.length"] == 0)
+settings = nil
+
 -- 2. 50 long with homes every 16: supplies go forward, valuables come back
 setup(stock(8, 128, 64)); features()
 set(-1, 1, 20, ore("minecraft:diamond_ore"))       -- in the wall near home 1
@@ -93,7 +125,7 @@ check("tunnel dug to z=24", leftIn(0, 1, 0, 1, 1, 24) == 0 and get(0, 0, 25) ~= 
 checkHomes(8, 2)
 check("back at the start", atStart())
 check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
-check("job can be resumed", jobState() == "active", tostring(jobState()))
+check("job can be resumed (stopped by itself)", jobState() == "stopped", tostring(jobState()))
 
 -- 4. four more chests in the start chest: `mine --resume` takes them out
 --    to home 2 and carries on, two more homes
