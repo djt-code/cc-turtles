@@ -410,65 +410,15 @@ local function loadJob()
 end
 
 --------------------------------------------------------------------------
--- Directions: 0..3 as turtlelib's T.dir (0 = +z ahead, 1 = +x right),
--- plus "up" and "down".  Sides, for chests: "front", "top", "bottom".
+-- Directions: turtlelib's six (0..3 as T.dir, 0 = +z ahead, 1 = +x
+-- right, plus "up" and "down"), and its sides for chests ("front",
+-- "top", "bottom").
 --------------------------------------------------------------------------
-local DELTA = {
-    [0] = { 0, 0, 1 }, [1] = { 1, 0, 0 }, [2] = { 0, 0, -1 }, [3] = { -1, 0, 0 },
-    up = { 0, 1, 0 }, down = { 0, -1, 0 },
-}
-local OPP = { [0] = 2, [1] = 3, [2] = 0, [3] = 1, up = "down", down = "up" }
-local SIDE_DIR = { top = "up", bottom = "down" }
-
-local function neighbour(d)
-    local v = DELTA[d]
-    return { x = T.pos.x + v[1], y = T.pos.y + v[2], z = T.pos.z + v[3] }
-end
-
-local function key(p) return p.x .. "," .. p.y .. "," .. p.z end
-
-local function look(d)
-    if d == "up" then return turtle.inspectUp() end
-    if d == "down" then return turtle.inspectDown() end
-    T.face(d)
-    return turtle.inspect()
-end
-
-local function digDir(d)
-    if d == "up" then return turtle.digUp() end
-    if d == "down" then return turtle.digDown() end
-    T.face(d)
-    return turtle.dig()
-end
-
-local function placeDir(d)
-    if d == "up" then return turtle.placeUp() end
-    if d == "down" then return turtle.placeDown() end
-    T.face(d)
-    return turtle.place()
-end
-
-local function moveDir(d)
-    if d == "up" then return T.up() end
-    if d == "down" then return T.down() end
-    T.face(d)
-    return T.forward()
-end
-
--- Drop/suck on a chest side (the turtle already faces a "front" chest).
-local function dropSide(side, n)
-    if side == "top" then return turtle.dropUp(n) end
-    if side == "bottom" then return turtle.dropDown(n) end
-    return turtle.drop(n)
-end
-
-local function containerOn(side)
-    local ok, data
-    if side == "top" then ok, data = turtle.inspectUp()
-    elseif side == "bottom" then ok, data = turtle.inspectDown()
-    else ok, data = turtle.inspect() end
-    return ok and T.isContainer(data.name)
-end
+local DELTA, OPP = T.DELTA, T.OPP
+local neighbour, key, here, dist = T.neighbour, T.posKey, T.here, T.dist
+local look, digDir, placeDir, moveDir = T.look, T.digDir, T.placeDir, T.moveDir
+local turnsTo, eachAround, dirTo, stepToward = T.turnsTo, T.eachAround, T.dirTo, T.stepToward
+local dropSide, containerOn = T.dropSide, T.containerOn
 
 --------------------------------------------------------------------------
 -- State
@@ -490,7 +440,7 @@ local scanFrom, scanned = {}, {}
 -- What this segment's scans say is at p: "ore" or "fluid", "clear" (a
 -- scan covered it and saw neither), or nil (none covered it).
 local function scanSays(p)
-    local k = scanned[p.x .. "," .. p.y .. "," .. p.z]
+    local k = scanned[key(p)]
     if k then return k end
     for _, o in ipairs(scanFrom) do
         if math.max(math.abs(p.x - o.x), math.abs(p.y - o.y), math.abs(p.z - o.z)) <= SCAN_RADIUS then
@@ -553,7 +503,7 @@ local plugs = {}           -- key -> position: dug tunnel blocks it filled again
 -- the dig) is dried out first (see dry), so none is left behind.  False
 -- if it can't: a protected or unbreakable block, or something that won't
 -- move out of the way.
-local cutOff, eachAround, stem   -- defined below
+local cutOff, stem         -- defined below
 local function go(d)
     local n = neighbour(d)
     local inside = inBox(n) and not digLimit
@@ -620,12 +570,6 @@ local function go(d)
     return false, "something in the way"
 end
 
--- Turns it takes to face direction d (none for up or down).
-local function turnsTo(d)
-    if d == "up" or d == "down" or d == T.dir then return 0 end
-    return (d - T.dir) % 4 == 2 and 2 or 1
-end
-
 -- Step back the way it came in direction d: backwards, facing d (no
 -- turning round), unless facing the other way is fewer turns.
 local function retreat(d)
@@ -672,21 +616,6 @@ local function sealBehind(d)
     if d ~= "up" and d ~= "down" and T.dir ~= d then return end
     local ok, data = look(d)
     if ok and FLUID[data.name] then seal(d) end
-end
-
--- Call fn with each direction but skip, the fewest turns away first.
-function eachAround(skip, fn)
-    local todo = {}
-    for _, e in ipairs({ "up", "down", 0, 1, 2, 3 }) do
-        if e ~= skip then todo[#todo + 1] = e end
-    end
-    while #todo > 0 do
-        local best = 1
-        for i = 2, #todo do
-            if turnsTo(todo[i]) < turnsTo(todo[best]) then best = i end
-        end
-        fn(table.remove(todo, best))
-    end
 end
 
 -- Seal the fluid in direction e if it feeds the tunnel: any outside it,
@@ -974,7 +903,7 @@ local function tunnelHome()
     alongAxis("y", 0)
     alongAxis("z", home.z)
     T.face(home.face)
-    return T.pos.x == home.x and T.pos.y == home.y and T.pos.z == home.z
+    return T.at(home)
 end
 
 local function tunnelTo(p)
@@ -1093,13 +1022,12 @@ end
 function trip(why)
     if inTrip then return end
     inTrip = true
-    local back = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
-    local facing = T.dir
+    local back, facing = here(), T.dir
     local path = trail
     print(string.format("%s at %s: back to home %d.", why, T.posString(), home.k))
     for i = #path, 1, -1 do retreat(path[i]) end
     trail = {}                     -- out of the vein (also if the job stops here)
-    local spot = { x = T.pos.x, y = T.pos.y, z = T.pos.z }
+    local spot = here()
     if not tunnelHome() then stop("Couldn't get back to home " .. home.k .. " from " .. T.posString()) end
     unloadOrStop()
     refuel()
@@ -1108,7 +1036,7 @@ function trip(why)
     for _, d in ipairs(path) do go(d) end
     trail = path
     T.face(facing)
-    if T.pos.x ~= back.x or T.pos.y ~= back.y or T.pos.z ~= back.z then
+    if not T.at(back) then
         print("Couldn't get back to (" .. key(back) .. "); carrying on from " .. T.posString())
     end
     inTrip = false
@@ -1206,7 +1134,7 @@ local function advance()
         local took, more = takeSupplies()
         alongAxis("z", next.z)
         if not built then
-            if not (placeChest(next.face) and placeChest(SIDE_DIR[next.bulk])) then
+            if not (placeChest(next.face) and placeChest(T.sideDir(next.bulk))) then
                 stop(string.format("Couldn't build home %d at z=%d.", next.k, next.z))
             end
             built = true
@@ -1584,27 +1512,6 @@ end
 local function fuelLow()
     local level = turtle.getFuelLevel()
     return level ~= "unlimited" and level < home.z + fuelGoal / 2
-end
-
--- The direction from the turtle to the block next to it at p.
-local function dirTo(p)
-    if p.x > T.pos.x then return 1 elseif p.x < T.pos.x then return 3
-    elseif p.y > T.pos.y then return "up" elseif p.y < T.pos.y then return "down"
-    elseif p.z > T.pos.z then return 0 else return 2 end
-end
-
-local function here() return { x = T.pos.x, y = T.pos.y, z = T.pos.z } end
-local function dist(a, b) return math.abs(a.x - b.x) + math.abs(a.y - b.y) + math.abs(a.z - b.z) end
-
--- A step toward p, the one needing the fewest turns.
-local function stepToward(p)
-    local best
-    for _, d in ipairs({ T.dir, "up", "down", 0, 1, 2, 3 }) do
-        local v = DELTA[d]
-        local n = { x = T.pos.x + v[1], y = T.pos.y + v[2], z = T.pos.z + v[3] }
-        if dist(n, p) < dist(T.pos, p) and (not best or turnsTo(d) < turnsTo(best)) then best = d end
-    end
-    return best
 end
 
 -- Fetch ore found by the scanner, `which` picking it (nil: all, which
@@ -2127,7 +2034,7 @@ if doReset then
         end
         target = homeAt(homeArg)
     elseif toStart or saved.z <= 0 then target = homeAt(0) end
-    if T.pos.x == target.x and T.pos.y == target.y and T.pos.z == target.z then
+    if T.at(target) then
         T.face(target.face)
         print(target.k == 0 and "At the start already." or ("At home " .. target.k .. " already."))
         return

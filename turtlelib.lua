@@ -7,6 +7,8 @@
 --   * dead-reckoned position/heading (T.pos, T.dir, T.face)
 --   * fuel management that refuels from inventory mid-task (T.ensureFuel)
 --   * low-level moves that only dig blocks listed in T.diggable
+--   * six directions (0..3 and "up"/"down"): look, dig, place or move in
+--     one, the fewest-turns ordering, 3D positions and keys
 --   * a learned 2D obstacle map with BFS routing (T.goTo)
 --   * two column-stepping strategies: flat (fixed height) and terrain
 --     (climb steps, follow the ground, refuse crevasses)
@@ -476,6 +478,108 @@ function T.below()
 end
 
 --------------------------------------------------------------------------
+-- Six directions: 0..3 as T.dir (0 = +z ahead, 1 = +x right, 2 = -z,
+-- 3 = -x), plus "up" and "down".  Looking, digging, placing or moving in
+-- one faces it first (up and down need no turn).  Positions are
+-- { x, y, z } tables; T.posKey makes a table key of one (T.ckey does the
+-- same for columns).
+--------------------------------------------------------------------------
+T.DELTA = {
+    [0] = { 0, 0, 1 }, [1] = { 1, 0, 0 }, [2] = { 0, 0, -1 }, [3] = { -1, 0, 0 },
+    up = { 0, 1, 0 }, down = { 0, -1, 0 },
+}
+T.OPP = { [0] = 2, [1] = 3, [2] = 0, [3] = 1, up = "down", down = "up" }
+
+-- The direction a side (CC's "front", "top", "bottom", as for chests) is
+-- in from the turtle as it faces now.
+function T.sideDir(side)
+    if side == "top" then return "up" end
+    if side == "bottom" then return "down" end
+    return T.dir
+end
+
+function T.here() return { x = T.pos.x, y = T.pos.y, z = T.pos.z } end
+function T.at(p) return T.pos.x == p.x and T.pos.y == p.y and T.pos.z == p.z end
+function T.posKey(p) return p.x .. "," .. p.y .. "," .. p.z end
+function T.dist(a, b) return math.abs(a.x - b.x) + math.abs(a.y - b.y) + math.abs(a.z - b.z) end
+
+-- The block next to the turtle in direction d.
+function T.neighbour(d)
+    local v = T.DELTA[d]
+    return { x = T.pos.x + v[1], y = T.pos.y + v[2], z = T.pos.z + v[3] }
+end
+
+-- The direction from the turtle to the block next to it at p.
+function T.dirTo(p)
+    if p.x > T.pos.x then return 1 elseif p.x < T.pos.x then return 3
+    elseif p.y > T.pos.y then return "up" elseif p.y < T.pos.y then return "down"
+    elseif p.z > T.pos.z then return 0 else return 2 end
+end
+
+function T.look(d)
+    if d == "up" then return turtle.inspectUp() end
+    if d == "down" then return turtle.inspectDown() end
+    T.face(d)
+    return turtle.inspect()
+end
+
+function T.digDir(d)
+    if d == "up" then return turtle.digUp() end
+    if d == "down" then return turtle.digDown() end
+    T.face(d)
+    return turtle.dig()
+end
+
+function T.placeDir(d)
+    if d == "up" then return turtle.placeUp() end
+    if d == "down" then return turtle.placeDown() end
+    T.face(d)
+    return turtle.place()
+end
+
+-- Move one block in direction d (T.up/T.down/T.forward: digging what
+-- T.diggable allows, attacking what's in the way).
+function T.moveDir(d)
+    if d == "up" then return T.up() end
+    if d == "down" then return T.down() end
+    T.face(d)
+    return T.forward()
+end
+
+-- Turns it takes to face direction d (none for up or down).
+function T.turnsTo(d)
+    if d == "up" or d == "down" or d == T.dir then return 0 end
+    return (d - T.dir) % 4 == 2 and 2 or 1
+end
+
+-- Call fn(d) with each direction but `skip`, the fewest turns away first
+-- (so up and down, and the way it faces, come before any turn).
+function T.eachAround(skip, fn)
+    local todo = {}
+    for _, e in ipairs({ "up", "down", 0, 1, 2, 3 }) do
+        if e ~= skip then todo[#todo + 1] = e end
+    end
+    while #todo > 0 do
+        local best = 1
+        for i = 2, #todo do
+            if T.turnsTo(todo[i]) < T.turnsTo(todo[best]) then best = i end
+        end
+        fn(table.remove(todo, best))
+    end
+end
+
+-- A step toward p (nearer by taxicab distance), the one needing the
+-- fewest turns; nil when there.
+function T.stepToward(p)
+    local best
+    for _, d in ipairs({ T.dir, "up", "down", 0, 1, 2, 3 }) do
+        local n = T.neighbour(d)
+        if T.dist(n, p) < T.dist(T.pos, p) and (not best or T.turnsTo(d) < T.turnsTo(best)) then best = d end
+    end
+    return best
+end
+
+--------------------------------------------------------------------------
 -- Obstacle map (2D, by column) and BFS routing
 --------------------------------------------------------------------------
 T.blocked = {}
@@ -814,10 +918,7 @@ function T.isContainer(name)
     return name:find("chest") ~= nil or name:find("barrel") ~= nil
 end
 
-function T.containerBelow()
-    local ok, data = turtle.inspectDown()
-    return ok and T.isContainer(data.name)
-end
+function T.containerBelow() return T.containerOn("bottom") end
 
 -- What a dump would drop: a list of { slot, n }.  keepCount(item, kept)
 -- returns how many of that item to keep (default: all of T.keep items,
@@ -932,6 +1033,17 @@ local function sideFuncs(side)
     if side == "top" then return turtle.suckUp, turtle.dropUp, turtle.inspectUp end
     if side == "bottom" then return turtle.suckDown, turtle.dropDown, turtle.inspectDown end
     error("Unknown turtle side (want front/top/bottom): " .. tostring(side), 0)
+end
+
+-- Drop from, suck into the selected slot, or inspect, on a side.
+function T.dropSide(side, n) local _, drop = sideFuncs(side); return drop(n) end
+function T.suckSide(side, n) local suck = sideFuncs(side); return suck(n) end
+function T.inspectSide(side) local _, _, inspect = sideFuncs(side); return inspect() end
+
+-- Is there a chest or barrel on `side`?
+function T.containerOn(side)
+    local ok, data = T.inspectSide(side)
+    return ok and T.isContainer(data.name)
 end
 
 -- How many `name` the container on `side` holds, or nil if it can't be read.
