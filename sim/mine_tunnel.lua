@@ -757,6 +757,8 @@ startAt(); inv, files = {}, {}
 FUEL, LOWEST, DRY, SPILLED, TRAVEL_DIGS = 200, 200, 0, 0, 0
 run("3", "3", "50", "--spacing", "16")
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 50) == 0, leftIn(0, 2, 0, 2, 1, 50) .. " blocks left")
+check("room above each home's valuables chest, so a player can open it",
+    not get(-1, 1, 16) and not get(-1, 1, 32) and not get(-1, 1, 48))
 check("what it picked up joined its stack (it keeps its slots tidy)", SPLIT <= 2,
     SPLIT .. " pickups started a second part stack")
 checkOres(); checkLava(50); checkFloor(0, 2, -1, 1, 50)
@@ -1206,6 +1208,8 @@ check("no water left in the tunnel", wetIn == 0, wetIn .. " blocks")
 check("no water touching open space (sealed off)", wetOpen == 0, wetOpen .. " open faces")
 check("tunnel dug to the end", leftIn(0, 2, 0, 2, 1, 40) == 0, leftIn(0, 2, 0, 2, 1, 40) .. " blocks left")
 check("home 2's chests still there", chestAt(-1, 0, 32) and chestAt(0, -1, 32))
+check("room above home 2's valuables chest (dug out of the flood, and dry)",
+    not get(-1, 1, 32), tostring((get(-1, 1, 32) or {}).name))
 check("fetched fuel from home 2 first, and carried some: no trips home to refuel",
     logHas("Fetching fuel from home 2") and not logHas("Low on fuel"))
 check("finished", logHas("^Done"))

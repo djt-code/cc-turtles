@@ -367,8 +367,10 @@ recognise. Needs a pickaxe, equipped or in the inventory.
 - **Fixing water on resume:** water in tunnel it dug before is getting in
   from somewhere. So whatever it goes over again on a resume (the segments
   from an earlier home, and the finished part of the segment it carries on
-  with) it walks first along the bottom lanes, where water ends up. If
-  that finds any, it walks all the lanes too. It follows any water it finds
+  with) it walks first along the floor of the middle column (the middle of
+  every three, for a wider tunnel). Water in the tunnel ends up on the
+  floor and spreads across it, so it reaches the middle. If that finds
+  any, it walks all the other lanes too. It follows any water it finds
   to where it comes in, a hole in the ceiling or a waterlogged block say,
   and seals that. It also fills any hole or water in the floor it walks
   over, and puts back torches that were washed away. Once it has sealed
@@ -384,6 +386,13 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   start's top chest. It repeats until the homes are empty, refuelling from
   the top chest at the start; it stops if there isn't enough fuel for another
   trip. Supplies stay where they are, so `mine --resume` still finds them.
+- **Room above the valuables chest:** a chest can't be opened with a solid
+  block on top. So the turtle digs out the block above each home's
+  valuables chest, from the tunnel row above the home. If that lets water
+  in, it steps in and seals what feeds it. Homes built before this get it
+  when the turtle next starts from them or passes them on a resume. It
+  isn't done for a tunnel 1 high, or one going down, where the bulk chest
+  is above the home.
 - **Lanes:** each segment is dug in lanes along it: every row of the two side
   columns, and every third row plus the top and bottom ones in the columns
   between. The rows in between are dug from above and below. So the turtle

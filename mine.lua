@@ -1160,6 +1160,27 @@ local function placeChest(d)
     return ok
 end
 
+-- A chest can't be opened with a solid block on top.  The valuables chest
+-- is in the wall by the home's bottom row, so clear the block above it,
+-- from the tunnel row above the home, drying out any water that lets in.
+-- (Not in a tunnel 1 high, or going down: the bulk chest is above the
+-- home there.)  The turtle starts and ends at the home, facing the chest.
+local function roomAboveChest(h)
+    if h.k == 0 or Y1 < 1 or not inBox({ x = 0, y = 1, z = h.z }) then return end
+    if not go("up") then return end
+    T.face(h.face)
+    for _ = 1, 10 do                       -- (again while gravel falls into it)
+        local ok, data = look(h.face)
+        if not ok then break end
+        if FLUID[data.name] or waterIn(data) then dry(h.face); break end
+        if protected(data.name) or not digDir(h.face) then break end
+        local okw, w = look(h.face)        -- the dig let water in
+        if okw and FLUID[w.name] then dry(h.face); break end
+    end
+    go("down")
+    T.face(h.face)
+end
+
 -- The segment is done: build the next home at its end and move the
 -- supplies there from this one.  The turtle starts and ends at a home.
 local function advance()
@@ -1186,6 +1207,7 @@ local function advance()
             end
             built = true
         end
+        roomAboveChest(next)               -- (homes built before this get it too)
         T.face(next.face)
         leaveSupplies()
         if not more then break end
@@ -1773,8 +1795,10 @@ local function unplug()
 end
 
 -- Go over part of the tunnel dug before, from the home, for water getting
--- in: first along its bottom lanes, where water in the tunnel ends up,
--- then, if that found any, all its lanes.  Water it finds is getting in,
+-- in: first along the floor of the middle of every three columns (water in
+-- the tunnel ends up on the floor and spreads across it, so it reaches
+-- one of them), checking the floor too, then, if that found any, along
+-- all its other lanes.  Water it finds is getting in,
 -- so it follows it to where it comes in and seals that (see dry); torches
 -- washed away are put back.  Nothing else is looked at again.  `done`
 -- picks the lanes dug before (nil: all).
@@ -1798,9 +1822,15 @@ local function repair(z1, z2, done)
             end
         end
     end
+    local xs, xn = T.sgn(WIDTH)
+    local middle = {}
+    for c = 1, xn - 1, 3 do middle[c * xs] = true end
+    local last = xn - 1
+    if not middle[last * xs] and not middle[(last - 1) * xs] then middle[last * xs] = true end
+    local function first(lane) return lane.y == Y0 and middle[lane.x] end
     local before = stats.wet
-    walk(function(lane) return lane.y == Y0 end)
-    if stats.wet > before then walk(function(lane) return lane.y ~= Y0 end) end
+    walk(first)
+    if stats.wet > before then walk(function(lane) return not first(lane) end) end
     unplug()
     repairing = false
     tunnelHome()
@@ -2198,6 +2228,7 @@ T.withTool(pickaxe, function()
         unloadOrStop()
         refuel()
         if not fuelToGoOn() then stop("Not enough fuel to start: put fuel in the top chest.") end
+        roomAboveChest(home)               -- a home built before chests got room above them
         -- a Geo Scanner in the top chest (or on board): use it
         for name in pairs(chestCounts("top")) do
             if isScanner(name) and carried(isScanner) == 0 then
