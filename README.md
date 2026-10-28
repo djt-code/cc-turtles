@@ -11,7 +11,8 @@ upgrade in software.
 | `mine.lua` | Digs a tunnel of any width and height, as long as asked or as long as its supplies last, following every ore vein it touches. It builds a new home from chests every so often, carries its supplies forward, and brings the valuables back to the start at the end. |
 | `turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
 | `home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
-| `git.lua` | Minimal git client: `clone`, `pull` and `status` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
+| `git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
+| `cat.lua` | Prints files a screenful at a time (CraftOS has no `cat`): `cat claude.log`. |
 | `claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | `diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
@@ -81,9 +82,21 @@ Later, `git pull` inside the directory fetches only the files that changed.
 `git status` shows the checked-out commit and whether the remote has moved on;
 `git log` lists recent commits on the branch, marking the one checked out,
 a screenful at a time (press a key for the next).
-The programs `require("turtlelib")`, so run them from inside `cc-turtles`
-(or `cd` there first); if HTTP is disabled on the server, drop the files into
+If HTTP is disabled on the server, drop the files into
 `<world>/computercraft/computer/<id>/cc-turtles/` by hand.
+
+To run the programs from any directory, put `cc-turtles` on the shell's
+search path. `edit /startup.lua` and add this line (CraftOS runs
+`/startup.lua` at boot; reboot, or run `/startup` once, to pick it up):
+
+```
+shell.setPath(shell.path() .. ":/cc-turtles")
+```
+
+The shell looks a program name up in each directory on the path in turn,
+`.lua` optional. Run from anywhere, a program still finds `turtlelib` and
+keeps its files (`.turtlepos`, `mine.job`, `farm.map`, `claude.key` ...)
+next to itself in `cc-turtles`, not in the current directory.
 
 ## git
 
@@ -645,7 +658,9 @@ it has nothing left to compost it sleeps until you give it more.
   turtle.
 - If the composter stays full for 10 seconds it asks whether the hopper below is
   full or missing, and keeps waiting.
-- To start it at boot: `echo shell.run("autocompost") > startup.lua`.
+- To start it at boot, `edit /startup.lua` and put `shell.run("autocompost")`
+  in it (`shell.run("/cc-turtles/autocompost")` if `cc-turtles` isn't on the
+  path).
 
 ## diskclone
 

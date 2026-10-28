@@ -13,7 +13,8 @@
 -- they stay in the turtle.
 --
 -- Usage: autocompost
--- To start it at boot:  echo shell.run("autocompost") > startup.lua
+-- To start it at boot: `edit /startup.lua` and put shell.run("autocompost")
+-- in it.
 
 local STALL = 10           -- seconds full before asking about the hopper
 
