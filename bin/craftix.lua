@@ -24,14 +24,17 @@
 --   export X  X=1 cmd     the environment.  Programs read it with
 --                         os.getenv("X") (and change their own copy with
 --                         os.setenv(name, value), list it with
---                         os.environ()): the exported variables, PATH and
---                         PWD, and for one command its own X=1 words.  A
+--                         os.environ()): the exported variables (PS1 is
+--                         one), PATH, PWD and HOSTNAME, and for one
+--                         command its own X=1 words.  A
 --                         Craftix run from Craftix starts with them as
 --                         exported variables; `env` shows them.
---   PS1                   the prompt: "label:/dir$ " ("/dir$ " with no
---                         label), or $PS1 with \h (label, or ID), \w (the
---                         directory), \W (its last part), \i (the ID),
---                         \$, \n and \\: PS1='\h \W\$ '.
+--   PS1                   the prompt, an exported variable: \h (label, or
+--                         ID), \w (the directory), \W (its last part), \i
+--                         (the ID), \$, \n and \\: PS1='\h \W\$ '.  It
+--                         starts as '\h:\w\$ ' ("label:/dir$ ") on a
+--                         computer with a label, '\w\$ ' without one,
+--                         unless the environment brought one.
 --   *  ?  [abc]  [!a-z]   globs; a name starting with a dot only matches
 --                         an explicit dot, and the fileserver's member disks
 --                         (/disk, /disk2... with /jbod mounted) only a
@@ -124,11 +127,22 @@ end
 -- CraftOS has none, but a Craftix that runs another gives it its own.
 -- A command's are put in only while it runs, like its io.
 local sys = { getenv = rawget(os, "getenv"), setenv = rawget(os, "setenv"), environ = rawget(os, "environ") }
-if sys.environ then
-    for k, v in pairs(sys.environ()) do
-        if k ~= "PATH" and k ~= "PWD" then P.vars[k], P.exported[k] = v, true end
+-- An environment taken over (from a Craftix that ran this one, or for
+-- fg/bg prog) as exported variables; PATH, PWD and HOSTNAME are worked
+-- out afresh.
+local function importEnv(env)
+    for k, v in pairs(env) do
+        if k ~= "PATH" and k ~= "PWD" and k ~= "HOSTNAME" then P.vars[k], P.exported[k] = v, true end
     end
 end
+if sys.environ then importEnv(sys.environ()) end
+
+-- PS1, exported: unless it came with the environment, "label:/dir$ "
+-- on a computer with a label, "/dir$ " on one without.
+if P.vars.PS1 == nil then
+    P.vars.PS1 = (os.getComputerLabel and os.getComputerLabel()) and "\\h:\\w\\$ " or "\\w\\$ "
+end
+P.exported.PS1 = true
 
 -- The functions a program gets over its environment `env`.
 local function envApi(env)
@@ -525,15 +539,15 @@ local function setVar(name, v)
     elseif name ~= "PWD" then P.vars[name] = v end
 end
 
--- The environment a command gets: the exported variables, PATH and PWD,
--- and the command's own NAME=value words.
+-- The environment a command gets: the exported variables (PS1 among
+-- them), PATH, PWD and HOSTNAME, and the command's own NAME=value words.
 local function processEnv(assigns)
     local env = {}
     for name in pairs(P.exported) do
         local v = name == "HOSTNAME" and getVar(name) or P.vars[name]
         if v ~= nil then env[name] = v end
     end
-    env.PATH, env.PWD = shell.path(), "/" .. shell.dir()
+    env.PATH, env.PWD, env.HOSTNAME = shell.path(), "/" .. shell.dir(), getVar("HOSTNAME")
     for _, a in ipairs(assigns or {}) do env[a.name] = a.value end
     return env
 end
@@ -1367,7 +1381,7 @@ end
 
 -- The prompt's text: $PS1 with its escapes (\h the computer's label, or
 -- its ID if it has none; \w the directory; \W its last part; \i the ID;
--- \$ \n \\), or, with no PS1, "label:/dir$ " ("/dir$ " with no label).
+-- \$ \n \\), or, with PS1 unset, "label:/dir$ " ("/dir$ " with no label).
 local function promptText()
     local label = os.getComputerLabel and os.getComputerLabel()
     local ps1 = P.vars.PS1
@@ -1445,9 +1459,7 @@ local function spawn(token)
     if not rec then printError("craftix: --spawn: nothing to run"); P.status = 2; return end
     hand[token] = nil
     if next(hand) == nil then _G.CRAFTIX_SPAWN = nil end
-    for k, v in pairs(rec.env) do
-        if k ~= "PATH" and k ~= "PWD" then P.vars[k], P.exported[k] = v, true end
-    end
+    importEnv(rec.env)
     if multishell and multishell.setTitle and multishell.getCurrent then
         multishell.setTitle(multishell.getCurrent(), fs.getName(rec.argv[1]))
     end

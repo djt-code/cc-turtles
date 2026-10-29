@@ -20,9 +20,9 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
   X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $! $0
       variables.  $PATH is the shell's path (setting it changes the path), $PWD its directory and $HOSTNAME the computer's label (its ID if it has none).  $! is the last & job's process ID.
   export X  X=1 cmd
-      the environment.  Programs read it with os.getenv("X") (and change their own copy with os.setenv(name, value), list it with os.environ()): the exported variables, PATH and PWD, and for one command its own X=1 words.  A Craftix run from Craftix starts with them as exported variables; `env` shows them.
+      the environment.  Programs read it with os.getenv("X") (and change their own copy with os.setenv(name, value), list it with os.environ()): the exported variables (PS1 is one), PATH, PWD and HOSTNAME, and for one command its own X=1 words.  A Craftix run from Craftix starts with them as exported variables; `env` shows them.
   PS1
-      the prompt: "label:/dir$ " ("/dir$ " with no label), or $PS1 with \h (label, or ID), \w (the directory), \W (its last part), \i (the ID), \$, \n and \\: PS1='\h \W\$ '.
+      the prompt, an exported variable: \h (label, or ID), \w (the directory), \W (its last part), \i (the ID), \$, \n and \\: PS1='\h \W\$ '.  It starts as '\h:\w\$ ' ("label:/dir$ ") on a computer with a label, '\w\$ ' without one, unless the environment brought one.
   *  ?  [abc]  [!a-z]
       globs; a name starting with a dot only matches an explicit dot, and the fileserver's member disks (/disk, /disk2... with /jbod mounted) only a pattern that starts with a plain character (disk*, not *). No match leaves the word as is.
   $(cmd)  `cmd`

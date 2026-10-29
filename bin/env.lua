@@ -7,8 +7,8 @@
 -- changed for it alone: -i starts from an empty one, -u name takes name
 -- out, name=value sets it.  The environment is what a program reads with
 -- os.getenv(name): under Craftix, the exported variables (export, and
--- X=1 cmd), PATH and PWD.  CraftOS itself has none: outside Craftix env
--- says so.
+-- X=1 cmd; PS1 is one), PATH, PWD and HOSTNAME.  CraftOS itself has
+-- none: outside Craftix env says so.
 -- Exit status: the command's, 127 if it isn't found; 125 for env's own
 -- errors.
 

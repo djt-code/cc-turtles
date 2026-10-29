@@ -211,7 +211,17 @@ check("PATH and PWD are always there; os.setenv changes only the program's own c
     r.out == "PATH=" .. p0 .. "\nPWD=/\nQ=in\nQ=nil\n", show(r.out))
 r = sh([[export A=1 B="it's" C; export -n A; export -p]])
 check("export -p: re-readable, quoted; export -n unexports; a name with no value is listed bare",
-    r.out == "export B='it'\\''s'\nexport C\nexport PATH='" .. p0 .. "'\nexport PWD='/'\n", show(r.out))
+    r.out == "export B='it'\\''s'\nexport C\nexport HOSTNAME='1'\nexport PATH='" .. p0
+        .. "'\nexport PS1='\\w\\$ '\nexport PWD='/'\n", show(r.out))
+r = sh([[genv HOSTNAME PS1; PS1='$ '; genv PS1; craftix -c 'echo "$PS1"']])
+check("HOSTNAME and PS1 are in the environment; a PS1 set is passed on",
+    r.out == "HOSTNAME=1\nPS1=\\w\\$ \nPS1=$ \n$ \n", show(r.out))
+W.label = "lab-e"
+r = sh([[genv HOSTNAME PS1]])
+W.label = nil
+check("with a label: HOSTNAME is it, PS1 starts as \\h:\\w\\$ ", r.out == "HOSTNAME=lab-e\nPS1=\\h:\\w\\$ \n", show(r.out))
+r = W:run("craftix", { stdin = "unset PS1\necho u\n" })
+check("PS1 unset: the prompt falls back to the default text", r.out:find("/$ u\n", 1, true) ~= nil, show(r.out))
 r = sh([[export A=outer; craftix -c 'echo $A; genv A; B=in genv B'; genv B]])
 check("a Craftix run from Craftix takes the environment as exported variables",
     r.out == "outer\nA=outer\nB=in\nB=nil\n", show(r.out))

@@ -368,10 +368,10 @@ A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
 | Lists | `a ; b`, `a && b`, `a \|\| b`, `! a`; a newline is a `;` |
 | Quoting | `'single'`, `"double $X"`, `\x`; `#` comments |
 | Variables | `X=value`, `$X`, `${X}`, `${X:-default}`, `$?`, `$#`, `$1`..`$9`, `$@`, `"$@"`, `$*`, `$$`, `$!`, `$0`; `$PATH` is the shell's path (setting it changes the path), `$PWD` its directory, `$HOSTNAME` the computer's label (or ID), `$!` the last background job's process ID |
-| Environment | `export X`, `export X=1`, `export -n X`, `export -p`, `unset X`; `X=1 cmd` for one command. Programs read it with `os.getenv("X")`, and change their own copy with `os.setenv(name, value)`; `os.environ()` lists it. It holds the exported variables, `PATH` and `PWD`. A Craftix started from Craftix takes it over, and `env` shows it |
+| Environment | `export X`, `export X=1`, `export -n X`, `export -p`, `unset X`; `X=1 cmd` for one command. Programs read it with `os.getenv("X")`, and change their own copy with `os.setenv(name, value)`; `os.environ()` lists it. It holds the exported variables (`PS1` is one), `PATH`, `PWD` and `HOSTNAME`. A Craftix started from Craftix takes it over, and `env` shows it |
 | Jobs | `a &` in the background (its own copy of the variables); `jobs [-l\|-p]`; `fg [%n]`, `bg [%n]`; `wait [%n\|pid]`; `kill [-9] %n\|pid`; Ctrl+Z at the prompt stops the job in front. `fg prog` and `bg prog` open a multishell tab as CraftOS's do, with the environment |
 | Startup | `/.profile` runs when Craftix starts at the prompt: set `PS1`, `export` variables |
-| Prompt | `label:/dir$ ` on a computer with a label, `/dir$ ` without; or set `PS1`, with `\h` (label, or ID), `\w` (directory), `\W` (its last part), `\i` (ID), `\$`, `\n`: `PS1='\h \W\$ '` |
+| Prompt | `PS1`, an exported variable: it starts as `'\h:\w\$ '` (`label:/dir$ `) on a computer with a label, `'\w\$ '` (`/dir$ `) without, unless the environment brought one. Set it with `\h` (label, or ID), `\w` (directory), `\W` (its last part), `\i` (ID), `\$`, `\n`: `PS1='\h \W\$ '` |
 | Globs | `*`, `?`, `[abc]`, `[!a-z]`; names starting with `.` only match an explicit dot |
 | Substitution | `$(cmd)`, `` `cmd` `` |
 | Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill` |
