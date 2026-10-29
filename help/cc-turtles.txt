@@ -47,5 +47,6 @@ Turtles (turtle/):
 
 Computers (pc/):
   diskclone: copy a directory onto as many floppy disks as a dispenser can feed
+  fileserver: the disks in every attached disk drive as one folder
 
 Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, craftix.login).

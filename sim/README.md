@@ -161,6 +161,7 @@ reading: compare the numbers before and after a change (`git stash`, run,
 | `claude_drive` | claude | against a scripted API (canned replies, no network): the request shape, tool results going back, the Lua sandbox (no `fs`/`http`/`shell`, errors as error results, definitions persisting), retries and refusals, the step budget, `--confirm`, `ask_user`, a second goal, no key |
 | `autocompost_with_chest` | autocompost | composts what it can, rejects the rest into the chest in front |
 | `autocompost_no_chest` | autocompost | no chest and a backed-up composter: ends idle instead of spinning |
+| `fileserver_jbod` | fileserver (lib/jbod) | a mock file system with a 125 KB floppy in each of several drives: blank disks joining by themselves, `/jbod` in the root listing, capacity and free space added up, shared folders, a 300 KB file split across three disks and read back the same, out of space as an error with nothing half written, a fifth drive growing the pool, a disk with files waiting for `add`, copy and move in and out, `fs.find`, a disk with part of a split file taken out and put back, deleting every part, append |
 | `diskclone_disks` | diskclone | blank, labelled and non-empty disks, `--force`, a too-small disk, a disk already in the drive, no `LABEL` file |
 
 ## The library

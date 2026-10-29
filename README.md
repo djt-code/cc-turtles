@@ -29,6 +29,7 @@ The repo is in four folders:
 | `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
+| `pc/fileserver.lua` | Runs on a plain computer: every floppy in its disk drives (beside it or over wired modems) as one folder, `/jbod`, that grows as drives and disks are added; files too big for one floppy are split across several. The layer is `lib/jbod.lua`. |
 | `pc/diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
 
 ## Hardware
@@ -104,6 +105,7 @@ just those, with what they need and their help:
 | `coreutils` | the utilities in `bin/` and their modules in `lib/` |
 | `craftix` | [Craftix](#craftix), started at every boot |
 | `diskclone` | for a computer with a disk drive |
+| `fileserver` | its disk drives as one folder, `/jbod` |
 
 `git` and `deploy/` always come. Options: `--autostart <app>` (a turtle
 runs it at every boot, see [Autostart](#autostart)), `--craftix` (Craftix
@@ -1001,6 +1003,51 @@ it has nothing left to compost it sleeps until you give it more.
   full or missing, and keeps waiting.
 - To start it at boot: `echo "shell.run('autocompost')" >> /startup.lua`
   (`shell.run('/cc-turtles/turtle/autocompost')` if `turtle/` isn't on the path).
+
+## fileserver
+
+```
+fileserver                 what's in the pool: each disk, its space, the total
+fileserver mount           put the pool at /jbod
+fileserver add <drive>     make a disk that has files on it part of the pool
+fileserver startup         mount it at every boot
+```
+
+Puts the floppies in every disk drive a computer can reach together as one
+folder, `/jbod` ("just a bunch of disks"). Drives count whether they're
+beside the computer or on a wired network: put a wired modem on each drive
+and on the computer, join them with networking cable, and right-click each
+drive's modem to connect it (`peripherals` lists them as `drive_0`,
+`drive_1`...).
+
+- **Size:** a floppy holds 125,000 bytes (the server's
+  `floppy_space_limit`), and CC charges every file and folder at least
+  500 bytes, so four drives give about 500 KB. `fileserver` shows each
+  disk's free space and the total; `fs.getFreeSpace("/jbod")` and
+  `fs.getCapacity("/jbod")` give the pool's.
+- **It grows by itself:** a blank floppy put in any drive joins the pool
+  (labelled `jbod` if it has no label), and the pool looks for drives and
+  disks again at most once a second, so a drive added or a disk put in is
+  in `/jbod` straight away. A disk with files on it is left alone until
+  `fileserver add drive_N`; then its files join the pool where they are.
+  Each member has a `.jbod` file at its root.
+- **How files are kept:** folders are shared: a folder is in the pool if
+  it's on any disk, and lists what's in it on all of them. A file goes on
+  the disk with the most room when it's written; one too big for any
+  single disk is split across several (the first part at its path, the
+  rest in `.jbod.parts/` on the others). A file is written when it's
+  closed, held in memory until then, so it goes where it fits as a whole;
+  writing more than the pool has room for is an "Out of space" error with
+  nothing half written.
+- **How it works:** ComputerCraft can't mount a file system from Lua, so
+  `fileserver mount` changes the computer's `fs` functions in place: a
+  path under `/jbod` goes to the pool, and every other path where it always
+  did. Every program, `io`, `edit` and tab completion see it, until the
+  computer reboots; `fileserver startup` adds the mount to startup.
+- **Taking a disk out** takes its files with it until it's back, and a
+  split file with a part on it says so when opened. The disk is still an
+  ordinary floppy with ordinary files on it. Files written straight onto
+  a member's own mount (`/disk2/...`) are in the pool too.
 
 ## diskclone
 
