@@ -54,4 +54,7 @@ Computers (pc/):
   fileserver: the disks in every attached disk drive as one folder
   router: a computer that routes between its networks
 
+Topics:
+  network: setting up a network lab (3 computers, 2 networks, a router)
+
 Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, craftix.login).

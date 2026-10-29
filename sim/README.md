@@ -26,7 +26,9 @@ locals (see the README's Library section).
 
 The help files in `help/` are made from each program's top comment by
 `python sim/mkhelp.py`; `--check` fails if one is out of date, so change
-the comment and run it again rather than editing `help/`.
+the comment and run it again rather than editing `help/`. Topics that
+aren't a program's (`help network`) are written by hand in `doc/<topic>.txt`
+and copied in as they are.
 
 Or on a ComputerCraft computer or turtle, no Python needed. A clone
 leaves sim/ out, so name what the simulators need:

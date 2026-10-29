@@ -19,7 +19,8 @@
 -- the same wire.  What's set is kept in settings (net.if.<iface>,
 -- net.routes, net.forward, net.hosts) and applies at once if the network
 -- is up.  The network runs alongside everything else once `ip up` has
--- started it: see lib/net.lua.
+-- started it: see lib/net.lua.  `help network` walks through setting up
+-- two networks and a router.
 
 package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
 local cu = require("cu").init("ip", "ip [up|down|boot|link|addr|route|neigh|forward|host] ...")

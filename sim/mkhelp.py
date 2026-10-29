@@ -9,7 +9,8 @@ one line per paragraph (it reflows on a 39-column turtle); indented lines
 becomes each command on its line and what it does on the next, and a
 "* " bullet's or a "name = ..." definition's lines are joined.  The header
 stops at a "How it works" section, which is about the code, not its use.
-help/cc-turtles.txt lists every command.
+help/cc-turtles.txt lists every command, and the topics: hand-written
+help in doc/<topic>.txt (a guide, not a program's), copied as it is.
 """
 import glob
 import os
@@ -19,6 +20,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DIRS = ["bin", "turtle", "pc"]
+TOPICS = "doc"                          # hand-written help topics
 LEAVE_OUT = {"[", "turtlelib"}          # "[" is test's other name; turtlelib a library
 
 
@@ -173,6 +175,16 @@ def build():
         out.append(titles[d] + ":")
         for name, first in index[d]:
             out.append("  " + name + ": " + first)
+        out.append("")
+    topics = sorted(glob.glob(os.path.join(ROOT, TOPICS, "*.txt")))
+    if topics:
+        out.append("Topics:")
+        for path in topics:
+            text = open(path, encoding="utf-8").read().replace("\r\n", "\n")
+            name = os.path.basename(path)
+            files[name] = text.rstrip() + "\n"
+            first = text.split("\n", 1)[0]
+            out.append("  " + (first if first.startswith(name[:-4] + ":") else name[:-4] + ": " + first))
         out.append("")
     out.append("Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, craftix.login).")
     files["cc-turtles.txt"] = "\n".join(out) + "\n"

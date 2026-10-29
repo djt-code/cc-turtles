@@ -24,4 +24,4 @@ ip: set up and look at the network (lib/net.lua)
   ip host [<name> <addr>]
       names for addresses (ping router)
 
-An interface is a modem by its peripheral name ("back", "modem_0"), or a VLAN on one: "back.20" is VLAN 20 on the back modem, its own network on the same wire.  What's set is kept in settings (net.if.<iface>, net.routes, net.forward, net.hosts) and applies at once if the network is up.  The network runs alongside everything else once `ip up` has started it: see lib/net.lua.
+An interface is a modem by its peripheral name ("back", "modem_0"), or a VLAN on one: "back.20" is VLAN 20 on the back modem, its own network on the same wire.  What's set is kept in settings (net.if.<iface>, net.routes, net.forward, net.hosts) and applies at once if the network is up.  The network runs alongside everything else once `ip up` has started it: see lib/net.lua.  `help network` walks through setting up two networks and a router.

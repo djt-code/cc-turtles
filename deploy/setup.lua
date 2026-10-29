@@ -52,9 +52,10 @@ local APPS = {
     craftix = { "bin/craftix.lua" },
     diskclone = { "pc/diskclone.lua" },
     fileserver = { "pc/fileserver.lua", "lib/jbod.lua" },
-    net = { "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua", "lib/cu.lua" },
+    net = { "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua", "lib/cu.lua",
+            "help/network.txt" },
     router = { "pc/router.lua", "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua",
-               "lib/cu.lua" },
+               "lib/cu.lua", "help/network.txt" },
 }
 local ALWAYS = { "bin/git.lua", "lib/pager.lua", "deploy/", "help/cc-turtles.txt" }
 local AUTOSTART = { mine = true, farm = true, mow = true, autocompost = true }

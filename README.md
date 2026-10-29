@@ -1096,7 +1096,9 @@ traceroute 10.0.2.7
 What's set is kept in settings (`net.if.<iface>`, `net.routes`,
 `net.forward`, `net.hosts`), and changes apply at once while it's up.
 `ip host router 10.0.1.1` lets `ping router` work. There's no DHCP or DNS:
-addresses are set by hand.
+addresses are set by hand. `help network` on a computer walks through a lab
+of three computers, two networks and a router (with the one-cable VLAN
+variant and what to look at when it doesn't work); it's `doc/network.txt`.
 
 ## fileserver
 

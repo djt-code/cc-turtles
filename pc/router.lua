@@ -10,6 +10,7 @@
 -- Hosts on each network point their default route at the router's
 -- address there (`ip route add default via 10.0.1.1`); for networks behind
 -- another router, `ip route add 10.0.3.0/24 via <that router>` here.
+-- `help network` walks through a lab: two networks and a router.
 --
 -- The screen shows each interface (address, frames in and out), the
 -- routes, packets forwarded and dropped, and the latest messages (ARP

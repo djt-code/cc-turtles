@@ -1,0 +1,45 @@
+network: setting up a network lab (3 computers, 2 networks, a router)
+
+The network stack (`help ip`) joins computers over modems, in layers: frames on a modem channel, ARP, IP with routing, ICMP and UDP. This sets up two networks with a router between them.
+
+Build it:
+  R  the router, A and B the hosts
+  A  wired modem, cable to R's left modem
+  B  wired modem, cable to R's right modem
+Keep the two cables apart: touching, they're one wire. The modems don't need right-clicking (that only shares peripherals); messages cross a cable either way.
+
+Install (HTTP on):
+  on R: wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua router
+  on A and B: the same, with net instead of router
+Each reboots when done.
+
+Configure (`ip link` lists the modems' names):
+  on R:
+    ip addr add left 10.0.1.1/24
+    ip addr add right 10.0.2.1/24
+    router boot
+    router
+  on A (modem on its back):
+    ip addr add back 10.0.1.10/24
+    ip route add default via 10.0.1.1
+    ip boot
+    ip up
+  on B:
+    ip addr add back 10.0.2.20/24
+    ip route add default via 10.0.2.1
+    ip boot
+    ip up
+
+Test, from A:
+  ping 10.0.1.1          the router
+  ping 10.0.2.20         B, through it: ttl=63
+  traceroute 10.0.2.20   1: 10.0.1.1, 2: 10.0.2.20
+UDP chat: `nc -u -l 7` on B, then `nc -u 10.0.2.20 7` on A and type: the lines show on B.
+
+One cable, with VLANs: chain A, R and B on one cable, and give each network its own VLAN. On R: `ip addr add left.10 10.0.1.1/24` and `ip addr add left.20 10.0.2.1/24`; on A `back.10`, on B `back.20`. Each VLAN is its own channel on the wire, so A and B still talk only through R.
+
+When it doesn't work:
+  ip          what's set, and whether it's up
+  ip neigh    the addresses ARP has found
+  router      on R: packets in, out, forwarded and dropped, and messages such as "no ARP answer"
+  ping says   "net unreachable": a router has no route; "host unreachable": nobody answered ARP (wrong address, or not up); "time to live exceeded": routers pass it round in a loop
