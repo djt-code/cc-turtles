@@ -30,6 +30,7 @@ The repo is in four folders:
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, UDP and TCP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc` makes TCP connections (and `nc -u` sends datagrams). See [Network](#network). |
+| Processes (`bin/init.lua`, `bin/ps.lua`, `bin/kill.lua`, `bin/service.lua`, `lib/proc.lua`) | `init` runs every program as a process (an ID, its own terminal and environment) and keeps services running in the background, on any computer or turtle. `ps` lists the processes, `kill` signals them, `service` starts, stops and sets up services. See [Processes and services](#processes-and-services). |
 | `pc/router.lua` | Runs on a computer with an interface on each of several networks (modems, or VLANs on one): forwards between them, and shows a live status screen. |
 | `pc/fileserver.lua` | Runs on a plain computer: every floppy in its disk drives (beside it or over wired modems) as one folder, `/jbod`, that grows as drives and disks are added; files too big for one floppy are split across several. The layer is `lib/jbod.lua`. |
 | `pc/diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
@@ -163,7 +164,9 @@ path in the current shell instead. Running it again changes nothing.
 `deploy/` and `lib/` aren't on the path, so `install` and `cu` don't
 become commands. At the end of startup goes the [autostart](#autostart)
 (`--autostart <app>` picks what it runs: a turtle's job, or a computer's
-router screen), then Craftix with `--craftix`.
+router screen), then Craftix with `--craftix`. With `--init` (the setting
+`init.boot`), [init](#processes-and-services) comes just before them and
+doesn't return: it starts the services, then runs those two itself.
 
 The shell looks a program name up in each directory on the path in turn,
 `.lua` optional. Run from anywhere, a program still finds its modules
@@ -192,6 +195,7 @@ time the program looks for them, so `mine --resume` and `reset` carry on.
 | `mow.width`, `mow.length`, `mow.repeat`, `mow.torches` | 16, 16, 0, true | the lawn, minutes between passes (0: one), torches |
 | `cc-turtles.autostart` | "" | what a turtle runs at boot |
 | `craftix.login` | false | Craftix at boot |
+| `init.boot` | false | [init](#processes-and-services) at boot: processes, services |
 
 A size given on the command line is saved: after `farm learn 9 12` or
 `mine 5 3 64`, plain `farm` or `mine` (and the autostart) uses it again.
@@ -1160,6 +1164,51 @@ What's set is kept in settings (`net.if.<iface>`, `net.routes`,
 addresses are set by hand. `help network` on a computer walks through a lab
 of three computers, two networks and a router (with the one-cable VLAN
 variant and what to look at when it doesn't work); it's `doc/network.txt`.
+
+## Processes and services
+
+```
+ps [-l]                            the processes: ID, terminal, state, time, command
+kill [-s signal | -9] pid...       signal one: TERM (Ctrl+T for it), KILL, INT, HUP
+service                            the services, and whether they're running
+service add <name> <command...>    service start|stop|restart|status <name>
+service enable|disable <name>      at boot, or not
+init boot [off]                    init at every boot (deploy/install --init does it too)
+```
+
+CraftOS has no processes: a program is a coroutine its shell resumes, and
+only an advanced computer's multishell runs more than one at a time.
+`init` is a small kernel in the same spirit, for every computer and
+turtle. With `init.boot` on, startup runs it last, and from then on it
+runs everything:
+
+- **Processes:** each program is a coroutine with a process ID, its own
+  terminal (the screen's, or a hidden one) and its own environment
+  (`os.getenv`), resumed with the events it waits for. The keyboard and
+  mouse go to the console's process; every other event (timers, modems,
+  redstone) to every process. A command runs in a CraftOS shell of its
+  own, with the usual path, aliases and directory.
+- **The console:** the autostart first, if `cc-turtles.autostart` names one
+  (the miner, the farmer, the router's screen), then Craftix if
+  `craftix.login` is on, then the CraftOS shell, each when the one before
+  ends. Leaving that last shell shuts the computer down, as leaving
+  CraftOS's does.
+- **Services:** commands kept running in the background, each in a hidden
+  terminal (`service status` shows the last of what it printed). One that
+  ends is started again after 1 s, 2 s, 4 s and so on, up to a minute
+  (back to 1 s once it has run for 30 s). A service is three settings:
+  `service.<name>.cmd`, `service.<name>.enabled` (start at boot) and
+  `service.<name>.restart` (`always`, or `no`).
+- **Programs** reach it through `_G.proc`: `proc.spawn{cmd = "..."}`,
+  `proc.kill(pid)`, `proc.list()`, `proc.self()`, `proc.wait(pid)`,
+  `proc.inject(pid, event, ...)` (an event for one process alone),
+  `proc.term(pid)` (its terminal: `getLine` reads it back).
+
+Craftix's `&` jobs belong to the shell: they end with it. A service is
+the way to keep something running. Under `init`, Craftix numbers its jobs
+with process IDs no process will get, and its `kill` passes any other
+number on to `init`. As in CraftOS, a program that computes for a long
+time without waiting for an event holds everything up meanwhile.
 
 ## fileserver
 

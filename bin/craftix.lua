@@ -58,6 +58,8 @@
 --   wait [%n|pid...]      wait for jobs (all, with none named); their
 --                         status.  Ctrl+T stops waiting.
 --   kill [-9] %n|pid...   end a job as Ctrl+T would; -9 drops it at once.
+--                         Under init, a pid that isn't a job's is a
+--                         process's (see ps).
 --   builtins              also exit [n], :, true, false, read [-r] name...,
 --                         shift [n], unset name..., . file,
 --                         export [-n] name[=value]... and export -p
@@ -827,7 +829,10 @@ local function addJob(j)
     if j.id then return end
     local n = 0
     for _, o in ipairs(jobs) do n = math.max(n, o.id) end
-    j.id, j.pid, nextPid = n + 1, nextPid, nextPid + 1
+    j.id = n + 1
+    -- under init, a process ID of its own, so kill's numbers can't clash
+    local proc = rawget(_G, "proc")
+    if proc and proc.reservePid then j.pid = proc.reservePid() else j.pid, nextPid = nextPid, nextPid + 1 end
     jobs[#jobs + 1] = j
 end
 
@@ -1153,7 +1158,12 @@ function builtins.kill(a, b)
     local st = 0
     for j = k, #a do
         local job = findJob(a[j], true)
-        if not job then
+        local proc = rawget(_G, "proc")
+        if not job and proc and a[j]:match("^%d+$") then
+            -- not a job of ours: a process (init's)
+            local ok, err = proc.kill(tonumber(a[j]), hard and "KILL" or "TERM")
+            if not ok then b.err("kill: " .. a[j] .. ": " .. err); st = 1 end
+        elseif not job then
             b.err("kill: " .. a[j] .. ": no such job")
             st = 1
         elseif job.state ~= "done" then

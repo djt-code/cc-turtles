@@ -1,0 +1,74 @@
+-- init.lua -- processes and services: the first process
+--
+--   init                    take over this computer: services, then the console
+--   init boot [off]         run it at every boot (or not): the setting init.boot
+--
+-- CraftOS has no processes or background programs (only multishell's
+-- tabs, on advanced computers).  init is the nearest thing to Unix's: it
+-- runs every program as a process with a process ID, its own terminal
+-- and its own environment (see lib/proc.lua), and keeps services running
+-- in the background.  `ps` lists the processes, `kill` signals them and
+-- `service` starts, stops and sets up services.
+--
+-- At boot (init.boot on: `deploy/install --init`) startup runs init last.
+-- It starts the services that are enabled, then the console: the
+-- autostart (cc-turtles.autostart: the miner, farmer, router...) if one
+-- is set, then Craftix if craftix.login is on, then the CraftOS shell;
+-- each when the one before it ends.  Leaving that last shell shuts the
+-- computer down, as leaving CraftOS's own does.  Run by hand, init skips
+-- the autostart.
+--
+-- The keyboard and mouse go to the console; every other event to every
+-- process.  A program that computes for a long time without waiting
+-- holds everything up, as it does in CraftOS.
+
+local args = { ... }
+local repo = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram()))
+package.path = repo .. "/lib/?.lua;" .. package.path
+
+if args[1] == "boot" then
+    local on = args[2] ~= "off"
+    settings.set("init.boot", on)
+    settings.save()
+    if not on then print("init doesn't start at boot now.")
+    elseif not fs.exists("/startup.lua") and not fs.exists("/startup/zx-init.lua") then
+        print("init.boot is on, but startup doesn't run init: run deploy/install.")
+    else
+        print("init starts at boot.")
+    end
+    return
+end
+if rawget(_G, "proc") then
+    printError("init is already running (process 1): see ps")
+    return
+end
+
+local K = require("proc").new({ native = term.current(), shell = shell, multishell = multishell })
+_G.proc = K.api
+
+-- the console: each of these in turn
+local chain = {}
+local auto = settings.get("cc-turtles.autostart", "")
+if args[1] == "--boot" and auto ~= "" then
+    if turtle and fs.exists(repo .. "/turtle/autostart.lua") then chain[#chain + 1] = repo .. "/turtle/autostart"
+    elseif auto == "router" and fs.exists(repo .. "/pc/router.lua") then chain[#chain + 1] = repo .. "/pc/router" end
+end
+if settings.get("craftix.login") and fs.exists(repo .. "/bin/craftix.lua") then chain[#chain + 1] = repo .. "/bin/craftix" end
+chain[#chain + 1] = false                       -- the CraftOS shell
+
+local w, h = term.getSize()
+local console = window.create(term.current(), 1, 1, w, h, true)
+local function nextConsole()
+    if #chain == 0 then
+        os.shutdown()
+        return
+    end
+    local cmd = table.remove(chain, 1)
+    K.console = K.spawn({ cmd = cmd or nil, term = console, tty = "con", onExit = nextConsole })
+end
+
+K.startServices()
+nextConsole()
+local ok, err = pcall(K.run)
+_G.proc = nil
+if not ok then error(err, 0) end

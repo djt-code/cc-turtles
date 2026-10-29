@@ -1,0 +1,14 @@
+service: background services, kept running by init
+
+  service
+      the services: state, process ID, whether at boot
+  service status [name]
+      the same, with its command, when it started, what it last showed
+  service start|stop|restart name
+  service enable|disable name
+      start it at boot, or not
+  service add name command...
+      a new service (not started: start or enable it)
+  service remove name
+
+A service is a command init runs in the background and starts again if it ends (after 1 s, 2 s, 4 s... up to a minute).  It's kept in the settings: service.<name>.cmd, service.<name>.enabled and service.<name>.restart ("always", or "no": leave it ended).  What it prints goes to a screen of its own, not the console: status shows the last of it.  add, remove, enable and disable work without init; the rest need it running (`help init`).

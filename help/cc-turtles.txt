@@ -18,14 +18,18 @@ Anywhere (bin/):
   git: minimal git client for CC:Tweaked
   grep: print the lines that match a pattern (POSIX grep)
   head: copy the first part of files to standard output (POSIX head)
+  init: processes and services: the first process
   ip: set up and look at the network (lib/net.lua)
+  kill: signal processes
   ls: list directory contents (POSIX ls, with the GNU options in everyday use)
   more: show files a screenful at a time (POSIX more, a subset)
   nc: netcat: TCP connections and UDP datagrams over the network stack
   od: dump files in octal and other formats (POSIX od)
   ping: send ICMP echo requests and time the replies
   printf: write formatted output (POSIX printf)
+  ps: list the processes
   pwd: print the working directory (POSIX pwd)
+  service: background services, kept running by init
   sleep: wait a while (POSIX sleep)
   sort: sort, merge or check lines of text (POSIX sort)
   strings: find printable strings in files (POSIX strings)

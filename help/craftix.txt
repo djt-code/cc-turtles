@@ -38,7 +38,7 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
   wait [%n|pid...]
       wait for jobs (all, with none named); their status.  Ctrl+T stops waiting.
   kill [-9] %n|pid...
-      end a job as Ctrl+T would; -9 drops it at once.
+      end a job as Ctrl+T would; -9 drops it at once. Under init, a pid that isn't a job's is a process's (see ps).
   builtins
       also exit [n], :, true, false, read [-r] name..., shift [n], unset name..., . file, export [-n] name[=value]... and export -p
 
