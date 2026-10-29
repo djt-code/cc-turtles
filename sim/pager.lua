@@ -118,6 +118,28 @@ v = press({ "just one line" })
 check("always = true: the viewer even for text that fits", v[1].row1 == "just one line" and v[1].status:find("1%-1/1"), v[1].status)
 OPTS = nil
 
+-- 3d. colour: a line { text, fg } wraps with its colours, is drawn with
+--     term.blit on a colour screen, and as plain text on any other
+rows = pager.wrap({ { "red words then", "eeeeeeeeeeeeee" }, "plain" }, 9)
+check("a coloured line's rows keep their colours; a plain line stays a string",
+    type(rows[1]) == "table" and rows[1][1] == "red words" and rows[1][2] == "eeeeeeeee"
+        and rows[2][1] == "then" and rows[2][2] == "eeee" and rows[3] == "plain",
+    textutils and textutils.serialise and textutils.serialise(rows) or tostring(rows[1]))
+check("colourLine and blitOf: one colour for the whole line",
+    pager.colourLine("abc", 16384)[2] == "eee" and pager.blitOf(1) == "0" and pager.blitOf(32768) == "f")
+local coloured = {}
+for i = 1, 20 do coloured[i] = i % 2 == 0 and { "red " .. i, string.rep("e", #("red " .. i)) } or ("plain " .. i) end
+local blits = {}
+term.isColour = function() return true end
+term.blit = function(t, fg, bg) blits[#blits + 1] = t .. "/" .. fg .. "/" .. bg end
+v = press(coloured)
+term.isColour, term.blit = function() return false end, nil
+local b = table.concat(blits, "|")
+check("on a colour screen: coloured lines blitted in their colours on black, plain ones written",
+    b:find("red 2/eeeee/fffff", 1, true) and not b:find("plain", 1, true) and v[1].row1 == "plain 1", b)
+v = press(coloured)
+check("on a plain screen: the same lines as plain text", v[1].row1 == "plain 1" and T.text(2) == "red 2")
+
 -- 4. more: files one after another in the pager (cat just copies them)
 local SW = require("shellworld")
 local W = SW.new(PROJ)

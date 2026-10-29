@@ -9,6 +9,11 @@
 --     up = n          then n rows up from there
 --     always = true   open the viewer even if the text fits on the screen
 --
+-- In the list, a line can also be { text, fg }: fg gives each character's
+-- colour as term.blit does, one hex digit apiece ("0" white, "e" red, ...).
+-- On a colour screen the line is drawn in those colours; elsewhere as
+-- plain text.  pager.colourLine(text, colour) makes one in a single colour.
+--
 -- Text that fits on the screen is just printed.  Anything longer or wider
 -- opens in a viewer: every line but the bottom one shows text, the bottom
 -- one says where you are.  Lines aren't wrapped unless asked; scroll
@@ -39,39 +44,97 @@ function P.lines(text)
     return out
 end
 
+local HEX = "0123456789abcdef"
+
+-- A line's text, whether it's a string or { text, fg }.
+local function textOf(l) return type(l) == "table" and l[1] or l end
+
+local function colourScreen()
+    return term.isColour ~= nil and term.isColour() and term.blit ~= nil
+end
+
+-- The blit digit of a colour (colours.red -> "e").
+function P.blitOf(colour)
+    local n = 0
+    while colour > 1 do colour = colour / 2; n = n + 1 end
+    return HEX:sub(n + 1, n + 1)
+end
+
+-- `text` as a line all in `colour`.
+function P.colourLine(text, colour)
+    return { text, string.rep(P.blitOf(colour), #text) }
+end
+
 -- `lines` wrapped to `w` columns at spaces (a word longer than a row is
--- cut), and for each line the row it starts on.
+-- cut), and for each line the row it starts on.  A coloured line's rows
+-- keep their colours.
 function P.wrap(lines, w)
     local rows, first = {}, {}
     for i, l in ipairs(lines) do
         first[i] = #rows + 1
-        local rest = l
-        while #rest > w do
-            local cut = rest:sub(1, w + 1):match("^.*() ")
-            if cut and cut > 1 and rest:sub(1, cut - 1):find("%S") then
-                rows[#rows + 1] = rest:sub(1, cut - 1)
-                rest = rest:sub(cut + 1):gsub("^ +", "")
-            else
-                rows[#rows + 1] = rest:sub(1, w)
-                rest = rest:sub(w + 1)
-            end
+        local text, fg = textOf(l), type(l) == "table" and l[2] or nil
+        local function row(a, b)
+            rows[#rows + 1] = fg and { text:sub(a, b), fg:sub(a, b) } or text:sub(a, b)
         end
-        if rest ~= "" or first[i] == #rows + 1 then rows[#rows + 1] = rest end
+        local pos, n, added = 1, #text, false
+        while n - pos + 1 > w do
+            local chunk = text:sub(pos, pos + w)
+            local cut = chunk:match("^.*() ")
+            if cut and cut > 1 and chunk:sub(1, cut - 1):find("%S") then
+                row(pos, pos + cut - 2)
+                pos = pos + cut
+                while text:sub(pos, pos) == " " do pos = pos + 1 end
+            else
+                row(pos, pos + w - 1)
+                pos = pos + w
+            end
+            added = true
+        end
+        if pos <= n or not added then row(pos, n) end
     end
     return rows, first
+end
+
+-- Draw columns left.. of line `l` at the cursor, `w` wide at most.
+function P.drawLine(l, left, w)
+    local text = textOf(l):sub(left, left + w - 1)
+    if type(l) == "table" and l[2] and colourScreen() then
+        local fg = l[2]:sub(left, left + w - 1)
+        fg = fg .. string.rep("0", #text - #fg)
+        term.blit(text, fg, string.rep("f", #text))
+    else
+        term.write(text)
+    end
+end
+
+-- Print line `l` as print does, in its colours on a colour screen.
+local function printLine(l)
+    if type(l) ~= "table" or not l[2] or not colourScreen() then return print(textOf(l)) end
+    local text, fg = l[1], l[2]
+    local i = 1
+    while i <= #text do
+        local c = fg:sub(i, i)
+        local j = i
+        while j < #text and fg:sub(j + 1, j + 1) == c do j = j + 1 end
+        term.setTextColour(math.floor(2 ^ ((HEX:find(c ~= "" and c or "0", 1, true) or 1) - 1)))
+        write(text:sub(i, j))
+        i = j + 1
+    end
+    term.setTextColour(colours.white)
+    print()
 end
 
 function P.page(src, opts)
     opts = opts or {}
     local lines = type(src) == "table" and src or P.lines(src)
     local widest = 0
-    for _, l in ipairs(lines) do widest = math.max(widest, #l) end
+    for _, l in ipairs(lines) do widest = math.max(widest, #textOf(l)) end
 
     local w, h = term.getSize()
     if not opts.always and #lines <= h - 1 and (widest <= w or opts.wrap) then
         local rows = opts.wrap and P.wrap(lines, w) or lines
         if #rows <= h - 1 then
-            for _, l in ipairs(lines) do print(l) end
+            for _, l in ipairs(lines) do printLine(l) end
             return
         end
     end
@@ -93,7 +156,7 @@ function P.page(src, opts)
             wrappedAt = w
             top = first[line] or #rows + 1
             widest = 0
-            for _, l in ipairs(rows) do widest = math.max(widest, #l) end
+            for _, l in ipairs(rows) do widest = math.max(widest, #textOf(l)) end
         end
         local view = h - 1
         local step = math.max(1, view - 1)      -- a page keeps one line of the last
@@ -109,7 +172,7 @@ function P.page(src, opts)
             term.setCursorPos(1, r)
             term.clearLine()
             local l = rows[top + r - 1]
-            if l then term.write(l:sub(left, left + w - 1)) end
+            if l then P.drawLine(l, left, w) end
         end
         local status = string.format("%d-%d/%d", top, math.min(top + view - 1, #rows), #rows)
         if maxLeft > 1 then status = status .. " col " .. left end

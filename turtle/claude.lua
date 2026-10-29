@@ -166,8 +166,23 @@ local shown = {}                -- the lines shown this session
 local seen = 0                  -- how many of them were out at the last prompt
 local screenPrint = print
 
-local function keep(text)
-    for l in (text .. "\n"):gmatch("([^\n]*)\n") do shown[#shown + 1] = l end
+-- The blit digit of a colour, as term.blit takes them ("0" white).
+local function blit(colour)
+    local n = 0
+    while colour > 1 do colour = colour / 2; n = n + 1 end
+    return ("0123456789abcdef"):sub(n + 1, n + 1)
+end
+
+-- Keep `text`'s lines; `fg`, on a colour screen, is each character's
+-- colour (blit digits), and a line that isn't all white keeps it, for the
+-- pager to show in colour.
+local function keep(text, fg)
+    local pos = 1
+    for l in (text .. "\n"):gmatch("([^\n]*)\n") do
+        local lfg = fg and fg:sub(pos, pos + #l - 1)
+        if lfg and lfg:find("[^0]") then shown[#shown + 1] = { l, lfg } else shown[#shown + 1] = l end
+        pos = pos + #l + 1
+    end
     if #shown > SCROLLBACK + 500 then
         local cut, t = #shown - SCROLLBACK, {}
         for i = cut + 1, #shown do t[#t + 1] = shown[i] end
@@ -176,11 +191,12 @@ local function keep(text)
 end
 
 -- everything printed goes through here: claude's notes, the code, what
--- the code and turtlelib print
+-- the code and turtlelib print, each line kept in the colour it's printed in
 print = function(...)
     local parts = {}
     for i = 1, select("#", ...) do parts[#parts + 1] = tostring(select(i, ...)) end
-    keep(table.concat(parts, " "))
+    local text = table.concat(parts, " ")
+    keep(text, COLOUR and string.rep(blit(term.getTextColour()), #text) or nil)
     return screenPrint(...)
 end
 
@@ -240,11 +256,13 @@ end
 -- Show the code: highlighted on a colour screen, kept for the pager.
 local function showCode(code)
     if not COLOUR then return print(code) end
-    keep(code)
+    local fg = {}
     for _, r in ipairs(luaRuns(code)) do
         term.setTextColour(colours[r[1]])
         write(r[2])
+        fg[#fg + 1] = string.rep(blit(colours[r[1]]), #r[2])
     end
+    keep(code, table.concat(fg))
     term.setTextColour(colours.white)
     write("\n")
 end
@@ -263,7 +281,7 @@ local function view(opts)
         term.setCursorPos(1, r)
         term.clearLine()
         local l = r < h and rows[#rows - (h - 1) + r]
-        if l then term.write(l) end
+        if l then pager.drawLine(l, 1, w) end
     end
     term.setCursorPos(1, h)
 end
@@ -308,7 +326,7 @@ local function ask(label)
         if COLOUR then term.setTextColour(colours.white) end
         local line, back = readLine()
         if not back then
-            keep(label .. line)
+            keep(label .. line, COLOUR and (string.rep(blit(colours.yellow), #label) .. string.rep("0", #line)) or nil)
             seen = #shown
             return line
         end

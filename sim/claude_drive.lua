@@ -325,14 +325,23 @@ check("after a failed request, the next goal joins the tool results it never sen
 
 -- 15. colour: on an advanced computer the code is highlighted as edit does
 --     it; on a plain one (every scenario above) it's printed as it is
-local Tc = M.termApi(39, 30)
-local cur, segs = "white", {}
+-- (a screen 8 rows high, so what comes out overflows it and opens in the
+-- pager, which must show it in the same colours)
+local Tc = M.termApi(39, 8)
+local CC_COLOURS = { white = 1, orange = 2, lightBlue = 8, yellow = 16, grey = 128, lightGrey = 256,
+    green = 8192, red = 16384, black = 32768 }
+local NAME = {}
+for k, v in pairs(CC_COLOURS) do NAME[v] = k end
+local cur, segs, blits = 1, {}, {}
 term.isColour = function() return true end
 term.setTextColour = function(c) cur = c end
-colours = setmetatable({}, { __index = function(_, k) return k end })
+term.getTextColour = function() return cur end
+term.blit = function(t, fg) blits[#blits + 1] = t .. "/" .. fg end
+colours = CC_COLOURS
 local plainWrite = write
-write = function(s) segs[#segs + 1] = { cur, s } end
+write = function(s) segs[#segs + 1] = { NAME[cur], s } end
 fresh({ "" })
+Tc.events = { { "char", "q" } }
 HTTP.queue = {
     reply({ toolUse("lua", { code = [==[-- look
 local s = "a" .. 'b' --[[x]] return s, 42]==] }) }, "tool_use"),
@@ -341,10 +350,14 @@ local s = "a" .. 'b' --[[x]] return s, 42]==] }) }, "tool_use"),
 run("look")
 write, term, colours = plainWrite, nil, nil
 local seen = {}
-for _, sg in ipairs(segs) do seen[#seen + 1] = sg[1] .. ":" .. sg[2] end
+for _, sg in ipairs(segs) do seen[#seen + 1] = tostring(sg[1]) .. ":" .. sg[2] end
 local all = table.concat(seen, "|")
 check("code highlighted: comments green, keywords yellow, strings red, the rest white",
     all:find("green:-- look", 1, true) and all:find("yellow:local", 1, true) and all:find('red:"a"', 1, true)
         and all:find("red:'b'", 1, true) and all:find("green:--[[x]]", 1, true) and all:find("yellow:return", 1, true)
         and all:find("white: s, 42", 1, true), all)
 check("and the prompt in yellow", all:find("yellow:> ", 1, true) ~= nil, all)
+local drawn = table.concat(blits, "|")
+check("the pager shows it in the same colours: the code highlighted, the banner yellow",
+    drawn:find("-- look/ddddddd", 1, true) and drawn:find("--- lua/3333333", 1, true)
+        and drawn:find("Claude at the controls", 1, true) and drawn:find("/444444", 1, true), drawn)
