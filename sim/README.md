@@ -28,8 +28,22 @@ The help files in `help/` are made from each program's top comment by
 `python sim/mkhelp.py`; `--check` fails if one is out of date, so change
 the comment and run it again rather than editing `help/`.
 
-Or on a ComputerCraft computer or turtle that has the repo (`git clone`),
-no Python needed:
+Or on a ComputerCraft computer or turtle, no Python needed. A clone
+leaves sim/ out, so name what the simulators need:
+
+```
+wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/bin/git.lua /git-boot.lua
+git-boot clone https://github.com/djt-code/cc-turtles /cc-turtles --only sim/ --only turtle/ --only bin/ --only lib/
+rm git-boot.lua
+cd /cc-turtles
+```
+
+That's about 890 KB, and the logs of a full run another 140 KB, more than
+CC's default 1 MB disk: raise `computer_space_limit` in the server's
+`computercraft-server.toml`, or take just what the watched ones need
+(about 670 KB): `--only sim/ --only turtle/turtlelib.lua --only
+turtle/farm.lua --only turtle/mine.lua --only bin/git.lua`.
+`bin/git pull` updates it.
 
 ```
 sim/runsim                         # all of them, then a summary
@@ -67,8 +81,8 @@ to one move per tick), **f** skip to the end of the current farm run,
 
 What to build:
 
-- An **Advanced Computer** (or advanced turtle) with the repo on it
-  (`git clone`, which needs HTTP enabled on the server).
+- An **Advanced Computer** (or advanced turtle) with the simulators on it
+  (the clone above, which needs HTTP enabled on the server).
 - An **Advanced Monitor** wall: plain monitors have no colour, and the
   views rely on it. Monitors join into one screen when placed edge to edge
   in a flat rectangle. Size it for the largest farm you'll watch (the
