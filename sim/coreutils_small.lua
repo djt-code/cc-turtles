@@ -1,7 +1,7 @@
 -- sim/coreutils_small.lua
 --
 -- The small utilities in a shellworld: touch, pwd, basename, dirname,
--- true, false, sleep, which and xargs -- their options, operands, output
+-- true, false, sleep, which, xargs and seq -- their options, operands, output
 -- formats, diagnostics and exit statuses.
 local PROJ = ...
 package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
@@ -290,3 +290,36 @@ r = W:run("xargs", "-0", "-n", "1000", "tally", { pipe = true, stdin = table.con
 check("xargs -0: 3000 arguments in runs of 1000", r.status == 0 and _G.TALLY == 3)
 r = W:run("xargs", "-0", "echo", { pipe = true, stdin = "a\0\0b" })
 check("xargs -0: empty argument kept, unterminated last one used", r.out == "a  b\n", show(r.out))
+
+--------------------------------------------------------------------------
+-- seq
+--------------------------------------------------------------------------
+local function seq(...) return W:run("seq", ...) end
+local function lines(...) return (seq(...).out:gsub("\n", " ")) end
+check("seq last; first last; first increment last", lines("3") == "1 2 3 " and lines("2", "4") == "2 3 4 "
+    and lines("0", "5", "20") == "0 5 10 15 20 ", lines("0", "5", "20"))
+check("counting down; negatives (not taken for options)", lines("5", "-2", "0") == "5 3 1 "
+    and lines("-2", "0") == "-2 -1 0 " and lines("-1", "0.5", "1") == "-1.0 -0.5 0.0 0.5 1.0 ", lines("-1", "0.5", "1"))
+check("decimals: first's or increment's places; 0.1 steps reach the end exactly",
+    lines("0", "0.1", "0.3") == "0.0 0.1 0.2 0.3 " and lines("1.25", "3") == "1.25 2.25 "
+        and lines("1e1", "1e1", "3e1") == "10 20 30 ", lines("0", "0.1", "0.3"))
+r = seq("3", "1")
+check("last before first: nothing, status 0", r.out == "" and r.status == 0)
+check("-w: leading zeros (a minus first)", lines("-w", "8", "10") == "08 09 10 " and lines("-w", "-1", "1") == "-1 00 01 ",
+    lines("-w", "-1", "1"))
+check("-s: the separator, a newline at the end; \t is a tab",
+    seq("-s", ", ", "3").out == "1, 2, 3\n" and seq("-s\t", "2").out == "1\t2\n", show(seq("-s\t", "2").out))
+check("-f: a printf floating-point format", lines("-f", "%.2f", "1", "0.5", "2") == "1.00 1.50 2.00 "
+    and lines("-f", "%05.1f", "2") == "001.0 002.0 " and lines("-f", "n=%g%%", "2") == "n=1% n=2% ")
+r = seq("x")
+check("a bad number: status 1", r.status == 1 and r.err[1] == "seq: invalid floating point argument: 'x'", show(r.errText))
+r = seq("1", "0", "3")
+check("a zero increment: status 1", r.status == 1 and r.err[1] == "seq: invalid Zero increment value: '0'", show(r.errText))
+r = seq("-f", "%d", "3")
+local r2 = seq("-w", "-f", "%g", "3")
+local r3 = seq()
+check("-f without one float conversion, -f with -w, no operand: status 1",
+    r.status == 1 and r.errText:find("exactly one") and r2.status == 1 and r3.status == 1
+        and r3.err[1] == "seq: missing operand", show(r.errText) .. " " .. show(r3.errText))
+r = seq("2500")
+check("a long run (yielding as it goes)", select(2, r.out:gsub("\n", "")) == 2500 and r.out:sub(-5) == "2500\n")

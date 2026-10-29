@@ -25,7 +25,7 @@ The repo is in four folders:
 | `bin/cat.lua`, `bin/more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
 | `lib/pager.lua` | Library: a `less`-style viewer for `more`, `git log` and `claude`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), the mouse wheel 3 lines, `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. A program that colours its output can hand it lines as `{ text, fg }` (`fg` one blit digit per character, as `term.blit` takes them), and on a colour screen they're shown in those colours. |
 | `bin/echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
-| POSIX utilities (`bin/`) | `ls` `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs` `env`, plus `which`: the basic options of each, for the commands CraftOS lacks (and `ls`, which replaces CraftOS's). `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
+| POSIX utilities (`bin/`) | `ls` `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs` `env`, plus `which` and `seq`: the basic options of each, for the commands CraftOS lacks (and `ls`, which replaces CraftOS's). `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
 | `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables and an environment for programs, globs, `$(...)`, background jobs with `fg`/`bg`/Ctrl+Z, and `/.profile`. See [Craftix](#craftix). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
@@ -299,6 +299,7 @@ departs from POSIX.
 | `xargs` | `-0 -E -I -L -n -p -r -s -t -x` |
 | `env` | `-i -u name`, `name=value`; the environment Craftix gives programs (none outside it) |
 | `which` | `-a` (not POSIX: which file the shell would run) |
+| `seq` | `-s sep -w -f format`, `[first [increment]] last`, decimals and negatives (not POSIX: GNU's) |
 
 They all work the same way, so [Craftix](#craftix) can join them up with
 pipes. With no file operands, or the operand `-`, a utility reads standard

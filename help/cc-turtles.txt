@@ -29,6 +29,7 @@ Anywhere (bin/):
   printf: write formatted output (POSIX printf)
   ps: list the processes
   pwd: print the working directory (POSIX pwd)
+  seq: print a sequence of numbers (as GNU's seq; not in POSIX)
   service: background services, kept running by init
   sleep: wait a while (POSIX sleep)
   sort: sort, merge or check lines of text (POSIX sort)
