@@ -21,6 +21,10 @@
 -- or press Enter on an empty line to quit.  Ctrl+T stops it (under T.run,
 -- so the saved position stays right).
 --
+-- Colour (an advanced computer or turtle): the code it runs is highlighted
+-- as `edit` does it, what the code prints is grey, prompts and questions
+-- yellow, retries orange, errors red; Claude's own words are white.
+--
 -- Reading back: when more comes out than the screen holds, it opens in
 -- the pager (lib/pager.lua) at the first line you haven't seen before it
 -- asks you anything: the mouse wheel, arrows or space to scroll, q to
@@ -58,11 +62,20 @@ end
 local okPager, pager = pcall(require, "pager")
 if not (okPager and type(pager) == "table" and pager.page) then pager = nil end
 
+-- Colour on an advanced computer or turtle, plain text on the others.
+local COLOUR = term ~= nil and term.isColour ~= nil and term.isColour() and colours ~= nil
+local function say(colour, ...)
+    if COLOUR and colour then term.setTextColour(colours[colour]) end
+    print(...)
+    if COLOUR and colour then term.setTextColour(colours.white) end
+end
+
 local API_URL = "https://api.anthropic.com/v1/messages"
 local API_VERSION = "2026-10-21"
 local KEY_FILE = T.dataPath("claude.key")
 local LOG_FILE = T.dataPath("claude.log")
-local MAX_TOKENS = 8192         -- a reply is a short note and some code
+local MAX_TOKENS = 32000        -- a reply is a short note and some code, but the
+                                -- thinking before it counts too
 local MAX_OUTPUT = 6000         -- characters of a tool's output sent back
 local RETRIES = 4               -- on rate limits, overload and outages
 local HTTP_TIMEOUT = 60         -- seconds with nothing coming in, at most 60 in CC; the
@@ -102,10 +115,10 @@ end
 
 local KEY = readKey()
 if not KEY then
-    print("No API key: put one in " .. KEY_FILE .. " (edit " .. KEY_FILE .. ", paste it, save).")
+    say("red", "No API key: put one in " .. KEY_FILE .. " (edit " .. KEY_FILE .. ", paste it, save).")
     return
 end
-if not http then print("HTTP is disabled on this server."); return end
+if not http then say("red", "HTTP is disabled on this server."); return end
 
 --------------------------------------------------------------------------
 -- What the model is told
@@ -171,6 +184,71 @@ print = function(...)
     return screenPrint(...)
 end
 
+-- Lua code, highlighted as `edit` does it on a colour screen: keywords
+-- yellow, comments green, strings red.
+local KEYWORDS = {}
+local KEYWORD_LIST = "and break do else elseif end false for function goto if in local nil not or "
+    .. "repeat return then true until while"
+for w in KEYWORD_LIST:gmatch("%a+") do KEYWORDS[w] = true end
+
+-- `code` as runs of { colour, text }.
+local function luaRuns(code)
+    local runs, i, n = {}, 1, #code
+    local function add(colour, s)
+        local last = runs[#runs]
+        if last and last[1] == colour then last[2] = last[2] .. s else runs[#runs + 1] = { colour, s } end
+    end
+    while i <= n do
+        local c = code:sub(i, i)
+        local long = code:match("^%-%-%[(=*)%[", i)
+        local longStr = code:match("^%[(=*)%[", i)
+        if long or longStr then          -- a long comment or string, to its ]]
+            local eq = long or longStr
+            local close = "]" .. eq .. "]"
+            local _, e = code:find(close, i + #eq + 2 + (long and 2 or 0), true)
+            e = e or n
+            add(long and "green" or "red", code:sub(i, e))
+            i = e + 1
+        elseif code:sub(i, i + 1) == "--" then
+            local e = (code:find("\n", i, true) or n + 1) - 1
+            add("green", code:sub(i, e))
+            i = e + 1
+        elseif c == '"' or c == "'" then
+            local j = i + 1
+            while j <= n do
+                local d = code:sub(j, j)
+                if d == "\\" then j = j + 2
+                elseif d == c or d == "\n" then break
+                else j = j + 1 end
+            end
+            j = math.min(j, n)
+            add("red", code:sub(i, j))
+            i = j + 1
+        elseif c:match("[%a_]") then
+            local word = code:match("^[%w_]+", i)
+            add(KEYWORDS[word] and "yellow" or "white", word)
+            i = i + #word
+        else
+            local s = code:match("^[^%w_\"'%-%[]+", i) or c
+            add("white", s)
+            i = i + #s
+        end
+    end
+    return runs
+end
+
+-- Show the code: highlighted on a colour screen, kept for the pager.
+local function showCode(code)
+    if not COLOUR then return print(code) end
+    keep(code)
+    for _, r in ipairs(luaRuns(code)) do
+        term.setTextColour(colours[r[1]])
+        write(r[2])
+    end
+    term.setTextColour(colours.white)
+    write("\n")
+end
+
 -- If more came out since the last prompt than fits above it, show it in
 -- the pager from its first line.  After the pager, the screen shows the
 -- end of the session again, above the prompt.
@@ -225,7 +303,9 @@ end
 local function ask(label)
     catchUp()
     while true do
+        if COLOUR then term.setTextColour(colours.yellow) end
         write(label)
+        if COLOUR then term.setTextColour(colours.white) end
         local line, back = readLine()
         if not back then
             keep(label .. line)
@@ -426,7 +506,7 @@ local function status()
 end
 
 local function askUser(question)
-    print("Claude asks: " .. tostring(question))
+    say("yellow", "Claude asks: " .. tostring(question))
     return ask("> "), false
 end
 
@@ -434,18 +514,23 @@ local function runTool(name, input)
     input = input or {}
     if name == "lua" then
         local code = tostring(input.code or "")
-        print("--- lua")
-        print(code)
+        say("lightBlue", "--- lua")
+        showCode(code)
         log("lua:\n" .. code)
         if CONFIRM then
             local a = ask("Run it? [y/N] ")
             if not a:lower():find("^y") then
-                print("--- not run")
+                say("orange", "--- not run")
                 return "The user declined to run this code.", true
             end
         end
-        print("---")
-        local out, isErr = runLua(code)
+        say("lightBlue", "---")
+        -- what the code prints, in grey, apart from what Claude says
+        if COLOUR then term.setTextColour(colours.lightGrey) end
+        local ok, out, isErr = pcall(runLua, code)
+        if COLOUR then term.setTextColour(colours.white) end
+        if not ok then error(out, 0) end        -- Terminated
+        if isErr then say("red", (out:match("error: [^\n]*") or out)) end
         log((isErr and "error:\n" or "result:\n") .. out)
         return out, isErr
     elseif name == "status" then
@@ -567,7 +652,7 @@ local function request()
         if not again or attempt > RETRIES then
             return nil, string.format("API request failed%s: %s", code and code ~= 200 and (" (HTTP " .. code .. ")") or "", detail)
         end
-        print(string.format("API: %s; trying again in %ds.", detail, wait))
+        say("orange", string.format("API: %s; trying again in %ds.", detail, wait))
         sleep(wait)
         wait = wait * 2
     end
@@ -580,17 +665,54 @@ local function count(reply)
     usage.cached = usage.cached + (u.cache_read_input_tokens or 0)
 end
 
+-- Error results for the tool calls in the last assistant turn, if it has
+-- any: the API wants every tool_use answered in the very next turn, even
+-- one cut off at max_tokens or never run.
+local function unanswered(why)
+    local out, last = {}, messages[#messages]
+    if last and last.role == "assistant" and type(last.content) == "table" then
+        for _, b in ipairs(last.content) do
+            if b.type == "tool_use" then
+                out[#out + 1] = { type = "tool_result", tool_use_id = b.id, content = why, is_error = true }
+            end
+        end
+    end
+    return out
+end
+
+-- Add `text` as the user's: after tool calls left unanswered, with their
+-- results first; after a user turn the API never answered (tool results
+-- whose request failed), onto that turn.
+local function addUser(text, why)
+    local last = messages[#messages]
+    if last and last.role == "user" then
+        if type(last.content) == "string" then last.content = { { type = "text", text = last.content } } end
+        table.insert(last.content, { type = "text", text = text })
+        return
+    end
+    local blocks = unanswered(why)
+    if #blocks == 0 then
+        messages[#messages + 1] = { role = "user", content = text }
+    else
+        blocks[#blocks + 1] = { type = "text", text = text }
+        messages[#messages + 1] = { role = "user", content = blocks }
+    end
+end
+
 -- Work at `goal` until the model stops: run its tool calls and send the
 -- results back, call after call, up to MAX_STEPS of them.
 local function converse(goal)
-    messages[#messages + 1] = { role = "user", content = goal }
+    addUser(goal, "Not run: the goal ended before this call was answered.")
     log("goal: " .. goal)
     local steps, overBudget, cutOff = 0, false, false
     while true do
         local reply, err = request()
         if not reply then
-            print(err)
-            messages[#messages] = nil    -- the turn it never answered
+            say("red", err)
+            -- a goal it never answered goes; tool results stay, for the
+            -- next goal to go on from
+            local last = messages[#messages]
+            if last.role == "user" and last.content == goal then messages[#messages] = nil end
             return false
         end
         count(reply)
@@ -621,10 +743,12 @@ local function converse(goal)
             messages[#messages + 1] = { role = "user", content = results }
         elseif reply.stop_reason == "max_tokens" and not cutOff then
             cutOff = true
-            messages[#messages + 1] = { role = "user", content = "Your reply was cut off; carry on, more briefly." }
+            say("orange", "(the reply was cut off; asking it to carry on)")
+            addUser("Your reply was cut off; carry on, more briefly.",
+                "Not run: your reply was cut off before this call was complete.")
         elseif reply.stop_reason == "refusal" then
             local d = reply.stop_details or {}
-            print("Claude declined (" .. tostring(d.category or "refusal") .. "): " .. tostring(d.explanation or ""))
+            say("red", "Claude declined (" .. tostring(d.category or "refusal") .. "): " .. tostring(d.explanation or ""))
             return false
         else
             return true
@@ -642,7 +766,7 @@ local function main()
     else
         T.startAtHome(true)
     end
-    print(string.format("Claude at the controls (%s, effort %s). Turtle at %s facing %d, fuel %s.",
+    say("yellow", string.format("Claude at the controls (%s, effort %s). Turtle at %s facing %d, fuel %s.",
         MODEL, EFFORT, T.posString(), T.dir, tostring(turtle.getFuelLevel())))
     if goal == "" then
         goal = ask("Goal: ")
@@ -650,7 +774,7 @@ local function main()
     while goal ~= "" do
         local before = { input = usage.input, output = usage.output, cached = usage.cached }
         converse(goal)
-        print(string.format("[%d tokens in (%d from cache), %d out; %d in all]",
+        say("grey", string.format("[%d tokens in (%d from cache), %d out; %d in all]",
             usage.input - before.input, usage.cached - before.cached, usage.output - before.output,
             usage.input + usage.output))
         goal = ask("> ")

@@ -877,7 +877,10 @@ it did when it stops, and then waits for the next thing to do; an empty
 line quits. When more comes out than fits on the screen, it opens in the
 pager before the next prompt, at the first line you haven't seen (the
 mouse wheel, arrows or space to scroll, `q` back to the prompt); at an
-empty prompt the wheel up or PgUp opens the whole session. Ctrl+T stops it, and because it runs under `T.run` the saved
+empty prompt the wheel up or PgUp opens the whole session. On an advanced
+computer or turtle the output is in colour: the code it runs highlighted
+as in `edit`, what the code prints in grey, prompts in yellow, errors in
+red (the pager shows it all in plain white). Ctrl+T stops it, and because it runs under `T.run` the saved
 position stays right, so `home` works afterwards. It picks up `.turtlepos`
 from the last job if there is one; otherwise where it starts is `(0,0,0)`
 facing `+z`.

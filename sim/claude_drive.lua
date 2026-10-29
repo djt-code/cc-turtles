@@ -292,3 +292,59 @@ check("the request asks for a stream, thinking summarised", s1 and s1.stream == 
 check("an overload partway through the stream is retried", #HTTP.requests == 2 and Mine.logHas("overloaded_error.*trying again"))
 check("the reply put back together from its events is printed, the thinking logged",
     Mine.logHas("^Hi there%.$") and (Mine.files["claude.log"] or ""):find("thinking: Plan: say hi.", 1, true) ~= nil)
+
+-- 13. a reply cut off at max_tokens partway through a tool call: the call
+--     isn't run, and the next turn answers it (the API wants every
+--     tool_use answered in the very next turn) before asking to carry on
+fresh({ "" })
+HTTP.queue = {
+    reply({ text("Digging now."), toolUse("lua", { code = "turtle.dig(" }) }, "max_tokens"),
+    reply({ text("Stopped short; nothing was run.") }, "end_turn"),
+}
+run("dig a lot")
+local cutTurn = HTTP.requests[2] and HTTP.requests[2].body.messages[3]
+local cr = cutTurn and type(cutTurn.content) == "table" and cutTurn.content
+check("a tool call cut off at max_tokens is answered (not run), then told to carry on",
+    cr and cr[1].type == "tool_result" and cr[1].tool_use_id == "toolu_1" and cr[1].is_error == true
+        and cr[2].type == "text" and cr[2].text:find("cut off") and DIGS == 0, cutTurn and textutils.serialiseJSON(cutTurn))
+
+-- 14. a request that fails after tool results: the results stay, and the
+--     next goal goes on from them in the same turn
+fresh({ "try again", "" })
+HTTP.queue = {
+    reply({ toolUse("lua", { code = "return 1" }) }, "tool_use"),
+    { code = 400, body = { type = "error", error = { type = "invalid_request_error", message = "nope" } } },
+    reply({ text("Carrying on.") }, "end_turn"),
+}
+run("count")
+local m3 = HTTP.requests[3] and HTTP.requests[3].body.messages
+local lastTurn = m3 and m3[#m3]
+check("after a failed request, the next goal joins the tool results it never sent back",
+    m3 and #m3 == 3 and lastTurn.role == "user" and lastTurn.content[1].type == "tool_result"
+        and lastTurn.content[2].text == "try again", m3 and textutils.serialiseJSON(m3))
+
+-- 15. colour: on an advanced computer the code is highlighted as edit does
+--     it; on a plain one (every scenario above) it's printed as it is
+local Tc = M.termApi(39, 30)
+local cur, segs = "white", {}
+term.isColour = function() return true end
+term.setTextColour = function(c) cur = c end
+colours = setmetatable({}, { __index = function(_, k) return k end })
+local plainWrite = write
+write = function(s) segs[#segs + 1] = { cur, s } end
+fresh({ "" })
+HTTP.queue = {
+    reply({ toolUse("lua", { code = [==[-- look
+local s = "a" .. 'b' --[[x]] return s, 42]==] }) }, "tool_use"),
+    reply({ text("Looked.") }, "end_turn"),
+}
+run("look")
+write, term, colours = plainWrite, nil, nil
+local seen = {}
+for _, sg in ipairs(segs) do seen[#seen + 1] = sg[1] .. ":" .. sg[2] end
+local all = table.concat(seen, "|")
+check("code highlighted: comments green, keywords yellow, strings red, the rest white",
+    all:find("green:-- look", 1, true) and all:find("yellow:local", 1, true) and all:find('red:"a"', 1, true)
+        and all:find("red:'b'", 1, true) and all:find("green:--[[x]]", 1, true) and all:find("yellow:return", 1, true)
+        and all:find("white: s, 42", 1, true), all)
+check("and the prompt in yellow", all:find("yellow:> ", 1, true) ~= nil, all)
