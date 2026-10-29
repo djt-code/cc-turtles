@@ -643,6 +643,17 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   recipe. Afterwards the pickaxe goes back on and the table goes in the
   chest with the supplies. Without a crafting table it says so, and when it
   runs out of chests the stop message says there's wood for more.
+- **Seeking wood:** with a crafting table (on board, equipped, or in its
+  working home), it keeps a stock of wood for chests and torches. While
+  the wood and chests at its working home and on board would build fewer
+  than 8 more homes (`WOOD_HOMES`), logs and planks (mineshafts are built
+  of planks) count as ore of the kind it goes out of its way for, like coal
+  and diamonds. Without a Geo Scanner, wood it sees while looking at the
+  tunnel's walls, floor and ceiling is followed to the end of its run,
+  however far out. With one, wood a scan shows is fetched from anywhere in
+  the scan. It reads its working home's chest each time it's there, and
+  counts what it carries, so it stops seeking once it has enough. The
+  summary at the end says how much wood it dug.
 - **Fuel is coal and the like, never wood:** it only burns what turtlelib's
   `T.fuel` lists (coal, charcoal, coal blocks, lava buckets, blaze rods,
   dried kelp blocks). Logs, planks, sticks, chests and crafting tables would

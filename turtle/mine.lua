@@ -66,6 +66,13 @@
 --    empties its inventory into the home's chests for it (a turtle crafts
 --    from its inventory); then everything goes back.  No table: it says
 --    so, and stops when it's out of chests.
+--  * Seeking wood: with a crafting table (on board, equipped, or in its
+--    working home), while the wood and chests at its working home and on
+--    board would build fewer than WOOD_HOMES (8) more homes, it treats
+--    logs and planks (mineshafts) like coal: one it touches is followed
+--    to the end of its run, and with a Geo Scanner one a scan shows is
+--    fetched from anywhere in the scan.  It notes what its working home
+--    holds each time it's there.
 --  * Stopping: out of chests for the next home, not enough fuel to go on
 --    and still get back, a home chest full or missing, or something it
 --    can't dig through.  Then (or once the tunnel is as long as asked) it
@@ -430,10 +437,51 @@ function inReach(p)
     return p.z >= 1 and outside(p) <= (hasScanner and SCAN_REACH or VEIN_REACH) and inScan(p)
 end
 
+-- Wood (logs, and planks: mineshafts are built of them) is sought like
+-- ore while the turtle can craft (a crafting table on board, equipped, or
+-- in its working home) and the wood and chests it has, there and on
+-- board, would build fewer than WOOD_HOMES more homes (and their torches'
+-- sticks).  woodNeed is how many planks' worth it still wants; homeStock
+-- what its working home's valuables chest held when it was last there.
+WOOD_HOMES = 8
+woodNeed, homeStock, canCraft = 0, {}, false
+function isWoodBlock(name) return isLog(name) or isPlanks(name) end
+
+-- What's followed like a vein and fetched when a scan shows it: ore, and
+-- wood while it's wanted.
+function isTarget(data) return isOre(data) or (woodNeed > 0 and isWoodBlock(data.name)) end
+
+-- Work out woodNeed again: from the home's chest too when `atHome` (it's
+-- at its working home), else from what it carries and homeStock.
+function updateWoodNeed(atHome)
+    if atHome then
+        homeStock = chestCounts(home.val)
+        canCraft = (homeStock[CRAFTING_TABLE] or 0) > 0 or T.equipped("left") == CRAFTING_TABLE
+            or T.equipped("right") == CRAFTING_TABLE
+    end
+    local planks, chests, onBoard = 0, 0, false
+    local function add(name, n)
+        if isLog(name) then planks = planks + 4 * n
+        elseif isPlanks(name) then planks = planks + n
+        elseif name == STICK then planks = planks + n / 2
+        elseif CHEST_ITEMS[name] then chests = chests + n
+        elseif name == CRAFTING_TABLE then onBoard = true end
+    end
+    for name, n in pairs(homeStock) do add(name, n) end
+    for sl = 1, 16 do
+        local it = turtle.getItemDetail(sl)
+        if it then add(it.name, it.count) end
+    end
+    woodNeed = (canCraft or onBoard) and math.max(0, WOOD_HOMES * 18 - 8 * chests - planks) or 0
+end
+
 -- Diamonds and coal a scan shows are mined however far out, as long as
 -- they're in the scan, and their veins followed to the end: diamonds for
--- their worth, coal because the turtle runs on it.
-function goesFar(name) return name:find("diamond") ~= nil or name:find("coal") ~= nil end
+-- their worth, coal because the turtle runs on it, and wood while it's
+-- wanted, for chests and torches.
+function goesFar(name)
+    return name:find("diamond") ~= nil or name:find("coal") ~= nil or (woodNeed > 0 and isWoodBlock(name))
+end
 
 --------------------------------------------------------------------------
 -- Homes.  Home 0 is the start: valuables chest above, bulk below.  Home
@@ -520,7 +568,8 @@ trail = {}           -- directions moved out of the tunnel into a vein
 inTrip = false
 fuelGoal = 0
 fillerKeep = FILLER_KEEP  -- FILLER_KEEP_WET once water has used it up
-stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, relit = 0, homes = 0, fetched = 0, wet = 0 }
+stats = { veins = 0, ore = 0, sealed = 0, filled = 0, torches = 0, relit = 0, homes = 0, fetched = 0, wet = 0,
+          wood = 0 }
 -- From the Geo Scanner (see there): the world direction of the tunnel's +z
 -- once lined up, this segment's blocks touching the tunnel ("rock",
 -- "ore", "fluid" or "air"), and its ore further out.
@@ -876,7 +925,7 @@ function clearCell(d)
         room()                     -- first: a trip changes what's there
         local ok, data = look(d)
         if not ok then break end
-        if isOre(data) then mineVein(d); break end
+        if isTarget(data) then mineVein(d); break end
         if FLUID[data.name] then
             if digLimit then break end
             dry(d)
@@ -897,7 +946,7 @@ function examine(d)
     if opened[key(n)] or not inReach(n) then return end
     local ok, data = look(d)
     if not ok then opened[key(n)] = true
-    elseif isOre(data) then mineVein(d)
+    elseif isTarget(data) then mineVein(d)
     elseif leaky(data) then seal(d)
     end
 end
@@ -913,6 +962,10 @@ function mineVein(d)
     if #trail == 0 then stats.veins = stats.veins + 1 end
     if not go(d) then return end
     stats.ore = stats.ore + 1
+    if ok0 and isWoodBlock(data0.name) then
+        stats.wood = stats.wood + 1
+        updateWoodNeed(false)              -- (enough now: it stops seeking it)
+    end
     trail[#trail + 1] = d
     -- Look round, the fewest turns away first; not where a scan saw
     -- neither ore nor fluid (no turning to look at plain rock).
@@ -933,7 +986,7 @@ function mineVein(d)
         local e = table.remove(todo, best)
         local ok, data = look(e)
         if not ok then opened[key(neighbour(e))] = true
-        elseif isOre(data) and (near or goesFar(data.name)) then mineVein(e)
+        elseif isTarget(data) and (near or goesFar(data.name)) then mineVein(e)
         elseif FLUID[data.name] or waterIn(data) then seal(e); wet = true
         end
     end
@@ -1019,6 +1072,7 @@ function restockKit()
             end
         end
     end
+    updateWoodNeed(true)
 end
 
 -- Put what the turtle carries in the home's chests: bulk in the bulk
@@ -1895,7 +1949,7 @@ function record(blocks, z1, z2, toCell)
         local k = key(p)
         seen[k] = true
         local data = { name = e.name, tags = tagSet(e.tags), state = e.state }
-        local kind = isOre(data) and "ore" or (leaky(data) and "fluid") or "rock"
+        local kind = isTarget(data) and "ore" or (leaky(data) and "fluid") or "rock"
         if kind ~= "rock" then scanned[k] = kind end
         local out = outside(p)
         if out == 1 then known[k] = kind end
@@ -1989,12 +2043,12 @@ function fetchTargets(which)
             if opened[key(t)] then break end
             if dist(T.pos, t) <= 1 then
                 local ok, data = look(dirTo(t))
-                if ok and isOre(data) then mineVein(dirTo(t)) end
+                if ok and isTarget(data) then mineVein(dirTo(t)) end
                 break
             end
             local d = stepToward(t)
             local ok, data = look(d)
-            if ok and isOre(data) then mineVein(d)
+            if ok and isTarget(data) then mineVein(d)
             elseif ok and FLUID[data.name] and not seal(d) then break end
             if not go(d) then break end
             trail[#trail + 1] = d
@@ -2722,7 +2776,8 @@ print(string.format("%s: %d homes built, %d veins (%d ore blocks), %d fluid bloc
     stopped and "Stopped" or "Done", stats.homes, stats.veins, stats.ore, stats.sealed, stats.filled,
     lights and (", " .. stats.torches .. " torches placed"
         .. (stats.relit > 0 and (" (" .. stats.relit .. " put back after digging knocked them off)") or "")) or "",
-    hasScanner and (", " .. stats.fetched .. " deposits fetched from further out") or ""))
+    hasScanner and (", " .. stats.fetched .. " deposits fetched from further out") or "")
+    .. (stats.wood > 0 and string.format(" Dug %d blocks of wood for chests and torches.", stats.wood) or ""))
 for _, k in ipairs(T.sortedKeys(leftBehind)) do
     print(string.format("No room to bring back %d items from home %d (z=%d).", leftBehind[k], k, homeAt(k).z))
 end

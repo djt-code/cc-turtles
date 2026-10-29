@@ -909,3 +909,51 @@ check("back at the start", atStart())
 check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
 check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
 check("job done", jobState() == "done", tostring(jobState()))
+
+-- 16. wood: with a crafting table and few chests it seeks wood as it does
+--     coal: a line of logs out of the left wall is followed to its end,
+--     past the reach of an ordinary vein (no scanner), and with a scanner
+--     logs that don't touch the tunnel are fetched.  Without a table, or
+--     with chests enough for many homes, the logs are left
+local function woodWorld(chests, withTable, withScanner)
+    local st = stock(chests, 64, 16)
+    if withTable then st[#st + 1] = { name = "minecraft:crafting_table", count = 1 } end
+    if withScanner then st[#st + 1] = { name = SCANNER, count = 1 } end
+    setup(st)
+    for x = -1, -7, -1 do set(x, 1, 5, { name = "minecraft:oak_log" }) end   -- 7 out of the left wall
+    set(-6, 0, 9, { name = "minecraft:spruce_log" }); set(-6, 1, 9, { name = "minecraft:spruce_log" })  -- 6 out, apart
+    startAt(); Mine.inv, Mine.files = {}, {}
+    EQ = { left = "advancedperipherals:chunk_controller", right = "minecraft:diamond_pickaxe" }
+    FUEL, DRY, SPILLED, SCANS = 2000, 0, 0, 0
+    run("3", "3", "12")
+end
+local function logsLeft(name, cells)
+    local n = 0
+    for _, c in ipairs(cells) do if (get(c[1], c[2], c[3]) or {}).name == name then n = n + 1 end end
+    return n
+end
+local LINE = {}
+for x = -1, -7, -1 do LINE[#LINE + 1] = { x, 1, 5 } end
+local APART = { { -6, 0, 9 }, { -6, 1, 9 } }
+
+woodWorld(4, true, false)
+local _, top = contents(chestAt(0, 1, 0))
+check("table, 4 chests, no scanner: followed the logs out of the wall to the end, 7 out",
+    logsLeft("minecraft:oak_log", LINE) == 0 and (top["minecraft:oak_log"] or 0) >= 7,
+    logsLeft("minecraft:oak_log", LINE) .. " left, " .. (top["minecraft:oak_log"] or 0) .. " in the start chest")
+check("and without a scanner, nothing it didn't touch", logsLeft("minecraft:spruce_log", APART) == 2)
+check("said how much wood it dug", logHas("Dug %d+ blocks of wood"))
+check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
+
+woodWorld(4, true, true)
+check("with a scanner: fetched the logs that don't touch the tunnel too",
+    logsLeft("minecraft:spruce_log", APART) == 0 and logsLeft("minecraft:oak_log", LINE) == 0,
+    logsLeft("minecraft:spruce_log", APART) .. " spruce, " .. logsLeft("minecraft:oak_log", LINE) .. " oak left")
+
+woodWorld(4, false, true)
+check("no crafting table: no wood sought, the logs stay",
+    logsLeft("minecraft:oak_log", LINE) == 7 and logsLeft("minecraft:spruce_log", APART) == 2)
+
+woodWorld(64, true, true)
+check("chests enough for many more homes: no wood sought",
+    logsLeft("minecraft:oak_log", LINE) == 7 and logsLeft("minecraft:spruce_log", APART) == 2)
