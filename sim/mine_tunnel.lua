@@ -657,6 +657,39 @@ check("followed the flow to the wall and sealed it: no water in the tunnel",
     spread > 5 and left == 0 and not isWater(get(3, 0, 26)), spread .. " floor blocks wet before, " .. left .. " after")
 check("finished", logHas("^Done"))
 
+-- 13k. resumed from the start, out to home 2 through a lit tunnel: the
+--      torch at z=29 is gone (its niche empty), and water pours in through
+--      a hole in the ceiling at the far side (x=2, z=22), out of sight of
+--      the home's lane, flooding the tunnel and washing away the torch at
+--      z=10.  On the way out it follows the water up to the hole and seals
+--      it, and once the water's gone puts both torches back
+dugTunnel()
+Mine.files["mine.job"] = "3 3 40 16 2 active"
+for _, it in ipairs(stock(2, 64, 16)) do table.insert(chestAt(0, 1, 0), it) end
+table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 })
+set(-1, 0, 10, { name = "minecraft:torch", on = "-2,0,10" }); set(-1, 0, 29, nil)
+set(2, 3, 22, { name = "minecraft:water", level = 0 })
+WATERY = true
+flow(2, 3, 22)
+settleWater()
+local wetBefore = 0
+for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then wetBefore = wetBefore + 1 end end end end
+startAt()
+Mine.files[".turtlepos"] = "0 0 0 0 flat"
+FUEL = 3000
+run("--resume")
+WATERY = false
+local wetAfter = 0
+for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then wetAfter = wetAfter + 1 end end end end
+check("said it's going over the tunnel on the way out", logHas("going over the tunnel for water getting in and lights out"))
+check("both torches back, once the water was sealed off",
+    (get(-1, 0, 29) or {}).name == "minecraft:torch" and (get(-1, 0, 10) or {}).name == "minecraft:torch")
+checkLight(0, 2, -1, 1, 40)
+check("followed the water to the hole in the ceiling and sealed it",
+    wetBefore > 5 and wetAfter == 0 and not isWater(get(2, 3, 22)), wetBefore .. " tunnel blocks wet before, " .. wetAfter .. " after")
+check("finished", logHas("^Done"))
+check("back at the start", atStart())
+
 -- 13g. dug already, with waterlogged glow lichen in the right wall at
 --      floor level near z=24, its water spread along the floor: `mine
 --      reset --home 1` and `mine --resume` go over the segment, follow

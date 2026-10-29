@@ -73,7 +73,11 @@
 --    the way, the most valuable first when it can't carry them all, and
 --    leaves them in the top chest at the start.  Supplies stay in the last
 --    home, so `mine --resume` can carry on from there (bringing any new
---    chests and fuel from the start's top chest with it).
+--    chests and fuel from the start's top chest with it).  On that walk
+--    out it goes over each segment as when resuming from an earlier home:
+--    along the floor by the lit wall, putting back any torch that's
+--    missing, and following any water it meets to where it gets in and
+--    sealing that (then lighting what the water kept dark).
 --  * Fuel: the tank always keeps enough to get back to the start; the
 --    turtle refuels from each home's chest, and coal it mines lands there.
 --    It only burns coal, charcoal and the like, never wood or chests.
@@ -1101,9 +1105,10 @@ end
 -- Take supplies (chests and fuel) from the home's valuables chest while
 -- there's room, leaving a stock of FUEL_STOCK fuel items in every home but
 -- the start, so there's fuel along the tunnel for a resume from any home
--- (and the next tunnel's turtle).  Returns how many it took, and whether
--- any are left to come back for (the stock doesn't count).
-function takeSupplies()
+-- (and the next tunnel's turtle).  `room`: slots to leave free (1).
+-- Returns how many it took, and whether any are left to come back for
+-- (the stock doesn't count).
+function takeSupplies(room)
     local took, stock = 0, home.k > 0 and FUEL_STOCK or 0
     local counts = chestCounts(home.val)
     local function leaveOf(name, n)
@@ -1118,7 +1123,7 @@ function takeSupplies()
             local want = n - leaveOf(name, n)
             if want > 0 then
                 local before = T.countItem(name)
-                T.restockFrom(home.val, name, before + want, { quiet = true, room = 1 })
+                T.restockFrom(home.val, name, before + want, { quiet = true, room = room or 1 })
                 took = took + T.countItem(name) - before
             end
         end
@@ -1655,6 +1660,7 @@ function lightHere()
     if wetAt == key(T.pos) then
         if not stopFlow(math.max(1, wetLevel or 1)) then
             print("Water's flowing at " .. T.posString() .. "; no torch there for now.")
+            unlit[key(T.pos)] = here()     -- (relight comes back once the water's seen to)
             return
         end
         wetAt = nil
@@ -1682,10 +1688,10 @@ end
 -- placed, going back along the tunnel to each (in order along it).  A
 -- scan's fetch can go through a niche lit before the scan, and a vein
 -- through the block a torch rests on.
+unlit = {}           -- key -> where lightHere left a torch out for flowing water
 function relight()
     local list = {}
     for t in pairs(broken) do list[#list + 1] = t end
-    if #list == 0 then return end
     table.sort(list, function(a, b)
         if a.at.z ~= b.at.z then return a.at.z < b.at.z end
         return key(a.at) < key(b.at)
@@ -1702,6 +1708,16 @@ function relight()
                 print("Couldn't put the torch back at " .. T.posString() .. "; carrying on.")
             end
         end
+    end
+    -- and the torches left out while water flowed there, now it's sealed
+    -- off (once more each: still flowing, it's left for next time)
+    local spots = {}
+    for _, p in pairs(unlit) do spots[#spots + 1] = p end
+    table.sort(spots, function(a, b) return a.z ~= b.z and a.z < b.z or key(a) < key(b) end)
+    unlit = {}
+    for _, p in ipairs(spots) do
+        alongAxis("y", p.y); alongAxis("x", p.x); alongAxis("z", p.z)
+        if T.at(p) then lightHere() end
     end
 end
 
@@ -2107,9 +2123,12 @@ end
 -- one of them; if the middle one's floor isn't dug yet, another of the
 -- three that is), checking the floor too, then, if that found any, along
 -- all its other lanes.  Water it finds is getting in,
--- so it follows it to where it comes in and seals that (see dry); torches
--- washed away are put back.  Nothing else is looked at again.  `done`
--- picks the lanes dug before (nil: all).
+-- so it follows it to where it comes in and seals that (see dry).  With
+-- lights, the first walk goes along the floor by the lit wall (both, in a
+-- tunnel lit from both) instead of that group's middle, and every torch
+-- missing there is put back (or put in, where there never was one).
+-- Nothing else is looked at again.  `done` picks the lanes dug before
+-- (nil: all).  It ends at `home`.
 function repair(z1, z2, done)
     local lanes = planLanes()
     repairing = true
@@ -2137,7 +2156,12 @@ function repair(z1, z2, done)
     end
     local middle = {}
     for g = 0, xn - 1, 3 do                -- each three columns: the middle, else a side
-        for _, c in ipairs({ g + 1, g, g + 2 }) do
+        local order = { g + 1, g, g + 2 }
+        if lights and g == 0 then order = { 0, 1, 2 }                -- the wall torches are on
+        elseif lights and torchWalls == 2 and g + 2 >= xn - 1 then  -- and the far wall's
+            order = { xn - 1, g + 1, g }
+        end
+        for _, c in ipairs(order) do
             if c <= xn - 1 and floorDug[c * xs] then middle[c * xs] = true; break end
         end
     end
@@ -2147,6 +2171,7 @@ function repair(z1, z2, done)
     if stats.wet > before then walk(function(lane) return not first(lane) end) end
     unplug()
     repairing = false
+    relight()                              -- torches left out while water flowed
     tunnelHome()
 end
 
@@ -2616,10 +2641,19 @@ T.withTool(pickaxe, function()
             -- the tank for it from the start's chest first
             T.refuelFrom(home.val, 2 * last.z + T.cfg.fuelMargin + FUEL_WORK)
             if not fuelToGoOn(2 * last.z) then stop("Not enough fuel to get back out to home " .. last.k .. ".") end
-            inTrip, repairing = true, true  -- through tunnel dug before: water there is getting in
-            takeSupplies()
-            alongAxis("z", 1); alongAxis("z", last.z)
-            repairing = false
+            -- on the way, each segment is gone over as when resuming from
+            -- an earlier home: water in it is followed to where it gets in
+            -- and sealed, and missing torches put back (room left for
+            -- what that digs)
+            inTrip = true
+            takeSupplies(ROOM + 2)
+            print(string.format("Out to home %d, going over the tunnel for water getting in%s.", last.k,
+                lights and " and lights out" or ""))
+            for k = 0, last.k - 1 do
+                local from = homeAt(k)
+                home = homeAt(k + 1)               -- (repair ends at home)
+                repair(from.z + 1, home.z)
+            end
             T.face(last.face)
             if not (containerOn("front") and containerOn(last.bulk)) then
                 stop("Home " .. last.k .. "'s chests are missing.")

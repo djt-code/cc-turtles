@@ -666,6 +666,12 @@ recognise. Needs a pickaxe, equipped or in the inventory.
 - **Resume:** supplies left over stay in the last home. After a stop, top up
   the start's top chest with chests and fuel and run `mine --resume`. It
   carries the new supplies out to the last home and carries on from there.
+  On the way out it goes over each segment for repairs, as it does when
+  resuming from an earlier home: it walks the floor along the lit wall,
+  putting back any torch that's missing, and any water it meets (flowing or
+  a source) it follows to where it gets into the tunnel and seals there.
+  A torch spot that's under flowing water is lit once the water is sealed
+  off.
   Run from the last home (where `mine reset` leaves it), it just carries on
   from there. It keeps a log of how far it got with the segment it's
   digging (`mine.seg`: the lane, and the block along it), so it carries on
