@@ -16,13 +16,18 @@
 --   a ; b   a && b   a || b   ! a      and a newline is a ;
 --   'single' "double" \x  quoting; # starts a comment.  A line ending in
 --                         \, |, &&, || or inside quotes goes on to the next.
---   X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $0
+--   X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $! $0
 --                         variables.  $PATH is the shell's path (setting
 --                         it changes the path), $PWD its directory and
 --                         $HOSTNAME the computer's label (its ID if it
---                         has none).  CraftOS has no environment, so
---                         programs can't see variables and X=1 cmd
---                         ignores the X=1.
+--                         has none).  $! is the last & job's process ID.
+--   export X  X=1 cmd     the environment.  Programs read it with
+--                         os.getenv("X") (and change their own copy with
+--                         os.setenv(name, value), list it with
+--                         os.environ()): the exported variables, PATH and
+--                         PWD, and for one command its own X=1 words.  A
+--                         Craftix run from Craftix starts with them as
+--                         exported variables; `env` shows them.
 --   PS1                   the prompt: "label:/dir$ " ("/dir$ " with no
 --                         label), or $PS1 with \h (label, or ID), \w (the
 --                         directory), \W (its last part), \i (the ID),
@@ -34,15 +39,35 @@
 --                         (disk*, not *).
 --                         No match leaves the word as is.
 --   $(cmd)  `cmd`         command substitution.
---   builtins              exit [n], :, true, false, read [-r] name...,
---                         shift [n], unset name..., export name=value...,
---                         . file
+--   a &                   a background job: the line goes on while it
+--                         runs.  It gets its own copy of the variables
+--                         and every event but the keyboard's and the
+--                         mouse's.  At the prompt, Ctrl+Z stops the job
+--                         in front (a stopped job keeps the events it
+--                         misses for later).
+--   jobs [-l|-p]          the jobs: [1]+ Running  sleep 10 &
+--   fg [%n]  bg [%n]      a job to the front (waiting for it), or a
+--                         stopped one carried on in the background.  %n
+--                         is job n; %% or %+ the latest, %- the one
+--                         before, %str the one whose line starts so.
+--   fg prog  bg prog      as CraftOS's fg and bg: prog in a new multishell
+--                         tab (shown, for fg), with the environment.
+--   wait [%n|pid...]      wait for jobs (all, with none named); their
+--                         status.  Ctrl+T stops waiting.
+--   kill [-9] %n|pid...   end a job as Ctrl+T would; -9 drops it at once.
+--   builtins              also exit [n], :, true, false, read [-r] name...,
+--                         shift [n], unset name..., . file,
+--                         export [-n] name[=value]... and export -p
 --
--- Not yet: if/while/for/case, functions, & (background), ( subshells ),
--- here-documents, $(( arithmetic )), ~.
+-- Not yet: if/while/for/case, functions, ( subshells ), here-documents,
+-- $(( arithmetic )), ~.
 --
--- Leave with exit, or by holding Ctrl+T at the prompt.  Ctrl+T while a
--- command runs stops it, and the rest of the line, with status 130.
+-- At the prompt, Craftix first runs the commands in /.profile (PS1,
+-- export...), as `. /.profile` would.  Leave with exit, or by holding
+-- Ctrl+T at the prompt; with jobs left, the first try only warns, and the
+-- jobs end with the shell.  Ctrl+T while a command runs stops it, and the
+-- rest of the line, with status 130.  A script or -c waits for its
+-- background jobs before it ends: they can't outlive it.
 --
 -- A script can start with #!/cc-turtles/bin/craftix (the stock shell honours
 -- the #! line), or run as `craftix script`.
@@ -67,12 +92,62 @@ local ioMeta = getmetatable(io.stdout)
 local function handle(h) return setmetatable({ _handle = h }, ioMeta) end
 
 local TTY = {}                       -- an fd that is left as it is
-local vars, pos, arg0 = {}, {}, "craftix"
-local status = 0                     -- $?
-local subStatus = nil                -- the last $(...)'s status
-local exiting = false                -- exit ran
-local interrupted = false            -- Ctrl+T stopped a command: skip the rest
-local defaultOut = nil               -- where commands write, inside $(...)
+
+-- The shell's state.  A background job runs in its own copy of it, as a
+-- subshell would: its $?, variables and exports are its own.
+local P = {
+    vars = {},                       -- the variables
+    exported = {},                   -- the names in programs' environment
+    pos = {}, arg0 = "craftix",      -- $1..., $0
+    status = 0,                      -- $?
+    subStatus = nil,                 -- the last $(...)'s status
+    exiting = false,                 -- exit ran
+    interrupted = false,             -- Ctrl+T stopped a command: skip the rest
+    defaultOut = nil,                -- where commands write, inside $(...)
+    lastBg = nil,                    -- $!
+}
+local mainP = P
+
+local function copy(t)
+    local c = {}
+    for k, v in pairs(t) do c[k] = v end
+    return c
+end
+
+local function cloneState(s)
+    local c = copy(s)
+    c.vars, c.exported, c.pos = copy(s.vars), copy(s.exported), copy(s.pos)
+    return c
+end
+
+-- What os.getenv, os.setenv and os.environ were when Craftix started:
+-- CraftOS has none, but a Craftix that runs another gives it its own.
+-- A command's are put in only while it runs, like its io.
+local sys = { getenv = rawget(os, "getenv"), setenv = rawget(os, "setenv"), environ = rawget(os, "environ") }
+if sys.environ then
+    for k, v in pairs(sys.environ()) do
+        if k ~= "PATH" and k ~= "PWD" then P.vars[k], P.exported[k] = v, true end
+    end
+end
+
+-- The functions a program gets over its environment `env`.
+local function envApi(env)
+    -- with a system getenv that can't list its names, ask it for the rest
+    local fallback = not sys.environ and sys.getenv
+    return {
+        getenv = function(name)
+            if type(name) ~= "string" then error("bad argument #1 (string expected, got " .. type(name) .. ")", 2) end
+            local v = env[name]
+            if v == nil and fallback then return fallback(name) end
+            return v
+        end,
+        setenv = function(name, value)
+            if type(name) ~= "string" or not name:match("^[^=]+$") then error("bad argument #1 (a name expected)", 2) end
+            env[name] = value ~= nil and tostring(value) or nil
+        end,
+        environ = function() return copy(env) end,
+    }
+end
 
 local function join(...)
     local t = table.pack(...)
@@ -236,17 +311,17 @@ local OPS1 = { ["|"] = true, [";"] = true, ["&"] = true, ["<"] = true, [">"] = t
 
 -- Tokens: { parts = word } or { op = "|", fd = n (2>), nl = true (a newline) }.
 local function lex(src)
-    local toks, parts = {}, nil
+    local toks, parts, start = {}, nil, nil
     local i, n = 1, #src
     local function part(p)
-        parts = parts or {}
+        if not parts then parts, start = {}, i end
         local last = parts[#parts]
         if p.t == "lit" and last and last.t == "lit" and last.q == p.q then last.s = last.s .. p.s
         else parts[#parts + 1] = p end
     end
     local function lit(s, q) part({ t = "lit", s = s, q = q }) end
     local function finish()
-        if parts then toks[#toks + 1] = { parts = parts }; parts = nil end
+        if parts then toks[#toks + 1] = { parts = parts, s = start, e = i - 1 }; parts = nil end
     end
     -- the $ at i; returns where it ends
     local function dollar(q)
@@ -260,12 +335,12 @@ local function lex(src)
             local e = src:find("}", i + 2, true) or bad("unterminated ${", true)
             local inner = src:sub(i + 2, e - 1)
             local name, def = inner:match("^([%a_][%w_]*)(.*)$")
-            if not name then name, def = inner:match("^([%d%?#@%*%$])(.*)$") end
+            if not name then name, def = inner:match("^([%d%?#@%*%$!])(.*)$") end
             if not name or (def ~= "" and def:sub(1, 2) ~= ":-") then bad("bad substitution ${" .. inner .. "}") end
             part({ t = "var", name = name, def = def ~= "" and def:sub(3) or nil, q = q })
             return e + 1
         end
-        local name = src:match("^[%a_][%w_]*", i + 1) or src:match("^[%d%?#@%*%$]", i + 1)
+        local name = src:match("^[%a_][%w_]*", i + 1) or src:match("^[%d%?#@%*%$!]", i + 1)
         if not name then lit("$", q); return i + 1 end
         part({ t = "var", name = name, q = q })
         return i + 1 + #name
@@ -284,7 +359,7 @@ local function lex(src)
     while i <= n do
         local c = src:sub(i, i)
         if c == " " or c == "\t" then finish(); i = i + 1
-        elseif c == "\n" then finish(); toks[#toks + 1] = { op = ";", nl = true }; i = i + 1
+        elseif c == "\n" then finish(); toks[#toks + 1] = { op = ";", nl = true, s = i, e = i }; i = i + 1
         elseif c == "#" and not parts then i = src:find("\n", i, true) or n + 1
         elseif c == "\\" then
             if i == n then bad("", true) end            -- the line goes on
@@ -319,7 +394,7 @@ local function lex(src)
                     fd, parts = tonumber(parts[1].s), nil
                 end
                 finish()
-                toks[#toks + 1] = { op = op, fd = fd }
+                toks[#toks + 1] = { op = op, fd = fd, s = i, e = i + #op - 1 }
                 i = i + #op
             else
                 lit(c, false)
@@ -349,7 +424,6 @@ local function parse(src)
         local t = toks[i]
         if not t then bad("unexpected end of line", true) end
         if t.op == "(" or t.op == ")" then bad("( ) subshells aren't supported") end
-        if t.op == "&" then bad("& (background jobs) isn't supported") end
         bad("unexpected " .. (t.nl and "newline" or t.op))
     end
     local function command()
@@ -396,11 +470,14 @@ local function parse(src)
         end
         return p
     end
+    -- an and-or list ended by & runs in the background (ao.bg); ao.text is
+    -- its source, for jobs
     local list = {}
     while toks[i] do
         if op(";") then
             i = i + 1
         else
+            local first = toks[i]
             local ao = { { pipe = pipeline() } }
             while op("&&", "||") do
                 local o = op("&&", "||")
@@ -408,9 +485,12 @@ local function parse(src)
                 newlines()
                 ao[#ao + 1] = { conn = o, pipe = pipeline() }
             end
+            ao.text = src:sub(first.s, toks[i - 1].e)
             list[#list + 1] = ao
             if toks[i] then
-                if op(";") then i = i + 1 else unexpected() end
+                if op("&") then ao.bg = true; i = i + 1
+                elseif op(";") then i = i + 1
+                else unexpected() end
             end
         end
     end
@@ -423,33 +503,49 @@ end
 local runSource
 
 local function getVar(name)
-    if name == "?" then return tostring(status)
-    elseif name == "#" then return tostring(#pos)
+    if name == "?" then return tostring(P.status)
+    elseif name == "#" then return tostring(#P.pos)
     elseif name == "$" then return tostring(os.getComputerID())
-    elseif name == "0" then return arg0
-    elseif name:match("^%d$") then return pos[tonumber(name)] or ""
-    elseif name == "@" or name == "*" then return pos, true
+    elseif name == "0" then return P.arg0
+    elseif name:match("^%d$") then return P.pos[tonumber(name)] or ""
+    elseif name == "@" or name == "*" then return P.pos, true
     elseif name == "PATH" then return shell.path()
     elseif name == "PWD" then return "/" .. shell.dir()
     elseif name == "HOSTNAME" then
         return os.getComputerLabel and os.getComputerLabel() or tostring(os.getComputerID())
+    elseif name == "!" then return P.lastBg and tostring(P.lastBg) or ""
     end
-    return vars[name] or ""
+    local v = P.vars[name]
+    if v == nil and sys.getenv and not sys.environ then v = sys.getenv(name) end
+    return v or ""
 end
 
 local function setVar(name, v)
     if name == "PATH" then shell.setPath(v)
-    elseif name ~= "PWD" then vars[name] = v end
+    elseif name ~= "PWD" then P.vars[name] = v end
+end
+
+-- The environment a command gets: the exported variables, PATH and PWD,
+-- and the command's own NAME=value words.
+local function processEnv(assigns)
+    local env = {}
+    for name in pairs(P.exported) do
+        local v = name == "HOSTNAME" and getVar(name) or P.vars[name]
+        if v ~= nil then env[name] = v end
+    end
+    env.PATH, env.PWD = shell.path(), "/" .. shell.dir()
+    for _, a in ipairs(assigns or {}) do env[a.name] = a.value end
+    return env
 end
 
 -- What $(src) writes, trailing newlines dropped.
 local function substitute(src)
     local buf = buffer()
-    local out, ex = defaultOut, exiting
-    defaultOut = buf
+    local out, ex = P.defaultOut, P.exiting
+    P.defaultOut = buf
     runSource(src)
-    defaultOut, exiting = out, ex
-    subStatus = status
+    P.defaultOut, P.exiting = out, ex
+    P.subStatus = P.status
     return (buf.text():gsub("\n+$", ""))
 end
 
@@ -621,12 +717,14 @@ local function enter(ctx)
     local o = {
         term = term.redirect(ctx.term), input = io.input(), output = io.output(), stderr = io.stderr,
         write = _G.write, printError = _G.printError, read = _G.read, kb = kb.readLine, sh = _G.POSIX_SH,
+        getenv = rawget(os, "getenv"), setenv = rawget(os, "setenv"), environ = rawget(os, "environ"),
     }
     io.input(ctx.input)
     io.output(ctx.output)
     io.stderr = ctx.stderr
     _G.write, _G.printError, _G.read, kb.readLine = ctx.write, ctx.printError, ctx.read, ctx.kb
     _G.POSIX_SH = "craftix"
+    os.getenv, os.setenv, os.environ = ctx.env.getenv, ctx.env.setenv, ctx.env.environ
     return o
 end
 
@@ -638,6 +736,7 @@ local function leave(ctx, o)
     io.output(o.output)
     io.stderr = o.stderr
     _G.write, _G.printError, _G.read, kb.readLine, _G.POSIX_SH = o.write, o.printError, o.read, o.kb, o.sh
+    os.getenv, os.setenv, os.environ = o.getenv, o.setenv, o.environ
 end
 
 -- Run fn(...) as a coroutine, its context installed only while it runs
@@ -665,6 +764,277 @@ local function report(fd2, s)
     if fd2 ~= TTY and fd2.raw then fd2.raw(s .. "\n") else printError(s) end
 end
 
+--------------------------------------------------------------------------
+-- Jobs
+--------------------------------------------------------------------------
+-- Every command line runs as a job: a coroutine that run() below hands
+-- events to, with its shell state swapped into P while it runs.  The
+-- foreground job gets the keyboard, the mouse and Ctrl+T; background jobs
+-- (a &) get everything else (timers, rednet, redstone...).  At the prompt,
+-- Ctrl+Z stops the foreground job; a stopped job keeps the events it
+-- misses (up to 256) for when fg or bg starts it again.
+local jobs = {}                      -- the numbered jobs: background, stopped, or done and not yet said
+local waiters = {}                   -- jobs blocked in fg or wait
+local jobControl = false             -- Ctrl+Z: only at the prompt
+local REQ, INTR = {}, {}             -- a builtin's yield to run(); what wakes it on Ctrl+T or kill
+local nextPid, touches, ctrlDown = 1, 0, false
+local runAndOr
+
+local USER = { char = true, key = true, key_up = true, paste = true, terminate = true,
+    mouse_click = true, mouse_up = true, mouse_scroll = true, mouse_drag = true }
+
+local function newJob(fn, state, text)
+    return { co = coroutine.create(fn), P = state, text = text, state = "running", queue = {} }
+end
+
+-- Resume j with ...; it ends ("done", j.status), waits for an event
+-- (j.filter) or blocks in fg or wait (j.req).
+local function step(j, ...)
+    if coroutine.status(j.co) ~= "suspended" then return end
+    local saved = P
+    P = j.P
+    local r = table.pack(coroutine.resume(j.co, ...))
+    P = saved
+    if coroutine.status(j.co) == "dead" then
+        j.state = "done"
+        if r[1] then j.value, j.status = r[2], type(r[2]) == "number" and r[2] or 0
+        else printError("craftix: " .. tostring(r[2])); j.status = 1 end
+    elseif r[2] == REQ then
+        j.req, j.filter, waiters[j] = r[3], nil, true
+    else
+        j.filter = r[2]
+    end
+end
+
+local function touch(j) touches = touches + 1; j.touched = touches end
+
+-- Give j a number (and a process ID, for $! and kill).
+local function addJob(j)
+    if j.id then return end
+    local n = 0
+    for _, o in ipairs(jobs) do n = math.max(n, o.id) end
+    j.id, j.pid, nextPid = n + 1, nextPid, nextPid + 1
+    jobs[#jobs + 1] = j
+end
+
+local function removeJob(j)
+    for k, o in ipairs(jobs) do
+        if o == j then table.remove(jobs, k); return end
+    end
+end
+
+-- %+ and %-: the jobs most recently started, stopped or moved.
+local function marks()
+    local cur, prev
+    for _, j in ipairs(jobs) do
+        if not cur or j.touched > cur.touched then cur, prev = j, cur
+        elseif not prev or j.touched > prev.touched then prev = j end
+    end
+    return cur, prev
+end
+
+-- "[1]+ Running  sleep 10 &", as jobs shows it; long: with the process ID.
+local function describe(j, long)
+    local cur, prev = marks()
+    local st = j.state == "running" and "Running" or j.state == "stopped" and "Stopped"
+        or j.killed and "Killed" or j.signalled and "Terminated"
+        or j.status == 0 and "Done" or "Exit " .. tostring(j.status)
+    return ("[%d]%s %s%-8s %s%s"):format(j.id, j == cur and "+" or j == prev and "-" or " ",
+        long and (j.pid .. " ") or "", st, j.text, j.state == "running" and " &" or "")
+end
+
+-- %1, %%, %+, %-, %name (a job whose line starts so) or a number: a
+-- process ID if pids, else a job number.
+local function findJob(spec, pids)
+    local cur, prev = marks()
+    if spec == nil or spec == "%" or spec == "%%" or spec == "%+" then return cur end
+    if spec == "%-" then return prev end
+    local n = spec:match("^%%(%d+)$") or not pids and spec:match("^(%d+)$")
+    for _, j in ipairs(jobs) do if n and j.id == tonumber(n) then return j end end
+    n = spec:match("^(%d+)$")
+    for _, j in ipairs(jobs) do if n and j.pid == tonumber(n) then return j end end
+    local pre = spec:match("^%%(.+)$")
+    for _, j in ipairs(jobs) do if pre and j.text:sub(1, #pre) == pre then return j end end
+end
+
+local function isJobSpec(s) return s:sub(1, 1) == "%" or s:match("^%d+$") ~= nil end
+
+-- Ctrl+Z: stop j.  A line typed at the prompt gets its own state from
+-- here on, so the shell's carries on without it.
+local function stop(j)
+    if j.state ~= "running" then return end
+    j.state = "stopped"
+    if j.P == mainP then
+        j.P = cloneState(mainP)
+        mainP.defaultOut, mainP.interrupted, mainP.exiting = nil, false, false
+    end
+    addJob(j)
+    touch(j)
+    print()
+    print(describe(j))
+end
+
+-- fg, bg: start stopped j again, with the events it missed.
+local function continue(j)
+    if j.state ~= "stopped" then return end
+    j.state = "running"
+    local missed = j.queue
+    j.queue = {}
+    for _, ev in ipairs(missed) do
+        if j.state == "running" and not j.req and (j.filter == nil or j.filter == ev[1]) then
+            step(j, table.unpack(ev, 1, ev.n))
+        end
+    end
+end
+
+-- Ctrl+T or kill for j: wakes a wait or fg, or stops its command.
+local function signal(j)
+    if j.state == "done" then return end
+    j.state = "running"
+    j.queue = {}
+    if j.req then j.req, waiters[j] = nil, nil; step(j, INTR) else step(j, "terminate") end
+end
+
+local function deliver(j, ev)
+    if j.state == "stopped" then
+        if #j.queue < 256 then j.queue[#j.queue + 1] = ev end
+    elseif j.state == "running" and not j.req and (j.filter == nil or j.filter == ev[1] or ev[1] == "terminate") then
+        step(j, table.unpack(ev, 1, ev.n))
+    end
+end
+
+-- The job the keyboard is for: top, or the one it waits on with fg.
+local function fgOf(j)
+    while j.req and j.req.fg do j = j.req.fg end
+    return j
+end
+
+local function dispatch(top, ev)
+    if USER[ev[1]] then
+        local j = fgOf(top)
+        if ev[1] == "key" or ev[1] == "key_up" then
+            if ev[2] == keys.leftCtrl or ev[2] == keys.rightCtrl then ctrlDown = ev[1] == "key" end
+            if jobControl and ctrlDown and ev[1] == "key" and ev[2] == keys.z and j.text then stop(j); return end
+        end
+        if ev[1] == "terminate" and j.req then signal(j) else deliver(j, ev) end
+        return
+    end
+    deliver(top, ev)
+    for _, j in ipairs(copy(jobs)) do
+        if j ~= top then deliver(j, ev) end
+    end
+end
+
+-- Answer the fg and wait builtins whose jobs have ended or stopped.
+local function settle()
+    local woke = true
+    while woke do
+        woke = false
+        for j in pairs(waiters) do
+            local q, answer = j.req, nil
+            if not q then
+                waiters[j] = nil
+            elseif j.state == "running" then
+                if q.fg then
+                    if q.fg.state == "done" then answer = q.fg.status; removeJob(q.fg)
+                    elseif q.fg.state == "stopped" then answer = 148 end
+                else
+                    answer = 0
+                    for _, t in ipairs(q.wait) do
+                        if t.state == "running" then answer = nil; break end
+                        answer = t.state == "stopped" and 148 or t.status
+                    end
+                    if answer then
+                        for _, t in ipairs(q.wait) do if t.state == "done" then removeJob(t) end end
+                    end
+                end
+            end
+            if answer then
+                j.req, waiters[j] = nil, nil
+                step(j, answer)
+                woke = true
+                break
+            end
+        end
+    end
+end
+
+-- Run job `top` in the foreground until it ends or stops; the others get
+-- their events meanwhile.
+local function run(top)
+    if not top.begun then top.begun = true; step(top) end
+    settle()
+    while top.state == "running" do
+        dispatch(top, table.pack(os.pullEventRaw()))
+        settle()
+    end
+    return top
+end
+
+local function runTop(fn) return run(newJob(fn, P)) end
+
+-- a &: the and-or list as a background job, in a copy of the shell's state.
+local function background(ao)
+    local j = newJob(function() runAndOr(ao); return P.status end, cloneState(P), ao.text)
+    j.P.bg, j.P.interrupted, j.P.exiting = true, false, false
+    addJob(j)
+    touch(j)
+    P.lastBg = j.pid
+    if jobControl and P == mainP then print("[" .. j.id .. "] " .. j.pid) end
+    j.begun = true
+    step(j)
+end
+
+-- Tell of the jobs that have ended, before a prompt.
+local function notify()
+    for _, j in ipairs(copy(jobs)) do
+        if j.state == "done" then print(describe(j)); removeJob(j) end
+    end
+end
+
+local function liveJobs()
+    local n = 0
+    for _, j in ipairs(jobs) do if j.state ~= "done" then n = n + 1 end end
+    return n
+end
+
+-- Ctrl+T for every job, then forget them: they can't outlive the shell.
+local function endJobs()
+    for _, j in ipairs(copy(jobs)) do signal(j) end
+    jobs = {}
+end
+
+-- The end of a script: its background jobs are waited for (they'd die
+-- with the shell).  Ctrl+T ends them.
+local function waitAll()
+    local live = {}
+    for _, j in ipairs(jobs) do if j.state == "running" then live[#live + 1] = j end end
+    if #live == 0 then return end
+    local w = runTop(function() return coroutine.yield(REQ, { wait = live }) end)
+    if w.value == INTR then endJobs() end
+end
+
+-- fg prog / bg prog: as CraftOS's fg and bg, prog in a new multishell tab
+-- (shown, for fg), and with the environment: a Craftix runs it there.
+local SELF = "/" .. shell.getRunningProgram()
+local spawned = 0
+local function openTab(a, b, assigns, focus)
+    if not (multishell and shell.openTab) then
+        b.err(a[1] .. ": " .. a[2] .. ": no such job, and no tabs to run it in (multishell needs an advanced computer)")
+        return 1
+    end
+    if not shell.resolveProgram(a[2]) then b.err(a[1] .. ": " .. a[2] .. ": not found"); return 127 end
+    local hand = rawget(_G, "CRAFTIX_SPAWN") or {}
+    _G.CRAFTIX_SPAWN = hand
+    spawned = spawned + 1
+    local token = os.getComputerID() .. "." .. os.epoch("utc") .. "." .. spawned
+    hand[token] = { env = processEnv(assigns), argv = { table.unpack(a, 2) } }
+    local id = shell.openTab(SELF, "--spawn", token)
+    if not id then hand[token] = nil; b.err(a[1] .. ": can't open a tab"); return 1 end
+    if focus then multishell.setFocus(id) end
+    return 0
+end
+
 local builtins = {}
 builtins[":"] = function() return 0 end
 builtins["true"] = builtins[":"]
@@ -672,24 +1042,121 @@ builtins["false"] = function() return 1 end
 function builtins.exit(a, b)
     local n = a[2] and tonumber(a[2])
     if a[2] and not (n and n == math.floor(n)) then b.err("exit: " .. a[2] .. ": numeric argument required"); n = 2 end
-    exiting = true
-    return n or status
+    P.exiting = true
+    return n or P.status
 end
 function builtins.unset(a)
-    for k = 2, #a do vars[a[k]] = nil end
-    return 0
-end
-function builtins.export(a)
     for k = 2, #a do
-        local name, v = a[k]:match("^([%a_][%w_]*)=(.*)$")
-        if name then setVar(name, v) end
+        if a[k] ~= "-v" then P.vars[a[k]], P.exported[a[k]] = nil, nil end
     end
     return 0
 end
+local function quote(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
+function builtins.export(a, b)
+    local k, un = 2, a[2] == "-n"
+    if un then k = 3 end
+    if a[k] == "-p" or not a[k] then
+        local env, names = processEnv(), {}
+        for name in pairs(env) do names[#names + 1] = name end
+        for name in pairs(P.exported) do if env[name] == nil then names[#names + 1] = name end end
+        table.sort(names)
+        for _, name in ipairs(names) do
+            b.out("export " .. name .. (env[name] and ("=" .. quote(env[name])) or "") .. "\n")
+        end
+        return 0
+    end
+    local st = 0
+    for j = k, #a do
+        local name, v = a[j]:match("^([%a_][%w_]*)=(.*)$")
+        name = name or a[j]:match("^[%a_][%w_]*$")
+        if not name then
+            b.err("export: " .. a[j] .. ": not a valid name")
+            st = 1
+        else
+            if v then setVar(name, v) end
+            P.exported[name] = not un or nil
+        end
+    end
+    return st
+end
+function builtins.jobs(a, b)
+    for _, j in ipairs(copy(jobs)) do
+        b.out((a[2] == "-p" and tostring(j.pid) or describe(j, a[2] == "-l")) .. "\n")
+        if j.state == "done" then removeJob(j) end
+    end
+    return 0
+end
+function builtins.fg(a, b)
+    if a[2] and not isJobSpec(a[2]) then return openTab(a, b, b.assigns, true) end
+    if P.bg then b.err("fg: no job control in a background job"); return 1 end
+    local j = findJob(a[2])
+    if not j then b.err("fg: " .. (a[2] or "%+") .. ": no such job"); return 1 end
+    b.out(j.text .. "\n")
+    touch(j)
+    if j.state == "done" then removeJob(j); return j.status end
+    continue(j)
+    local st = coroutine.yield(REQ, { fg = j })
+    if st == INTR then P.interrupted = true; return 130 end
+    return st
+end
+function builtins.bg(a, b)
+    if a[2] and not isJobSpec(a[2]) then return openTab(a, b, b.assigns, false) end
+    local st = 0
+    for k = 2, math.max(2, #a) do
+        local j = findJob(a[k])
+        if not j then
+            b.err("bg: " .. (a[k] or "%+") .. ": no such job")
+            st = 1
+        elseif j.state == "stopped" then
+            touch(j)
+            b.out("[" .. j.id .. "]+ " .. j.text .. " &\n")
+            continue(j)
+        end
+    end
+    return st
+end
+function builtins.wait(a, b)
+    local targets, st = {}, 0
+    if not a[2] then
+        for _, j in ipairs(jobs) do if j.state == "running" then targets[#targets + 1] = j end end
+    end
+    for k = 2, #a do
+        local j = findJob(a[k], true)
+        if j then targets[#targets + 1] = j else b.err("wait: " .. a[k] .. ": no such job"); st = 127 end
+    end
+    if #targets == 0 then return st end
+    local r = coroutine.yield(REQ, { wait = targets })
+    if r == INTR then P.interrupted = true; return 130 end
+    if a[2] and st == 0 then st = r end
+    return st
+end
+function builtins.kill(a, b)
+    local k, hard = 2, false
+    if a[2] == "-9" or a[2] == "-KILL" then hard, k = true, 3
+    elseif a[2] == "-s" then hard, k = a[3] == "KILL" or a[3] == "9", 4
+    elseif a[2] == "-15" or a[2] == "-TERM" then k = 3 end
+    if not a[k] then b.err("kill: usage: kill [-9] %job|pid..."); return 2 end
+    local st = 0
+    for j = k, #a do
+        local job = findJob(a[j], true)
+        if not job then
+            b.err("kill: " .. a[j] .. ": no such job")
+            st = 1
+        elseif job.state ~= "done" then
+            if hard then
+                job.state, job.status, job.killed, job.req, waiters[job] = "done", 137, true, nil, nil
+            else
+                job.signalled = true
+                signal(job)
+            end
+        end
+    end
+    return st
+end
 function builtins.shift(a, b)
     local n = tonumber(a[2] or "1")
-    if not n or n < 0 or n > #pos then b.err("shift: can't shift that many"); return 1 end
-    for _ = 1, n do table.remove(pos, 1) end
+    if not n or n < 0 or n > #P.pos then b.err("shift: can't shift that many"); return 1 end
+    for _ = 1, n do table.remove(P.pos, 1) end
     return 0
 end
 function builtins.read(a, b)
@@ -718,20 +1185,20 @@ builtins["."] = function(a, b)
     local text = readFile(a[2])
     if not text then b.err(".: " .. a[2] .. ": not found"); return 1 end
     runSource(text)
-    return status
+    return P.status
 end
 
 -- Run one command: inText is what the pipe before it wrote (nil: none),
 -- out the pipe after it (nil: the shell's output).  Returns its status.
 local function runCommand(cmd, inText, out)
-    local fd = { [0] = inText and { data = inText } or TTY, [1] = out or defaultOut or TTY, [2] = TTY }
+    local fd = { [0] = inText and { data = inText } or TTY, [1] = out or P.defaultOut or TTY, [2] = TTY }
     local opened = {}
     local function done(st)
         for _, s in ipairs(opened) do s.close() end
         return st
     end
 
-    subStatus = nil
+    P.subStatus = nil
     local argv = {}
     for _, w in ipairs(cmd.words) do
         for _, f in ipairs(fields(w)) do
@@ -767,9 +1234,11 @@ local function runCommand(cmd, inText, out)
         end
     end
 
+    local assigns = {}
+    for k, a in ipairs(cmd.assigns) do assigns[k] = { name = a.name, value = fields(a.value, true) } end
     if #argv == 0 then
-        for _, a in ipairs(cmd.assigns) do setVar(a.name, fields(a.value, true)) end
-        return done(subStatus or 0)
+        for _, a in ipairs(assigns) do setVar(a.name, a.value) end
+        return done(P.subStatus or 0)
     end
 
     local input = fd[0] == TTY and real.input or reader(type(fd[0].data) == "string" and fd[0].data or "")
@@ -777,6 +1246,10 @@ local function runCommand(cmd, inText, out)
     if builtin then
         return done(builtin(argv, {
             err = function(s) report(fd[2], "craftix: " .. s) end,
+            out = function(s)
+                if fd[1] ~= TTY and fd[1].raw then fd[1].raw(s) else write(s) end
+            end,
+            assigns = assigns,
             readLine = function()
                 if input ~= io.stdin then return input:read("l") end
                 local ok, l = pcall(real.read)
@@ -791,7 +1264,7 @@ local function runCommand(cmd, inText, out)
 
     local outS = fd[1] ~= TTY and fd[1].raw and fd[1] or nil
     local errS = fd[2] ~= TTY and fd[2].raw and fd[2] or nil
-    local ctx = { input = input, kb = real.kb }
+    local ctx = { input = input, kb = real.kb, env = envApi(processEnv(assigns)) }
     if outS then
         ctx.term, ctx.output, ctx.write = outS.term, outS.handle, outS.raw
         ctx.kb = function(...) return withReal(real.kb, ...) end
@@ -815,7 +1288,7 @@ local function runCommand(cmd, inText, out)
     local ok, terminated = drive(ctx, shell.execute, table.unpack(argv))
     local st = _G.POSIX_STATUS
     if terminated and not ok and (st == nil or st == 0) then
-        interrupted = true
+        P.interrupted = true
         st = 130
     elseif st == nil or (st == 0 and not ok) then
         st = ok and 0 or 1
@@ -829,18 +1302,23 @@ local function runPipeline(p)
         local out = k < #p.cmds and buffer() or nil
         st = runCommand(cmd, data, out)
         data = out and out.text()
-        if interrupted or exiting then break end
+        if P.interrupted or P.exiting then break end
     end
     if p.neg then st = st == 0 and 1 or 0 end
-    status = st
+    P.status = st
+end
+
+function runAndOr(ao)
+    for k, item in ipairs(ao) do
+        if k == 1 or (item.conn == "&&") == (P.status == 0) then runPipeline(item.pipe) end
+        if P.interrupted or P.exiting then return end
+    end
 end
 
 local function runList(list)
     for _, ao in ipairs(list) do
-        for k, item in ipairs(ao) do
-            if k == 1 or (item.conn == "&&") == (status == 0) then runPipeline(item.pipe) end
-            if interrupted or exiting then return end
-        end
+        if ao.bg then background(ao); P.status = 0 else runAndOr(ao) end
+        if P.interrupted or P.exiting then return end
     end
 end
 
@@ -850,7 +1328,7 @@ function runSource(src)
     if not ok then
         if type(list) ~= "table" then error(list, 0) end
         printError("craftix: syntax error: " .. (list.msg ~= "" and list.msg or "unexpected end of line"))
-        status = 2
+        P.status = 2
         return
     end
     runList(list)
@@ -892,7 +1370,7 @@ end
 -- \$ \n \\), or, with no PS1, "label:/dir$ " ("/dir$ " with no label).
 local function promptText()
     local label = os.getComputerLabel and os.getComputerLabel()
-    local ps1 = vars.PS1
+    local ps1 = P.vars.PS1
     if ps1 == nil then return (label and (label .. ":") or "") .. "/" .. shell.dir() .. "$ " end
     local dir = "/" .. shell.dir()
     local esc = {
@@ -903,37 +1381,85 @@ local function promptText()
     return (ps1:gsub("\\(.)", function(c) return esc[c] or ("\\" .. c) end))
 end
 
-local function interactive()
-    local hist = {}
-    print("Craftix: exit, or hold Ctrl+T, to leave")
-    while not exiting do
+-- A line typed at the prompt, parsed: { line, list } or { line, err };
+-- nil for Ctrl+T.  It's read as a job, so background jobs carry on
+-- meanwhile.
+local function readLine(hist)
+    local j = runTop(function()
         local line = prompt(promptText(), hist)
         if line and line:match("%S") and hist[#hist] ~= line then hist[#hist + 1] = line end
-        local list, err
         while line do
             local ok, r = pcall(parse, line)
-            if ok then list = r; break end
+            if ok then return { line = line, list = r } end
             if type(r) ~= "table" then error(r, 0) end
-            if not r.more then err = r.msg; break end
+            if not r.more then return { line = line, err = r.msg } end
             local nxt = prompt("> ", {})
             line = nxt and line .. "\n" .. nxt
         end
-        if not line then print(); break end
-        interrupted = false
-        if err then
-            printError("craftix: syntax error: " .. err)
-            status = 2
+    end)
+    return j.value
+end
+
+local PROFILE = "/.profile"
+
+local function interactive()
+    jobControl = true
+    local hist, warned = {}, false
+    print("Craftix: exit, or hold Ctrl+T, to leave")
+    if fs.exists(PROFILE) and not fs.isDir(PROFILE) then
+        runTop(function() runSource(readFile(PROFILE)) end)
+    end
+    while true do
+        if P.exiting then
+            if liveJobs() == 0 or warned then break end
+            printError("craftix: there are jobs (jobs lists them); exit again to end them")
+            P.exiting, warned = false, true
+        end
+        notify()
+        local got = readLine(hist)
+        if not got then
+            if liveJobs() == 0 or warned then print(); break end
+            print()
+            printError("craftix: there are jobs (jobs lists them); Ctrl+T again to end them")
+            warned = true
         else
-            local ok, e = pcall(runList, list)
-            if not ok then printError("craftix: " .. tostring(e)); status = 1 end
+            P.interrupted = false
+            if got.err then
+                printError("craftix: syntax error: " .. got.err)
+                P.status = 2
+            elseif #got.list > 0 then
+                local j = run(newJob(function() runList(got.list); return P.status end, mainP, got.line))
+                if j.state == "stopped" then P.status = 148 end
+            end
+            if got.line:match("%S") and not P.exiting then warned = false end
         end
     end
+    endJobs()
+end
+
+-- craftix --spawn token: what fg or bg prog left in CRAFTIX_SPAWN, run
+-- in this new tab with its environment.
+local function spawn(token)
+    local hand = rawget(_G, "CRAFTIX_SPAWN")
+    local rec = hand and hand[token]
+    if not rec then printError("craftix: --spawn: nothing to run"); P.status = 2; return end
+    hand[token] = nil
+    if next(hand) == nil then _G.CRAFTIX_SPAWN = nil end
+    for k, v in pairs(rec.env) do
+        if k ~= "PATH" and k ~= "PWD" then P.vars[k], P.exported[k] = v, true end
+    end
+    if multishell and multishell.setTitle and multishell.getCurrent then
+        multishell.setTitle(multishell.getCurrent(), fs.getName(rec.argv[1]))
+    end
+    local words = {}
+    for k, a in ipairs(rec.argv) do words[k] = { { t = "lit", s = a, q = true } } end
+    runTop(function() runList({ { { pipe = { cmds = { { words = words, assigns = {}, redirs = {} } } } } } }) end)
 end
 
 if args[1] == "-c" then
     if not args[2] then
         printError("usage: craftix [-c command [name [arg...]] | script [arg...]]")
-        status = 2
+        P.status = 2
     else
         -- The stock shell splits words at spaces and keeps single quotes,
         -- so `craftix -c 'echo a; b'` typed there arrives as "'echo",
@@ -947,23 +1473,27 @@ if args[1] == "-c" then
             end
             if #src > 1 and src:sub(-1) == "'" then src = src:sub(2, -2) end
         end
-        arg0 = args[k] or "craftix"
-        for j = k + 1, #args do pos[#pos + 1] = args[j] end
-        runSource(src)
+        P.arg0 = args[k] or "craftix"
+        for j = k + 1, #args do P.pos[#P.pos + 1] = args[j] end
+        runTop(function() runSource(src) end)
+        waitAll()
     end
+elseif args[1] == "--spawn" then
+    spawn(args[2])
 elseif args[1] then
     local text = readFile(args[1])
     if not text then
         printError("craftix: " .. args[1] .. ": can't open")
-        status = 127
+        P.status = 127
     else
-        arg0 = args[1]
-        for k = 2, #args do pos[#pos + 1] = args[k] end
-        runSource(text)
+        P.arg0 = args[1]
+        for k = 2, #args do P.pos[#P.pos + 1] = args[k] end
+        runTop(function() runSource(text) end)
+        waitAll()
     end
 else
     interactive()
 end
 
-_G.POSIX_STATUS = status
-if status ~= 0 then error("", 0) end
+_G.POSIX_STATUS = P.status
+if P.status ~= 0 then error("", 0) end

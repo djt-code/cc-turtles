@@ -25,8 +25,8 @@ The repo is in four folders:
 | `bin/cat.lua`, `bin/more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
 | `lib/pager.lua` | Library: a `less`-style viewer for `more`, `git log` and `claude`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), the mouse wheel 3 lines, `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. A program that colours its output can hand it lines as `{ text, fg }` (`fg` one blit digit per character, as `term.blit` takes them), and on a colour screen they're shown in those colours. |
 | `bin/echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
-| POSIX utilities (`bin/`) | `ls` `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks (and `ls`, which replaces CraftOS's). `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
-| `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
+| POSIX utilities (`bin/`) | `ls` `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs` `env`, plus `which`: the basic options of each, for the commands CraftOS lacks (and `ls`, which replaces CraftOS's). `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
+| `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables and an environment for programs, globs, `$(...)`, background jobs with `fg`/`bg`/Ctrl+Z, and `/.profile`. See [Craftix](#craftix). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, and UDP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc -u` sends and receives datagrams. See [Network](#network). |
@@ -289,6 +289,7 @@ departs from POSIX.
 | `true`, `false` | none |
 | `sleep` | seconds, decimals allowed |
 | `xargs` | `-0 -E -I -L -n -p -r -s -t -x` |
+| `env` | `-i -u name`, `name=value`; the environment Craftix gives programs (none outside it) |
 | `which` | `-a` (not POSIX: which file the shell would run) |
 
 They all work the same way, so [Craftix](#craftix) can join them up with
@@ -366,35 +367,62 @@ A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
 | Redirects | `< f`, `> f`, `>> f`, `2> f`, `2>> f`, `2>&1`, `>&2`, `n>&-`; `/dev/null` |
 | Lists | `a ; b`, `a && b`, `a \|\| b`, `! a`; a newline is a `;` |
 | Quoting | `'single'`, `"double $X"`, `\x`; `#` comments |
-| Variables | `X=value`, `$X`, `${X}`, `${X:-default}`, `$?`, `$#`, `$1`..`$9`, `$@`, `"$@"`, `$*`, `$$`, `$0`; `$PATH` is the shell's path (setting it changes the path), `$PWD` its directory, `$HOSTNAME` the computer's label (or ID). These are the shell's own: CraftOS has no environment, so programs don't see them |
+| Variables | `X=value`, `$X`, `${X}`, `${X:-default}`, `$?`, `$#`, `$1`..`$9`, `$@`, `"$@"`, `$*`, `$$`, `$!`, `$0`; `$PATH` is the shell's path (setting it changes the path), `$PWD` its directory, `$HOSTNAME` the computer's label (or ID), `$!` the last background job's process ID |
+| Environment | `export X`, `export X=1`, `export -n X`, `export -p`, `unset X`; `X=1 cmd` for one command. Programs read it with `os.getenv("X")`, and change their own copy with `os.setenv(name, value)`; `os.environ()` lists it. It holds the exported variables, `PATH` and `PWD`. A Craftix started from Craftix takes it over, and `env` shows it |
+| Jobs | `a &` in the background (its own copy of the variables); `jobs [-l\|-p]`; `fg [%n]`, `bg [%n]`; `wait [%n\|pid]`; `kill [-9] %n\|pid`; Ctrl+Z at the prompt stops the job in front. `fg prog` and `bg prog` open a multishell tab as CraftOS's do, with the environment |
+| Startup | `/.profile` runs when Craftix starts at the prompt: set `PS1`, `export` variables |
 | Prompt | `label:/dir$ ` on a computer with a label, `/dir$ ` without; or set `PS1`, with `\h` (label, or ID), `\w` (directory), `\W` (its last part), `\i` (ID), `\$`, `\n`: `PS1='\h \W\$ '` |
 | Globs | `*`, `?`, `[abc]`, `[!a-z]`; names starting with `.` only match an explicit dot |
 | Substitution | `$(cmd)`, `` `cmd` `` |
-| Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export name=value`, `. file` |
+| Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill` |
 | Scripts | `craftix file [args]`, `craftix -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/bin/craftix` run by name |
 
 A line ending in `\`, `|`, `&&` or `||`, or inside quotes, carries on at a
 `>` prompt. Tab completes as in the stock shell, for the command after
-the last `|` or `;`. Ctrl+T while a command runs stops it and the rest of
-the line, with status 130.
+the last `|`, `;` or `&`. Ctrl+T while a command runs stops it and the
+rest of the line, with status 130.
+
+```
+/$ cat /.profile
+PS1='\h:\W\$ '
+export EDITOR=edit
+/$ tail -f mine.log > tail.txt &
+[1] 1
+/$ lua                      (then Ctrl+Z)
+[2]+ Stopped  lua
+/$ jobs
+[1]- Running  tail -f mine.log > tail.txt &
+[2]+ Stopped  lua
+/$ fg %2
+/$ X=1 env | grep X
+X=1
+```
+
+Background jobs get every event except the keyboard's and the mouse's,
+which go to the job in front. Their output shares the screen with the
+prompt. A stopped job keeps up to 256 of the events it misses (timers,
+rednet...) and gets them when `fg` or `bg` starts it again. A job can't
+outlive the shell: `exit` with jobs left warns once, then ends them, and
+a script or `craftix -c` waits for its jobs before it ends. For one that
+should keep running, `bg prog` puts it in its own tab.
 
 How it works: Craftix runs inside the stock shell and has it find and run
 programs, so the path, aliases, `cd`, `alias`, `set` and the programs'
 `shell` API are the stock ones. A pipe runs each command to the end and
 then hands what it wrote to the next one. While a command runs, its
 `io.input()`, `io.output()`, `print`, `write`, `term` and `printError` point
-at its pipe or file. They are put back whenever it waits, so other
+at its pipe or file, and `os.getenv` at its environment. They are put back whenever it waits, so other
 multishell tabs don't see them. That lets stock programs be piped as
 well as the utilities.
 
-Not yet: `if`/`while`/`for`/`case`, functions, `&` (background jobs),
-`( )` subshells, here-documents, `$(( ))` arithmetic, `~`. And what
-CraftOS rules out:
+Not yet: `if`/`while`/`for`/`case`, functions, `( )` subshells,
+here-documents, `$(( ))` arithmetic, `~`. And what CraftOS rules out:
 
 - Nothing streams: `a | head` still runs all of `a`, holding its output
   in memory.
-- CraftOS has no environment, so programs can't see shell variables, and
-  `X=1 cmd` ignores the `X=1`.
+- CraftOS has no environment: `os.getenv` exists only for programs
+  Craftix runs (and what they run in turn). The stock shell's programs
+  and other tabs don't see it.
 - `/dev/null` only works in redirects; there's no such file.
 - Stock programs lay out text as they would on the screen: `ls` writes
   columns, so `ls | wc -l` counts rows, not files.

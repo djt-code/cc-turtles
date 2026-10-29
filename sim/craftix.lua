@@ -12,7 +12,7 @@ local SW = require("shellworld")
 local check = M.check
 
 local W = SW.new(PROJ)
-for _, u in ipairs({ "printf", "sort", "head", "tr", "cat", "wc", "grep", "echo", "more" }) do W:install(u) end
+for _, u in ipairs({ "printf", "sort", "head", "tr", "cat", "wc", "grep", "echo", "more", "env" }) do W:install(u) end
 
 -- small programs to run under the shell
 local HELPERS = {
@@ -29,6 +29,12 @@ local HELPERS = {
     waitT = [[os.pullEvent("never")]],
     ask = [[local l = read() print("got " .. tostring(l))]],
     crash = [[error("boom")]],
+    -- os.getenv of each argument; senv sets Q and shows it
+    genv = [[for _, a in ipairs({ ... }) do print(a .. "=" .. tostring(os.getenv and os.getenv(a))) end]],
+    senv = [[os.setenv("Q", "in") print("Q=" .. os.getenv("Q"))]],
+    -- waits for an "x" event (with W.yieldEvents)
+    tick = [[local _, v = os.pullEvent("x") print("tick " .. tostring(v))]],
+    ywait = [[os.pullEvent("y") print("y")]],
 }
 for name, src in pairs(HELPERS) do W:file("cc-turtles/bin/" .. name .. ".lua", src) end
 
@@ -141,7 +147,6 @@ local function synErr(line, want)
 end
 check("echo | : unexpected end of line, status 2", synErr("echo |", "unexpected end of line"))
 check("true && : unexpected end of line", synErr("true &&", "unexpected end of line"))
-check("& is refused", synErr("sleep 1 &", "& (background jobs) isn't supported"))
 check("( ) is refused", synErr("(echo)", "( ) subshells aren't supported"))
 check("an open quote", synErr("echo 'x", "unterminated '"))
 check("> with no file", synErr("echo >", "missing file name after >"))
@@ -197,9 +202,88 @@ r = W:run("craftix", "-c", "'args", "$0", "$1;", "exit'", "nm", "one")
 check("-c from the stock shell: a single-quoted command split at spaces is joined back",
     r.out == "[nm][one]\n" and r.status == 0, show(r.out))
 
--- 12. nothing left behind
-check("after: the screen, io, printing globals and POSIX_SH are as they were",
+-- 12. the environment
+r = sh([[X=1; genv X; export X; genv X; Y=2 genv Y; echo "[$Y]"; export Z=3; unset Z; genv Z]])
+check("os.getenv: only exported variables; X=1 cmd for that command alone; unset unexports",
+    r.out == "X=nil\nX=1\nY=2\n[]\nZ=nil\n", show(r.out))
+r = sh([[genv PATH PWD; senv; genv Q]])
+check("PATH and PWD are always there; os.setenv changes only the program's own copy",
+    r.out == "PATH=" .. p0 .. "\nPWD=/\nQ=in\nQ=nil\n", show(r.out))
+r = sh([[export A=1 B="it's" C; export -n A; export -p]])
+check("export -p: re-readable, quoted; export -n unexports; a name with no value is listed bare",
+    r.out == "export B='it'\\''s'\nexport C\nexport PATH='" .. p0 .. "'\nexport PWD='/'\n", show(r.out))
+r = sh([[export A=outer; craftix -c 'echo $A; genv A; B=in genv B'; genv B]])
+check("a Craftix run from Craftix takes the environment as exported variables",
+    r.out == "outer\nA=outer\nB=in\nB=nil\n", show(r.out))
+r = sh([[export E=1; env | grep ^E=; env -u E genv E; env F=2 genv F; env -i genv E PATH; genv E]])
+check("env lists it, and runs a command with it changed (-u, name=value, -i), then puts it back",
+    r.out == "E=1\nE=nil\nF=2\nE=nil\nPATH=nil\nE=1\n", show(r.out))
+r = W:run("env")
+check("env outside Craftix: there is no environment, 125",
+    r.status == 125 and r.err[1] == "env: no environment here: run it under craftix", show(r.err[1]))
+
+-- 13. jobs
+W.yieldEvents = true
+r = sh([[tick & echo "first $!"; wait; echo "end $?"]], { events = { { "x", 5 } } })
+check("a & runs in the background while the line goes on; $!; wait", r.out == "first 1\ntick 5\nend 0\n", show(r.out))
+r = sh([[tick & jobs; jobs -l]], { events = { { "x", 1 } } })
+check("jobs (-l with the process ID); a script waits for its jobs at the end",
+    r.out == "[1]+ Running  tick &\n[1]+ 1 Running  tick &\ntick 1\n", show(r.out))
+r = sh([[waitT & kill %1; wait %1; echo $?; jobs]])
+check("kill %1 ends a job (status 130), and wait gives its status", r.out == "130\n", show(r.out))
+r = sh([[tick & fg %1; echo "fg $?"]], { events = { { "x", 2 } } })
+check("fg %1 waits for the job, with its status", r.out == "tick\ntick 2\nfg 0\n", show(r.out))
+r = sh([[X=1; X=2 & exit 4 & echo "$X $?"; wait; echo "w $?"]])
+check("a background job has its own variables, and exit there ends only it", r.out == "1 0\nw 0\n", show(r.out))
+r = sh([[tick & wait; echo no]], { events = { { "terminate" }, { "terminate" } } })
+check("Ctrl+T ends wait and the rest of the line; again, the jobs left at the end",
+    r.out == "" and r.status == 130, show(r.out) .. " " .. r.status)
+local ctrlZ = { { "key", keys.leftCtrl }, { "key", keys.z } }
+r = W:run("craftix", { stdin = "tick\njobs\nfg\necho \"fg $?\"\n", events = { ctrlZ[1], ctrlZ[2], { "x", 9 } } })
+check("at the prompt, Ctrl+Z stops a command; jobs; fg starts it again in front",
+    r.out:find("/$ \n[1]+ Stopped  tick\n/$ [1]+ Stopped  tick\n/$ tick\ntick 9\n/$ fg 0\n", 1, true) ~= nil,
+    show(r.out))
+r = W:run("craftix", { stdin = "tick\nywait\nbg\njobs\n", events = { ctrlZ[1], ctrlZ[2], { "x", 4 }, { "y" } } })
+check("a stopped job keeps the events it misses; bg starts it in the background; Done told before the prompt",
+    r.out:find("/$ y\n/$ [1]+ tick &\ntick 4\n[1]+ Done     tick\n/$ /$ ", 1, true) ~= nil, show(r.out))
+r = W:run("craftix", { stdin = "tick &\nexit\nexit\n" })
+check("exit with jobs: a warning first, then the jobs end with the shell",
+    r.out:find("/$ [1] 1\n", 1, true) ~= nil and r.err[1] == "craftix: there are jobs (jobs lists them); exit again to end them",
+    show(r.out) .. " " .. show(r.errText))
+W.yieldEvents = false
+
+-- 14. .profile, and fg/bg prog in a tab
+W:file(".profile", "PS1='p> '\nexport PF=yes\n")
+r = W:run("craftix", { stdin = "genv PF\n" })
+check("/.profile runs when Craftix starts at the prompt", r.out:find("p> PF=yes\n", 1, true) ~= nil, show(r.out))
+r = sh("genv PF")
+check("but not for -c or a script", r.out == "PF=nil\n", show(r.out))
+W.files[".profile"] = nil
+local opened, focus, title
+W.multishell = { setFocus = function(id) focus = id end, getCurrent = function() return 3 end,
+    setTitle = function(_, t) title = t end }
+W.shell.openTab = function(...) opened = { ... }; return 3 end
+r = sh([[export E=tabbed; fg genv E]])
+check("fg prog: a new tab, shown, running Craftix to run it",
+    opened and opened[1] == "/cc-turtles/bin/craftix.lua" and opened[2] == "--spawn" and focus == 3 and r.status == 0,
+    show(table.concat(opened or {}, " ")))
+r = W:run("craftix", "--spawn", opened[3])
+check("there it runs with the environment, the tab named for it",
+    r.out == "E=tabbed\n" and title == "genv" and rawget(_G, "CRAFTIX_SPAWN") == nil, show(r.out))
+focus, opened = nil, nil
+r = sh([[bg genv E]])
+check("bg prog: a tab left in the background", opened ~= nil and focus == nil)
+r = W:run("craftix", "--spawn", opened[3])
+W.multishell, W.shell.openTab = nil, nil
+r = sh([[fg genv; fg %1]])
+check("no tabs (no multishell), or no such job: said, status 1",
+    r.err[1] == "craftix: fg: genv: no such job, and no tabs to run it in (multishell needs an advanced computer)"
+    and r.err[2] == "craftix: fg: %1: no such job" and r.status == 1, show(r.errText))
+
+-- 15. nothing left behind
+check("after: the screen, io, printing globals, POSIX_SH and os.getenv are as they were",
     term.current() == term.native() and W.io.output() == W.io.stdout and W.io.input() == W.io.stdin
-    and rawget(_G, "write") == nil and _G.POSIX_SH == nil)
+    and rawget(_G, "write") == nil and _G.POSIX_SH == nil and rawget(W.os, "getenv") == nil
+    and rawget(W.os, "setenv") == nil and rawget(W.os, "environ") == nil)
 r = W:run("echo", "a", ">", "z.txt")
 check("echo on its own still does > (no shell to)", W:read("z.txt") == "a\n")

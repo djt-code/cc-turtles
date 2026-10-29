@@ -11,6 +11,7 @@ Anywhere (bin/):
   dirname: the directory part of a path name (POSIX dirname)
   du: report disk usage (POSIX du)
   echo: write its arguments to standard output (POSIX/XSI echo)
+  env: show the environment, or run a command in a changed one
   expr: evaluate an expression and print the result (POSIX expr)
   false: do nothing, unsuccessfully (POSIX false)
   find: find files by name, type, size or age (POSIX find)

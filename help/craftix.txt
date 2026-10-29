@@ -17,20 +17,34 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
       and a newline is a ;
   'single' "double" \x
       quoting; # starts a comment.  A line ending in \, |, &&, || or inside quotes goes on to the next.
-  X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $0
-      variables.  $PATH is the shell's path (setting it changes the path), $PWD its directory and $HOSTNAME the computer's label (its ID if it has none).  CraftOS has no environment, so programs can't see variables and X=1 cmd ignores the X=1.
+  X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $! $0
+      variables.  $PATH is the shell's path (setting it changes the path), $PWD its directory and $HOSTNAME the computer's label (its ID if it has none).  $! is the last & job's process ID.
+  export X  X=1 cmd
+      the environment.  Programs read it with os.getenv("X") (and change their own copy with os.setenv(name, value), list it with os.environ()): the exported variables, PATH and PWD, and for one command its own X=1 words.  A Craftix run from Craftix starts with them as exported variables; `env` shows them.
   PS1
       the prompt: "label:/dir$ " ("/dir$ " with no label), or $PS1 with \h (label, or ID), \w (the directory), \W (its last part), \i (the ID), \$, \n and \\: PS1='\h \W\$ '.
   *  ?  [abc]  [!a-z]
       globs; a name starting with a dot only matches an explicit dot, and the fileserver's member disks (/disk, /disk2... with /jbod mounted) only a pattern that starts with a plain character (disk*, not *). No match leaves the word as is.
   $(cmd)  `cmd`
       command substitution.
+  a &
+      a background job: the line goes on while it runs.  It gets its own copy of the variables and every event but the keyboard's and the mouse's.  At the prompt, Ctrl+Z stops the job in front (a stopped job keeps the events it misses for later).
+  jobs [-l|-p]          the jobs: [1]+ Running
+      sleep 10 &
+  fg [%n]  bg [%n]
+      a job to the front (waiting for it), or a stopped one carried on in the background.  %n is job n; %% or %+ the latest, %- the one before, %str the one whose line starts so.
+  fg prog  bg prog
+      as CraftOS's fg and bg: prog in a new multishell tab (shown, for fg), with the environment.
+  wait [%n|pid...]
+      wait for jobs (all, with none named); their status.  Ctrl+T stops waiting.
+  kill [-9] %n|pid...
+      end a job as Ctrl+T would; -9 drops it at once.
   builtins
-      exit [n], :, true, false, read [-r] name..., shift [n], unset name..., export name=value..., . file
+      also exit [n], :, true, false, read [-r] name..., shift [n], unset name..., . file, export [-n] name[=value]... and export -p
 
-Not yet: if/while/for/case, functions, & (background), ( subshells ), here-documents, $(( arithmetic )), ~.
+Not yet: if/while/for/case, functions, ( subshells ), here-documents, $(( arithmetic )), ~.
 
-Leave with exit, or by holding Ctrl+T at the prompt.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.
+At the prompt, Craftix first runs the commands in /.profile (PS1, export...), as `. /.profile` would.  Leave with exit, or by holding Ctrl+T at the prompt; with jobs left, the first try only warns, and the jobs end with the shell.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.  A script or -c waits for its background jobs before it ends: they can't outlive it.
 
 A script can start with #!/cc-turtles/bin/craftix (the stock shell honours the #! line), or run as `craftix script`.
 

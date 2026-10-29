@@ -592,7 +592,7 @@ local function fillTerm(T)
     for k, v in pairs(extra) do if term[k] == nil then term[k] = v end end
     term.getTextColor, term.getBackgroundColor, term.setPaletteColor, term.getPaletteColor =
         term.getTextColour, term.getBackgroundColour, term.setPaletteColour, term.getPaletteColour
-    local more = { backspace = 14, tab = 15, q = 16, enter = 28, leftCtrl = 29, d = 32, c = 46, space = 57 }
+    local more = { backspace = 14, tab = 15, q = 16, enter = 28, leftCtrl = 29, d = 32, z = 44, c = 46, space = 57, rightCtrl = 157 }
     for k, v in pairs(more) do if keys[k] == nil then keys[k] = v end end
     colours.red, colours.yellow, colours.lightGrey, colours.grey = colours.red or "red", colours.yellow or "yellow",
         colours.lightGrey or "lightGrey", colours.grey or "grey"
@@ -743,7 +743,7 @@ function W_:env(path, args)
     local W = self
     local env = setmetatable({}, { __index = _G })
     env.fs, env.io, env.shell, env.os, env.term = W.fs, W.io, W.shell, W.os, term
-    env.multishell = nil
+    env.multishell = W.multishell       -- nil: a turtle with no tabs, unless a sim gives one
     env.sleep = function(n) W:advance(n) end
     env.loadfile = function(p, mode, e)
         if type(mode) == "table" and e == nil then mode, e = nil, mode end
