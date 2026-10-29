@@ -22,7 +22,11 @@
 --                         CraftOS has no environment, so programs can't
 --                         see variables and X=1 cmd ignores the X=1.
 --   *  ?  [abc]  [!a-z]   globs; a name starting with a dot only matches
---                         an explicit dot.  No match leaves the word as is.
+--                         an explicit dot, and the fileserver's member disks
+--                         (/disk, /disk2... with /jbod mounted) only a
+--                         pattern that starts with a plain character
+--                         (disk*, not *).
+--                         No match leaves the word as is.
 --   $(cmd)  `cmd`         command substitution.
 --   builtins              exit [n], :, true, false, read [-r] name...,
 --                         shift [n], unset name..., export name=value...,
@@ -573,8 +577,13 @@ local function glob(f)
                 local sep = (e.shown == "" or e.shown:sub(-1) == "/") and "" or "/"
                 if s.pat then
                     if fs.isDir(e.path) then
+                        -- the fileserver's pool: its disks' mounts are hidden too, unless
+                        -- the pattern starts with a plain character
+                        local pool = fs.jbodPool
+                        local wildFirst = s.magic[1] and (s.chars[1] == "*" or s.chars[1] == "?" or s.chars[1] == "[")
                         for _, n in ipairs(fs.list(e.path)) do
-                            if n:match(s.pat) and (n:sub(1, 1) ~= "." or s.name:sub(1, 1) == ".") then
+                            if n:match(s.pat) and (n:sub(1, 1) ~= "." or s.name:sub(1, 1) == ".")
+                                    and not (pool and wildFirst and pool.isMember(fs.combine(e.path, n))) then
                                 nxt[#nxt + 1] = { shown = e.shown .. sep .. n, path = fs.combine(e.path, n) }
                             end
                         end

@@ -86,3 +86,24 @@ check("at the prompt, before install: CraftOS's ls (an alias for list)", not r.o
 W.shell.setAlias("ls", "/cc-turtles/bin/ls.lua")              -- what install's startup line does
 r = W:sh("ls -a d")
 check("with install's alias: ours, hidden files and all", r.out == ".  ..  .hidden  a.txt  big.bin  sub\n", show(r.out))
+
+-- with the fileserver's pool mounted: its member disks' mounts are hidden
+-- like dot files, from ls and from Craftix's globs
+local J = require("jbod")
+W:dir("disk"); W:dir("disk2"); W:dir("dusty")
+W:file("disk/a.txt", "a")
+J.install(W.fs, { mount = "jbod", clock = function() return 0 end,
+    drives = function() return { { name = "drive_0", root = "disk" }, { name = "drive_1", root = "disk2" } } end })
+W.fs.jbodPool.add("drive_0")                         -- (disk has a file: added by hand)
+r = W:run("ls", "/")
+check("pool mounted: ls / leaves out the member disks, shows jbod",
+    not r.out:find("disk") and r.out:find("jbod") and r.out:find("dusty"), show(r.out))
+r = W:run("ls", "-a", "/")
+check("ls -a / shows them", r.out:find("disk%s") ~= nil and r.out:find("disk2") ~= nil, show(r.out))
+r = W:run("ls", "-1", "/jbod")
+check("their files are in /jbod", r.out == "a.txt\n", show(r.out))
+W:install("echo")
+r = W:run("craftix", "-c", "echo *")
+check("Craftix: * leaves them out", not r.out:find("disk") and r.out:find("dusty") and r.out:find("jbod"), show(r.out))
+r = W:run("craftix", "-c", "echo d*")
+check("and d* matches them, as .* does dot files", r.out == "d disk disk2 dusty\n", show(r.out))

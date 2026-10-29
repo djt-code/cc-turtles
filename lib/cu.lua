@@ -109,6 +109,15 @@ end
 -- Is output going to the screen (not redirected by a shell)?
 function cu.isTerminal() return io.output() == io.stdout end
 
+-- Is the file at `path` hidden from listings: a name starting with a dot,
+-- or, with the fileserver's pool mounted, a member disk's own mount (/disk,
+-- /disk2...: its files are in /jbod)?
+function cu.hidden(path)
+    if fs.getName(path):sub(1, 1) == "." then return true end
+    local pool = fs.jbodPool
+    return pool ~= nil and pool.isMember(path)
+end
+
 -- Is input coming from the keyboard?
 function cu.isKeyboard() return io.input() == io.stdin end
 

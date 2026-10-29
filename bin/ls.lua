@@ -6,7 +6,8 @@
 -- Lists each directory operand's entries (default "."), and file operands
 -- as themselves: files first, then each directory under a "name:" header
 -- when there's more than one operand.  Names starting with "." are hidden
--- unless -a or -A.  To the screen, entries go in columns (directories in
+-- unless -a or -A, and so, with the fileserver's pool mounted, are its
+-- member disks' own mounts (/disk, /disk2...: their files are in /jbod).  To the screen, entries go in columns (directories in
 -- green on a colour screen); into a pipe or a file, one per line.
 --   -a  all entries, the hidden ones and "." and ".." too
 --   -A  almost all: the hidden ones, not "." and ".."
@@ -166,7 +167,8 @@ local function listDir(path, label, header)
         list[#list + 1] = entry("..", path == "" and "" or fs.getDir(path))
     end
     for _, n in ipairs(names) do
-        if opts.a or opts.A or n:sub(1, 1) ~= "." then list[#list + 1] = entry(n, fs.combine(path, n)) end
+        local p = fs.combine(path, n)
+        if opts.a or opts.A or not cu.hidden(p) then list[#list + 1] = entry(n, p) end
         listed = listed + 1
         if listed % 200 == 0 then os.queueEvent("ls"); os.pullEvent("ls") end   -- (long trees)
     end

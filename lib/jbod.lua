@@ -96,6 +96,18 @@ function J.new(base, opts)
     -- Drives with a disk that has files on it and isn't a member.
     function P.others() P.members(); return others end
 
+    -- Is `path` a member's own mount (/disk, /disk2...)?  ls and Craftix
+    -- treat those as hidden, like a name starting with a dot: their files
+    -- are in the pool.
+    function P.isMember(path)
+        if type(path) ~= "string" then return false end
+        path = base.combine(path)
+        for _, m in ipairs(P.members()) do
+            if base.combine(m.root) == path then return true end
+        end
+        return false
+    end
+
     -- Make the disk in drive `name` a member, its files and all.
     function P.add(name)
         for _, d in ipairs(opts.drives()) do

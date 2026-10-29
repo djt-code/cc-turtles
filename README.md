@@ -1048,6 +1048,12 @@ drive's modem to connect it (`peripherals` lists them as `drive_0`,
   split file with a part on it says so when opened. The disk is still an
   ordinary floppy with ordinary files on it. Files written straight onto
   a member's own mount (`/disk2/...`) are in the pool too.
+- **The members' own mounts are hidden:** with the pool mounted, `ls`
+  treats `/disk`, `/disk2`... of member disks like dot files (`ls -a` or
+  `ls -A` shows them), and Craftix's `*` and `?` skip them unless the
+  pattern starts with a plain character (`disk*` matches them, `*` doesn't),
+  as `.*` is needed for dot files. A disk that isn't a member shows as
+  usual.
 
 ## diskclone
 
