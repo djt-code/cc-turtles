@@ -2179,12 +2179,16 @@ function unplug()
 end
 
 -- Go over part of the tunnel dug before, from the home, for water getting
--- in: first along the floor of the middle of every three columns (water in
--- the tunnel ends up on the floor and spreads across it, so it reaches
--- one of them; if the middle one's floor isn't dug yet, another of the
--- three that is), checking the floor too, then, if that found any, along
--- all its other lanes.  Water it finds is getting in,
--- so it follows it to where it comes in and seals that (see dry).  With
+-- in: along the floor of the middle of every three columns, checking the
+-- floor under it too.  Water getting in from anywhere (walls, ceiling,
+-- floor) ends up on the floor and spreads across it, up to 7 blocks on the
+-- flat and on down any slope, so it reaches one of them (if the middle
+-- one's floor isn't dug yet, another of the three that is).  Water it
+-- finds is getting in, so it follows it to where it comes in and seals
+-- that (see dry).  If it found any, it walks the floor once more, back the
+-- other way, to see it's dry (twice at most).  Only if the floor is still
+-- wet after that (it couldn't follow the water up from it: a tunnel full
+-- of water coming in high up) does it walk the other lanes.  With
 -- lights, the first walk goes along the floor by the lit wall (both, in a
 -- tunnel lit from both) instead of that group's middle, and every torch
 -- missing there is put back (or put in, where there never was one).
@@ -2194,7 +2198,8 @@ function repair(z1, z2, done)
     local lanes = planLanes()
     repairing = true
     local function walk(pick)
-        local n = 0
+        -- (starting from the end it's nearer)
+        local n = math.abs(T.pos.z - z2) < math.abs(T.pos.z - z1) and 1 or 0
         for i, lane in ipairs(lanes) do
             if (not done or done(i)) and pick(lane) then
                 local from, to = z1, z2
@@ -2229,6 +2234,13 @@ function repair(z1, z2, done)
     local function first(lane) return lane.y == Y0 and middle[lane.x] end
     local before = stats.wet
     walk(first)
+    for _ = 1, 2 do                        -- found water: the floor again, till it's dry
+        if stats.wet == before then break end
+        before = stats.wet
+        walk(first)
+    end
+    -- still wet: it couldn't follow the water up from the floor (a tunnel
+    -- full of it, its way in high up): the other lanes, which pass it
     if stats.wet > before then walk(function(lane) return not first(lane) end) end
     unplug()
     repairing = false
