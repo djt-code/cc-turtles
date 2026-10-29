@@ -372,12 +372,29 @@ end
 --------------------------------------------------------------------------
 -- fs over S.files (path -> contents), as far as the programs use it.
 function M.fsApi(S)
+    -- as CC's: the parts joined, no leading or trailing slash, . and .. resolved
+    local function combine(...)
+        local out = {}
+        for _, part in ipairs({ ... }) do
+            for seg in tostring(part):gmatch("[^/\\]+") do
+                if seg == ".." then out[#out] = nil elseif seg ~= "." then out[#out + 1] = seg end
+            end
+        end
+        return table.concat(out, "/")
+    end
+    S.dirs = S.dirs or {}
     return {
-        combine = function(a, b) return (a == "" and b) or (a .. "/" .. b) end,
+        combine = combine,
         getDir = function() return "" end,
-        exists = function(p) return S.files[p] ~= nil end,
-        delete = function(p) S.files[p] = nil end,
+        exists = function(p) p = combine(p); return S.files[p] ~= nil or S.dirs[p] ~= nil end,
+        isDir = function(p) return S.dirs[combine(p)] ~= nil end,
+        makeDir = function(p) S.dirs[combine(p)] = true end,
+        isReadOnly = function() return false end,
+        delete = function(p) p = combine(p); S.files[p], S.dirs[p] = nil, nil end,
+        copy = function(a, b) S.files[combine(b)] = S.files[combine(a)] end,
+        move = function(a, b) a, b = combine(a), combine(b); S.files[b], S.files[a] = S.files[a], nil end,
         open = function(p, mode)
+            p = combine(p)
             if mode == "w" or mode == "a" then
                 local buf = { mode == "a" and S.files[p] or nil }
                 return {

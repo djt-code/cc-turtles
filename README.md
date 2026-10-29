@@ -899,9 +899,15 @@ are `claude-opus-5-5` at `medium` effort and at most 60 tool calls per goal
 (it's then told to stop and sum up); `--confirm` shows each piece of code
 and asks before running it. A refusal by the model's safety classifiers is
 retried server-side on a fallback model (the API's `fallbacks: "default"`),
-so an odd phrasing doesn't end the job. The code it runs can't reach `fs`,
-`http` or `shell`, so a slip can't read the key or rewrite the programs;
-it can do anything the turtle can, though, so keep valuables out of reach
+so an odd phrasing doesn't end the job. The code it runs can read any file
+but the API key (through `fs`, `io`, `loadfile` or `dofile`), write only
+under `/claude/` (its notes, maps, programs between goals), and `require`
+CraftOS's `cc.*` modules (`cc.strings`, `cc.pretty`, `cc.base64`,
+`cc.expect`, `cc.completion`, `cc.shell.completion`, `cc.image.nft`,
+`cc.audio.dfpwm`, `cc.require`); it can't reach `http` or `shell`, so a
+slip can't leak the key or rewrite the programs. Everything it reads goes
+to the API, so keep secrets other than the key (a `.gitlite` with a
+token) off the turtle. It can do anything the turtle can, though, so keep valuables out of reach
 the first few times, and `claude.log` keeps every piece of code it ran
 and what came back.
 

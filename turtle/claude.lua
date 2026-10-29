@@ -40,9 +40,11 @@
 -- conversation, so a long job is many calls; the system prompt and tools
 -- are marked for prompt caching.  The totals are printed when a goal ends.
 --
--- The code has the turtle, turtlelib, peripherals, the plain Lua bits and
--- `require` for CraftOS's cc.* modules (cc.strings, cc.pretty, ...), but
--- not fs, http or shell, so it can't read the key.
+-- The code has the turtle, turtlelib, peripherals, the plain Lua bits,
+-- `require` for CraftOS's cc.* modules (cc.strings, cc.pretty, ...) and
+-- the files: fs, io, loadfile and dofile read anything but the API key,
+-- and write only under /claude/ (so it can't rewrite the programs or the
+-- startup).  No http or shell.
 --
 -- Position: it picks up turtlelib's saved position (.turtlepos) if there
 -- is one, so `home` still works afterwards; otherwise here is (0,0,0)
@@ -112,14 +114,14 @@ You are driving a ComputerCraft (CC:Tweaked) turtle in Minecraft, from inside th
 
 Coordinates are the turtle's own, dead-reckoned by the turtlelib library `T`: it started at (0,0,0) facing +z (heading 0); +x is to its right (heading 1), -z is heading 2, -x is heading 3; y is up. T.pos = {x, y, z} and T.dir are where it thinks it is, and stay right only if you move and turn through T: T.forward(), T.back(), T.up(), T.down(), T.turnLeft(), T.turnRight(), T.face(d), T.moveDir(d) (d a heading, "up" or "down"), T.toY(y), T.goTo(x, z) (routes to a column at the current height, learning obstacles). Never call turtle.forward/back/up/down/turnLeft/turnRight yourself: T.pos would be wrong from then on. T.forward() and the others only dig blocks listed in T.diggable (empty to start): to dig, call turtle.dig(), turtle.digUp() or turtle.digDown() first, or set T.diggable["minecraft:stone"] = true for what it may dig on the way. Moves cost one fuel each; T.refuelTo(n) burns fuel items from the inventory.
 
-Also useful: T.look(d) / T.digDir(d) / T.placeDir(d) (inspect, dig, place in a direction, facing it first); turtle.inspect(), turtle.inspectUp(), turtle.inspectDown() -> ok, {name=..., state=...}; turtle.detect/detectUp/detectDown(); turtle.select(slot), turtle.getItemDetail(slot), turtle.getItemCount(slot); T.selectItem(name), T.countItem(name), T.freeSlots(), T.tidyInventory(); turtle.place/placeUp/placeDown(), turtle.drop/dropUp/dropDown(n), turtle.suck/suckUp/suckDown(n); turtle.getFuelLevel(); peripheral.wrap("left"/"right"/"front"/"top"/"bottom"); sleep(seconds); T.posString().
+Also useful: T.look(d) / T.digDir(d) / T.placeDir(d) (inspect, dig, place in a direction, facing it first); turtle.inspect(), turtle.inspectUp(), turtle.inspectDown() -> ok, {name=..., state=...}; turtle.detect/detectUp/detectDown(); turtle.select(slot), turtle.getItemDetail(slot), turtle.getItemCount(slot); T.selectItem(name), T.countItem(name), T.freeSlots(), T.tidyInventory(); turtle.place/placeUp/placeDown(), turtle.drop/dropUp/dropDown(n), turtle.suck/suckUp/suckDown(n); turtle.getFuelLevel(); peripheral.wrap("left"/"right"/"front"/"top"/"bottom"); sleep(seconds); T.posString(). Files: read any with fs or io; write only under /claude/ (fs.makeDir("/claude") first), for notes, maps or programs you keep between goals.
 
 Each tool call is a slow network round trip, so do several steps per call: write loops, check results in the code, and return or print what you learn, briefly. Variables and functions you define persist between calls. Call `status` to see where the turtle is, what's around it and what it carries. Never dig or break chests, barrels, hoppers or computers, and don't break blocks you weren't asked to. If the task is unclear or risky, call ask_user. When done (or stuck), stop and say what you did and where the turtle is; say plainly if something failed.]]
 
 local TOOLS = {
     {
         name = "lua",
-        description = "Run Lua on the turtle. The code runs as a chunk with turtle, T (turtlelib), peripheral, os, textutils, math, string, table and sleep in scope, and require for the CraftOS modules cc.strings, cc.pretty, cc.expect, cc.base64, cc.completion, cc.shell.completion, cc.image.nft, cc.audio.dfpwm and cc.require; print output and return values come back to you (tables are serialised). Errors come back as an error result. Definitions persist between calls.",
+        description = "Run Lua on the turtle. The code runs as a chunk with turtle, T (turtlelib), peripheral, os, textutils, math, string, table, sleep, fs and io in scope (fs, io, loadfile and dofile read any file but the API key and write only under /claude/), and require for the CraftOS modules cc.strings, cc.pretty, cc.expect, cc.base64, cc.completion, cc.shell.completion, cc.image.nft, cc.audio.dfpwm and cc.require; print output and return values come back to you (tables are serialised). Errors come back as an error result. Definitions persist between calls.",
         input_schema = {
             type = "object",
             properties = { code = { type = "string", description = "The Lua code to run." } },
@@ -256,43 +258,98 @@ local function show(v)
     return tostring(v)
 end
 
--- What the code may use: the turtle, the library, the world's peripherals
--- and the plain Lua bits.  Not fs, http, shell or io, so a slip can't
--- read the key or rewrite the programs.
+-- The files: the code may read anything but the API key, and write only
+-- under /claude/, so a slip can't rewrite the programs or the startup.
+local WRITE_DIR = "claude"
+local NO_WRITE = "writable only under /" .. WRITE_DIR .. "/"
+local NO_READ = "the API key isn't readable"
+local function norm(path) return fs.combine(tostring(path), "") end
+local KEY_PATH = norm(KEY_FILE):lower()
+local function isKey(path) return norm(path):lower() == KEY_PATH end
+-- `path` is the key or a folder it's in (copying that would copy the key)
+local function holdsKey(path)
+    local p = norm(path):lower()
+    return p == KEY_PATH or p == "" or KEY_PATH:sub(1, #p + 1) == p .. "/"
+end
+local function writable(path)
+    local p = norm(path)
+    return p == WRITE_DIR or p:sub(1, #WRITE_DIR + 1) == WRITE_DIR .. "/"
+end
+local function denied(path, why) error(tostring(path) .. ": " .. why, 3) end
+local function isWrite(mode) return mode ~= nil and mode ~= "r" and mode ~= "rb" end
+
+local codeFs = {}
+for k, v in pairs(fs) do codeFs[k] = v end
+function codeFs.open(path, mode)
+    if isKey(path) then return nil, tostring(path) .. ": " .. NO_READ end
+    if isWrite(mode) and not writable(path) then return nil, tostring(path) .. ": " .. NO_WRITE end
+    return fs.open(path, mode)
+end
+function codeFs.makeDir(path)
+    if not writable(path) then denied(path, NO_WRITE) end
+    return fs.makeDir(path)
+end
+function codeFs.delete(path)
+    if not writable(path) then denied(path, NO_WRITE) end
+    return fs.delete(path)
+end
+function codeFs.move(from, to)
+    if not writable(from) then denied(from, NO_WRITE) end
+    if not writable(to) then denied(to, NO_WRITE) end
+    return fs.move(from, to)
+end
+function codeFs.copy(from, to)
+    if holdsKey(from) then denied(from, isKey(from) and NO_READ or "has the API key in it, so it can't be copied") end
+    if not writable(to) then denied(to, NO_WRITE) end
+    return fs.copy(from, to)
+end
+function codeFs.isReadOnly(path) return not writable(path) or fs.isReadOnly(path) end
+
+local codeIo = {
+    open = function(path, mode)
+        if isKey(path) then return nil, tostring(path) .. ": " .. NO_READ end
+        if isWrite(mode) and not writable(path) then return nil, tostring(path) .. ": " .. NO_WRITE end
+        return io.open(path, mode)
+    end,
+    lines = function(path, ...)
+        if path ~= nil and isKey(path) then denied(path, NO_READ) end
+        return io.lines(path, ...)
+    end,
+    type = io.type,
+}
+
+-- What the code may use: the turtle, the library, the world's peripherals,
+-- the files as above and the plain Lua bits.  Not http or shell.
 local API = {
     turtle = turtle, T = T, peripheral = peripheral, os = os, textutils = textutils,
     math = math, string = string, table = table, sleep = sleep,
+    fs = codeFs, io = codeIo,
     pairs = pairs, ipairs = ipairs, next = next, select = select, type = type,
     tostring = tostring, tonumber = tonumber, unpack = unpack or table.unpack,
     pcall = pcall, error = error, assert = assert,
 }
 local env = setmetatable({}, { __index = API })
+local function codeLoadfile(path, mode, e)
+    if isKey(path) then return nil, tostring(path) .. ": " .. NO_READ end
+    return loadfile(path, mode, e or env)
+end
+API.loadfile = codeLoadfile
+API.dofile = function(path) return assert(codeLoadfile(path))() end
 
 -- `require` in the code: CraftOS's cc.* modules, and only those.  They're
--- loaded afresh from /rom with a world of their own, so that what reads
--- files (cc.image.nft's load, cc.require's loaders) can't open the key or
--- a .gitlite (which may hold a git token), and cc.require's package.loaded
--- gets the code's globals as _G, not the real ones.
+-- loaded afresh from /rom with a world of their own: the code's fs and io
+-- (cc.image.nft's load and cc.require's loaders read files), and the
+-- code's globals as cc.require's _G, not the real ones.
 local CC_MODULES = {
     ["cc.audio.dfpwm"] = true, ["cc.base64"] = true, ["cc.completion"] = true, ["cc.expect"] = true,
     ["cc.image.nft"] = true, ["cc.pretty"] = true, ["cc.require"] = true,
     ["cc.shell.completion"] = true, ["cc.strings"] = true,
 }
-local function secret(path)
-    local p = fs.combine(tostring(path), ""):lower()
-    return p == fs.combine(KEY_FILE, ""):lower() or p:match("[^/]*$") == ".gitlite"
-end
-local function guard(open)
-    return function(path, ...)
-        if secret(path) then return nil, tostring(path) .. ": not readable from here" end
-        return open(path, ...)
-    end
-end
 local modWorld = {
-    fs = setmetatable({ open = guard(fs.open) }, { __index = fs }),
-    io = setmetatable({ open = guard(io.open), lines = guard(io.lines) }, { __index = io }),
-    loadfile = guard(loadfile),
-    dofile = function(path) return assert(guard(loadfile)(path))() end,
+    fs = codeFs,
+    io = setmetatable({ open = codeIo.open, lines = codeIo.lines }, { __index = io }),
+    loadfile = codeLoadfile,
+    dofile = API.dofile,
     debug = { getregistry = function() return nil end },
     _G = env,
     shell = shell,                  -- cc.shell.completion asks it for the directory

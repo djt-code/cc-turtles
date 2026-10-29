@@ -107,7 +107,7 @@ check("the code was logged to claude.log", (Mine.files["claude.log"] or ""):find
 --    persist between calls
 fresh({ "" })
 HTTP.queue = {
-    reply({ toolUse("lua", { code = "return fs.list('/')" }) }, "tool_use"),
+    reply({ toolUse("lua", { code = "return http, shell" }) }, "tool_use"),
     reply({ toolUse("lua", { code = "return (" }) }, "tool_use"),
     reply({ toolUse("lua", { code = "function twice(n) return 2 * n end; return { a = twice(2) }" }) }, "tool_use"),
     reply({ toolUse("lua", { code = "return twice(5), http, shell" }) }, "tool_use"),
@@ -115,8 +115,7 @@ HTTP.queue = {
 }
 run("poke at the sandbox")
 local e1 = resultsIn(2).toolu_1
-check("fs isn't there: an error result", e1 and e1.is_error == true and tostring(e1.content):find("error:") and tostring(e1.content):find("fs"),
-    e1 and e1.content)
+check("http and shell aren't there", e1 and e1.content == "-> nil\n-> nil", e1 and e1.content)
 local e2 = resultsIn(3).toolu_2
 check("a syntax error is an error result", e2 and e2.is_error == true and tostring(e2.content):find("syntax"), e2 and e2.content)
 local e3 = resultsIn(4).toolu_3
@@ -238,3 +237,42 @@ local q1, q2 = resultsIn(2).toolu_1, resultsIn(3).toolu_2
 check("require of anything but a cc module is an error result naming what it can have",
     q1 and q1.is_error and tostring(q1.content):find("only CraftOS's modules") and tostring(q1.content):find("cc.strings", 1, true)
         and q2 and q2.is_error, q1 and q1.content)
+
+-- 11. the files: anything but the key can be read, only /claude/ written
+fresh({ "" })
+Mine.files["notes.txt"] = "hello"
+Mine.files["startup.lua"] = "shell.run('x')"
+local FS_CODES = {
+    [[local f = fs.open("notes.txt", "r"); local s = f.readAll(); f.close(); return s]],
+    [[return fs.open("claude.key", "r")]],
+    [[return fs.open("/./CLAUDE.KEY", "r")]],
+    [[return io.open("claude.key")]],
+    [[return loadfile("claude.key")]],
+    [[return fs.open("startup.lua", "w")]],
+    [[return fs.open("claude/../startup.lua", "a")]],
+    [[return pcall(fs.delete, "startup.lua")]],
+    [[return pcall(fs.copy, "claude.key", "claude/k")]],
+    [[return pcall(fs.copy, "/", "claude/all")]],
+    [[return pcall(fs.move, "notes.txt", "claude/notes.txt")]],
+    [[fs.makeDir("/claude"); local f = fs.open("/claude/map.txt", "w"); f.write("mapped"); f.close(); fs.copy("notes.txt", "claude/n.txt"); return fs.isReadOnly("claude/x"), fs.isReadOnly("startup.lua")]],
+}
+HTTP.queue = {}
+for i, c in ipairs(FS_CODES) do HTTP.queue[i] = reply({ toolUse("lua", { code = c }) }, "tool_use") end
+HTTP.queue[#FS_CODES + 1] = reply({ text("Filed.") }, "end_turn")
+run("poke at the files")
+local function fsOut(i) local r = resultsIn(i + 1)["toolu_" .. i]; return r and tostring(r.content) or "" end
+check("any other file can be read", fsOut(1) == "-> hello", fsOut(1))
+check("the key can't, through fs, io or loadfile, nor by another spelling",
+    fsOut(2):find("API key isn't readable", 1, true) and fsOut(3):find("API key isn't readable", 1, true)
+        and fsOut(4):find("API key isn't readable", 1, true) and fsOut(5):find("API key isn't readable", 1, true)
+        and not (fsOut(2) .. fsOut(3) .. fsOut(4) .. fsOut(5)):find("sk-test", 1, true), fsOut(3))
+check("nothing outside /claude/ can be written, .. or not",
+    fsOut(6):find("writable only under /claude/", 1, true) and fsOut(7):find("writable only under /claude/", 1, true)
+        and fsOut(8):find("^%-> false") and Mine.files["startup.lua"] == "shell.run('x')", fsOut(7))
+check("the key can't be copied out, nor a folder it's in",
+    fsOut(9):find("^%-> false") and fsOut(10):find("^%-> false") and Mine.files["claude/k"] == nil, fsOut(10))
+check("nor moved out of where it is into /claude/ (only /claude/ files move)",
+    fsOut(11):find("^%-> false") and Mine.files["notes.txt"] == "hello", fsOut(11))
+check("in /claude/ it can make folders, write and copy in; isReadOnly says which is which",
+    Mine.files["claude/map.txt"] == "mapped" and Mine.files["claude/n.txt"] == "hello"
+        and fsOut(12) == "-> false\n-> true", fsOut(12))
