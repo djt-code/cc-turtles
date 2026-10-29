@@ -575,6 +575,48 @@ end
 -- { code = 200, body = <table> }, or { fail = "reason" } for no
 -- connection; an empty queue is an error.
 --------------------------------------------------------------------------
+-- A Messages API reply as the server-sent events of a streamed response:
+-- text, thinking and tool input in small deltas, a ping between blocks.
+function M.sse(msg)
+    local out = {}
+    local function ev(t) out[#out + 1] = "event: " .. t.type .. "\ndata: " .. json.encode(t) .. "\n\n" end
+    local function pieces(s, n)
+        local t = {}
+        for i = 1, #s, n do t[#t + 1] = s:sub(i, i + n - 1) end
+        return t
+    end
+    local start = {}
+    for k, v in pairs(msg) do if k ~= "content" and k ~= "stop_reason" and k ~= "stop_details" then start[k] = v end end
+    start.content, start.stop_reason = {}, nil
+    start.usage = { input_tokens = msg.usage and msg.usage.input_tokens, cache_read_input_tokens = msg.usage and msg.usage.cache_read_input_tokens, output_tokens = 1 }
+    ev({ type = "message_start", message = start })
+    for i, b in ipairs(msg.content or {}) do
+        local idx = i - 1
+        ev({ type = "ping" })
+        if b.type == "text" then
+            ev({ type = "content_block_start", index = idx, content_block = { type = "text", text = "" } })
+            for _, p in ipairs(pieces(b.text, 5)) do ev({ type = "content_block_delta", index = idx, delta = { type = "text_delta", text = p } }) end
+        elseif b.type == "thinking" then
+            ev({ type = "content_block_start", index = idx, content_block = { type = "thinking", thinking = "", signature = "" } })
+            for _, p in ipairs(pieces(b.thinking, 5)) do ev({ type = "content_block_delta", index = idx, delta = { type = "thinking_delta", thinking = p } }) end
+            ev({ type = "content_block_delta", index = idx, delta = { type = "signature_delta", signature = b.signature } })
+        elseif b.type == "tool_use" then
+            ev({ type = "content_block_start", index = idx, content_block = { type = "tool_use", id = b.id, name = b.name, input = {} } })
+            local input = json.encode(b.input or {})
+            if input ~= "[]" and input ~= "{}" then
+                for _, p in ipairs(pieces(input, 7)) do ev({ type = "content_block_delta", index = idx, delta = { type = "input_json_delta", partial_json = p } }) end
+            end
+        else
+            ev({ type = "content_block_start", index = idx, content_block = b })
+        end
+        ev({ type = "content_block_stop", index = idx })
+    end
+    ev({ type = "message_delta", delta = { stop_reason = msg.stop_reason, stop_details = msg.stop_details },
+         usage = { output_tokens = msg.usage and msg.usage.output_tokens } })
+    ev({ type = "message_stop" })
+    return table.concat(out)
+end
+
 function M.httpApi()
     local H = { queue = {}, requests = {} }
     local function handle(code, text)
@@ -598,6 +640,10 @@ function M.httpApi()
             if not r then error("http.post with nothing scripted for it (request " .. #H.requests .. ")") end
             if r.fail then return nil, r.fail, nil end
             local text = type(r.body) == "string" and r.body or json.encode(r.body)
+            local asked = H.requests[#H.requests].body
+            if r.code == 200 and type(asked) == "table" and asked.stream and type(r.body) == "table" then
+                text = M.sse(r.body)        -- a streamed request gets the reply as events
+            end
             if r.code == 200 then return handle(200, text) end
             return nil, "HTTP " .. r.code, handle(r.code, text)
         end,

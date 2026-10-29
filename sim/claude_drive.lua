@@ -276,3 +276,19 @@ check("nor moved out of where it is into /claude/ (only /claude/ files move)",
 check("in /claude/ it can make folders, write and copy in; isReadOnly says which is which",
     Mine.files["claude/map.txt"] == "mapped" and Mine.files["claude/n.txt"] == "hello"
         and fsOut(12) == "-> false\n-> true", fsOut(12))
+
+-- 12. streaming: the request asks for a stream with the thinking
+--     summarised (CC's 60 s timeout is for silence, and a stream keeps
+--     talking); a stream an overload cuts off is retried
+fresh({ "" })
+HTTP.queue = {
+    { code = 200, body = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"content\":[],\"usage\":{\"input_tokens\":5}}}\n\nevent: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n" },
+    reply({ { type = "thinking", thinking = "Plan: say hi.", signature = "sig2" }, text("Hi there.") }, "end_turn"),
+}
+run("say hi")
+local s1 = HTTP.requests[1] and HTTP.requests[1].body
+check("the request asks for a stream, thinking summarised", s1 and s1.stream == true
+    and s1.thinking and s1.thinking.type == "adaptive" and s1.thinking.display == "summarized")
+check("an overload partway through the stream is retried", #HTTP.requests == 2 and Mine.logHas("overloaded_error.*trying again"))
+check("the reply put back together from its events is printed, the thinking logged",
+    Mine.logHas("^Hi there%.$") and (Mine.files["claude.log"] or ""):find("thinking: Plan: say hi.", 1, true) ~= nil)

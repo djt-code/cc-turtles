@@ -65,7 +65,8 @@ local LOG_FILE = T.dataPath("claude.log")
 local MAX_TOKENS = 8192         -- a reply is a short note and some code
 local MAX_OUTPUT = 6000         -- characters of a tool's output sent back
 local RETRIES = 4               -- on rate limits, overload and outages
-local HTTP_TIMEOUT = 60         -- seconds to wait for a reply: CC allows at most 60
+local HTTP_TIMEOUT = 60         -- seconds with nothing coming in, at most 60 in CC; the
+                                -- reply is streamed, so a long one keeps coming
 
 --------------------------------------------------------------------------
 -- Arguments
@@ -469,6 +470,12 @@ local function body()
         tools = TOOLS,
         messages = messages,
         output_config = { effort = EFFORT },
+        -- streamed, with the thinking summarised as it goes: CC's timeout
+        -- is for 60 s with nothing coming in, so the reply has to keep
+        -- coming (the thinking text is hidden by default, and a long think
+        -- would be a long silence)
+        stream = true,
+        thinking = { type = "adaptive", display = "summarized" },
         -- a refusal by the safety classifiers is retried on a fallback
         -- model server-side (see the API docs: server-side fallback)
         fallbacks = "default",
@@ -482,8 +489,54 @@ local HEADERS = {
     ["anthropic-beta"] = "server-side-fallback-2026-07-01",
 }
 
+-- The message from a streamed reply's events, or nil and the error the
+-- stream ended with ({ type = ..., message = ... }).
+local function fromEvents(text)
+    local msg, parts = nil, {}
+    for data in text:gmatch("data: ([^\r\n]*)") do
+        local e = textutils.unserialiseJSON(data)
+        local t = e and e.type
+        if t == "message_start" then
+            msg = e.message
+            msg.content = {}
+        elseif t == "content_block_start" and msg then
+            msg.content[e.index + 1] = e.content_block
+            parts[e.index + 1] = {}
+        elseif t == "content_block_delta" and msg and parts[e.index + 1] then
+            local d, p = e.delta, parts[e.index + 1]
+            local field = d.type == "text_delta" and "text" or d.type == "thinking_delta" and "thinking"
+                or d.type == "signature_delta" and "signature" or d.type == "input_json_delta" and "input"
+            local piece = d.text or d.thinking or d.signature or d.partial_json
+            if field and piece then
+                p[field] = p[field] or {}
+                table.insert(p[field], piece)
+            end
+        elseif t == "content_block_stop" and msg and parts[e.index + 1] then
+            local b = msg.content[e.index + 1]
+            for field, pieces in pairs(parts[e.index + 1]) do
+                local s = table.concat(pieces)
+                if field == "input" then
+                    b.input = textutils.unserialiseJSON(s) or {}
+                else
+                    b[field] = (b[field] or "") .. s
+                end
+            end
+        elseif t == "message_delta" and msg then
+            msg.stop_reason = e.delta and e.delta.stop_reason
+            msg.stop_details = e.delta and e.delta.stop_details
+            msg.usage = msg.usage or {}
+            for k, v in pairs(e.usage or {}) do msg.usage[k] = v end
+        elseif t == "error" then
+            return nil, e.error or { type = "error", message = data }
+        end
+    end
+    if not msg then return nil, { type = "unreadable", message = tostring(text):sub(1, 200) } end
+    return msg
+end
+
 -- Send the conversation; the reply as a table, or nil and why.  Rate
--- limits, overloads and outages are retried with a growing wait.
+-- limits, overloads and outages are retried with a growing wait, and so
+-- is a stream cut off by an overload.
 local function request()
     local wait = 2
     for attempt = 1, RETRIES + 1 do
@@ -496,19 +549,23 @@ local function request()
             code, text = failed.getResponseCode(), failed.readAll()
             if failed.close then failed.close() end
         end
+        local detail, again
         if code == 200 then
-            local reply = textutils.unserialiseJSON(text)
+            local reply, e = fromEvents(text)
             if reply then return reply end
-            return nil, "Couldn't read the reply: " .. tostring(text):sub(1, 200)
+            -- an error partway: the ones a wait cures, as for their HTTP codes
+            detail = tostring(e.type) .. ": " .. tostring(e.message)
+            again = e.type == "overloaded_error" or e.type == "api_error" or e.type == "rate_limit_error"
+        else
+            detail = tostring(err or "")
+            if text then
+                local e = textutils.unserialiseJSON(text)
+                detail = e and e.error and (e.error.type .. ": " .. tostring(e.error.message)) or text:sub(1, 200)
+            end
+            again = code == 429 or code == 500 or code == 502 or code == 503 or code == 529 or (not code)
         end
-        local detail = tostring(err or "")
-        if text then
-            local e = textutils.unserialiseJSON(text)
-            detail = e and e.error and (e.error.type .. ": " .. tostring(e.error.message)) or text:sub(1, 200)
-        end
-        local again = code == 429 or code == 500 or code == 502 or code == 503 or code == 529 or (not code)
         if not again or attempt > RETRIES then
-            return nil, string.format("API request failed%s: %s", code and (" (HTTP " .. code .. ")") or "", detail)
+            return nil, string.format("API request failed%s: %s", code and code ~= 200 and (" (HTTP " .. code .. ")") or "", detail)
         end
         print(string.format("API: %s; trying again in %ds.", detail, wait))
         sleep(wait)
@@ -540,6 +597,7 @@ local function converse(goal)
         messages[#messages + 1] = { role = "assistant", content = reply.content }
         for _, b in ipairs(reply.content) do
             if b.type == "text" and b.text ~= "" then print(b.text); log("claude: " .. b.text) end
+            if b.type == "thinking" and (b.thinking or "") ~= "" then log("thinking: " .. b.thinking) end
         end
         if reply.stop_reason == "tool_use" then
             local results = {}

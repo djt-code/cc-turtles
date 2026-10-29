@@ -899,7 +899,10 @@ are `claude-opus-5-5` at `medium` effort and at most 60 tool calls per goal
 (it's then told to stop and sum up); `--confirm` shows each piece of code
 and asks before running it. A refusal by the model's safety classifiers is
 retried server-side on a fallback model (the API's `fallbacks: "default"`),
-so an odd phrasing doesn't end the job. The code it runs can read any file
+so an odd phrasing doesn't end the job. Replies are streamed, with the
+thinking summarised as it goes (it's written to `claude.log`): CC gives up
+on a request after 60 s with nothing coming in, at most, and a long think
+sent as one reply would be that long a silence. The code it runs can read any file
 but the API key (through `fs`, `io`, `loadfile` or `dofile`), write only
 under `/claude/` (its notes, maps, programs between goals), and `require`
 CraftOS's `cc.*` modules (`cc.strings`, `cc.pretty`, `cc.base64`,
