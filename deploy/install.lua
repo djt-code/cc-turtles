@@ -8,7 +8,10 @@
 -- repo's bin/ (cat, echo, git, craftix and the rest) to the shell's path
 -- at boot, and turtle/ (mine, farm, ...) on a turtle or pc/ (diskclone)
 -- on a computer, so they run from any directory, and help/ to the help
--- path, so `help mine` works.  lib/ holds modules the programs require,
+-- path, so `help mine` works, and makes `ls` run bin/ls (CraftOS's ls is
+-- an alias for list, and aliases win over the path, so ours is an alias
+-- too; `alias ls list` brings the old one back until the next boot).
+-- lib/ holds modules the programs require,
 -- not programs, so it stays off the path.  The lines go first so a
 -- startup program that never returns (autocompost, say) doesn't keep them
 -- from running.  Running install again changes nothing; run it again
@@ -65,6 +68,11 @@ for i, d in ipairs(dirs) do lines[i] = pathLine(d) end
 lines[#lines + 1] = string.format(
     "if not (':' .. help.path() .. ':'):find(':%s/help:', 1, true) then help.setPath(help.path() .. ':%s/help') end",
     repo, repo)
+-- our ls (with -a, -l, -h...) over CraftOS's, which is an alias for list:
+-- aliases come before the path, so it has to be one too
+lines[#lines + 1] = string.format(
+    'if fs.exists("%s/bin/ls.lua") and fs.exists("%s/lib/cu.lua") then shell.setAlias("ls", "%s/bin/ls.lua") end',
+    repo, repo, repo)
 local block = table.concat(lines, "\n") .. "\n"
 local loginLine = loginLineFor(repo .. "/bin/craftix")
 local autoLine = string.format(
@@ -160,7 +168,7 @@ end
 
 if noReboot then
     -- this shell gets it now; others after a reboot
-    load(block, "=startup", "t", { shell = shell, help = help })()
+    load(block, "=startup", "t", { shell = shell, help = help, fs = fs })()
     print("Not rebooting: on the path in this shell now, everywhere after a reboot.")
     if login then print("Type craftix to start it now.") end
     return

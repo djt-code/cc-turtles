@@ -25,7 +25,7 @@ The repo is in four folders:
 | `bin/cat.lua`, `bin/more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
 | `lib/pager.lua` | Library: a `less`-style viewer for `more`, `git log` and `claude`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), the mouse wheel 3 lines, `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. A program that colours its output can hand it lines as `{ text, fg }` (`fg` one blit digit per character, as `term.blit` takes them), and on a colour screen they're shown in those colours. |
 | `bin/echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
-| POSIX utilities (`bin/`) | `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks. `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
+| POSIX utilities (`bin/`) | `ls` `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks (and `ls`, which replaces CraftOS's). `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
 | `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
@@ -146,7 +146,8 @@ It adds lines to the top of `/startup.lua` (or writes
 `/startup/00-cc-turtles.lua` if `/startup` is a directory) that put the
 repo's `bin/` on the path at boot, and `turtle/` on a turtle or `pc/` on a
 computer, and `help/` on the help path (`help mine`, `help grep`; `help
-cc-turtles` lists them all), then reboots. `--no-reboot` puts them on the
+cc-turtles` lists them all), and make `ls` run the repo's `ls` instead of
+CraftOS's, then reboots. `--no-reboot` puts them on the
 path in the current shell instead. Running it again changes nothing.
 `deploy/` and `lib/` aren't on the path, so `install` and `cu` don't
 become commands. At the end of startup, on a turtle, goes the
@@ -243,6 +244,7 @@ departs from POSIX.
 
 | Utility | Options |
 |---|---|
+| `ls` | `-a -A -d -F -h -l -p -R -r -S -t -1`; `ls -lah` as on Linux; replaces CraftOS's `ls` (see below) |
 | `cat` | `-u`; files byte for byte |
 | `more` | `-c -s -u`; pages in the pager, a `::::` header per file |
 | `echo` | no options; XSI escapes (`\n \t \c \0num` ...); `> file` and `>> file` (outside Craftix) |
@@ -296,9 +298,18 @@ What CraftOS can't do:
   so `grep "two words" notes.txt` works but `*` reaches the program as is.
   `echo` does `>` and `>>` itself, since that's how you'd write a file at
   the prompt. [Craftix](#craftix) adds all of these.
-- The ROM's programs come first on the path, so `ls`, `cp`, `mv`, `rm`,
+- The ROM's programs come first on the path, so `cp`, `mv`, `rm`,
   `mkdir`, `cd`, `clear`, `edit`, `type`, `set` and `alias` are always the
-  CraftOS ones; there is no POSIX version of those here.
+  CraftOS ones; there is no POSIX version of those here. `ls` is the
+  exception: CraftOS's `ls` is only an alias for `list` (which shows
+  hidden files only with the setting `list.show_hidden`), and aliases come
+  before the path, so `deploy/install` makes `ls` an alias for `bin/ls`.
+  `dir` stays CraftOS's `list`; `alias ls list` brings the old `ls` back
+  until the next boot. Run `deploy/install` again after `git pull` to get
+  the alias on a device installed before `ls` existed.
+- `ls -l` has no owner, group or link-count columns (CraftOS has none):
+  the mode (`d`, and no `w` on read-only files such as `/rom`), the size,
+  the modification time and the name.
 - There is no separate stderr: messages go to the screen (in red on an
   advanced computer).
 - No file times can be set, no permissions, owners, links or devices:

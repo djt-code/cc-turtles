@@ -1,0 +1,18 @@
+ls: list directory contents (POSIX ls, with the GNU options in everyday use)
+
+  ls [-aAdFhlpRrSt1] [file...]
+
+Lists each directory operand's entries (default "."), and file operands as themselves: files first, then each directory under a "name:" header when there's more than one operand.  Names starting with "." are hidden unless -a or -A.  To the screen, entries go in columns (directories in green on a colour screen); into a pipe or a file, one per line.
+  -a  all entries, the hidden ones and "." and ".." too
+  -A  almost all: the hidden ones, not "." and ".."
+  -l  long format: type and permissions, size, modification time, name,
+     after a "total" line (the size of what's listed, in kilobytes).
+     CraftOS has no owners, groups or links, so there are no columns
+     for them; read-only files (/rom, disks set read-only) have no "w".
+  -h  with -l, sizes as 1.5K, 23K, 4.0M instead of bytes
+  -d  list directory operands themselves, not what's in them
+  -R  list subdirectories too, each under its own header
+  -t  newest first;  -S  largest first;  -r  reverse the order
+  -F  mark directories with "/" (-p: the same)
+  -1  one entry per line
+deploy/install makes `ls` an alias for this, ahead of CraftOS's own `ls` (an alias for `list`, which shows hidden files only with the setting list.show_hidden).  A missing operand is reported and ls exits 2.
