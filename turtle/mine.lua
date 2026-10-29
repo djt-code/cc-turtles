@@ -51,7 +51,11 @@
 --    chests, the fuel, the torches, all the wood it has mined (logs,
 --    planks, sticks) and the crafting table from the old home to the new
 --    one, as many trips as it takes.  Bulk stays in the home it was mined
---    near; valuables stay in their home's chest until the end.  It checks
+--    near (bulk only ever goes in bulk chests): walking back, it leaves
+--    the bulk it carries at each home it passes, keeping a stack of
+--    filler for water on the way until home 1, so none reaches the start;
+--    bulk found in a valuables chest goes down into the bulk chest.
+--    Valuables stay in their home's chest until the end.  It checks
 --    each chest it places is really there: in a mineshaft, a minecart
 --    standing where a chest goes is broken and picked up first.
 --  * Crafting: at the newest home, when it has fewer chests than two more
@@ -2229,24 +2233,85 @@ end
 --------------------------------------------------------------------------
 leftBehind = {}      -- home number -> items left in it
 
--- The lowest-valued thing carried that's worth less than `than`.
+-- The lowest-valued valuable carried that's worth less than `than` (bulk
+-- never goes in a valuables chest).
 function cheapestSlot(than)
     local slot, low
     for s = 1, 16 do
-        local it = turtle.getItemDetail(s)
-        if it and not T.isTool(it.name) and not isSupply(it.name) and not isScanner(it.name) then
-            local v = isBulk(it) and 0 or value(it.name)
+        local it = turtle.getItemDetail(s, true)
+        if it and not T.isTool(it.name) and not isSupply(it.name) and not isScanner(it.name)
+            and not isBulk(it) then
+            local v = value(it.name)
             if v < than and (not low or v < low) then slot, low = s, v end
         end
     end
     return slot
 end
 
+-- Leave the bulk the turtle carries in home h's bulk chest: all of it, or
+-- all but a stack of filler (for drying out water on the way) when
+-- `keepFiller`.  Bulk stays at the home it was mined near; it's never
+-- carried back to the start.
+function leaveBulk(h, keepFiller)
+    if not containerOn(h.bulk) then return end
+    local kept = 0
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s, true)
+        if it and isBulk(it) then
+            local keep = 0
+            if keepFiller and FILLER[it.name] then
+                keep = math.min(it.count, FILLER_KEEP - kept)
+                kept = kept + keep
+            end
+            if it.count > keep then
+                turtle.select(s)
+                dropSide(h.bulk, it.count - keep)
+            end
+        end
+    end
+    turtle.select(1)
+end
+
+-- Bulk in home h's valuables chest (put there before bulk was kept out of
+-- them) goes down into its bulk chest, while there's room.
+function bulkOutOfValuables(h)
+    if not (containerOn(h.val) and containerOn(h.bulk)) then return end
+    for name, n in pairs(chestCounts(h.val)) do
+        if isBulk({ name = name }) and not isSupply(name) then
+            for _ = 1, math.ceil(n / 64) do
+                if T.freeSlots() == 0 then break end
+                local before = T.countItem(name)
+                T.restockFrom(h.val, name, before + math.min(64, chestCounts(h.val)[name] or 0), { quiet = true, room = 0 })
+                if T.countItem(name) == before then break end
+                for s = 16, 1, -1 do
+                    local it = turtle.getItemDetail(s)
+                    if it and it.name == name then
+                        turtle.select(s)
+                        if not dropSide(h.bulk) then break end
+                    end
+                end
+                if T.countItem(name) > before then           -- the bulk chest is full: back it goes
+                    for s = 16, 1, -1 do
+                        local it = turtle.getItemDetail(s)
+                        if it and it.name == name then turtle.select(s); dropSide(h.val) end
+                    end
+                    turtle.select(1)
+                    return
+                end
+            end
+        end
+    end
+    turtle.select(1)
+end
+
+-- Take the valuables from the valuables chest on `side` (not supplies, not
+-- bulk), the most valuable first, swapping cheaper ones carried for them
+-- when it's full.  Returns how many valuables are left in it.
 function collect(side)
     local counts = chestCounts(side)
     local names = {}
     for name in pairs(counts) do
-        if not isSupply(name) then names[#names + 1] = name end
+        if not isSupply(name) and not isBulk({ name = name }) then names[#names + 1] = name end
     end
     table.sort(names, function(a, b)
         if value(a) ~= value(b) then return value(a) > value(b) end
@@ -2268,7 +2333,7 @@ function collect(side)
     turtle.select(1)
     local left = 0
     for name, n in pairs(chestCounts(side)) do
-        if not isSupply(name) then left = left + n end
+        if not isSupply(name) and not isBulk({ name = name }) then left = left + n end
     end
     return left
 end
@@ -2278,14 +2343,15 @@ end
 -- True if it got there and the start's chests took everything.
 function walkBackCollecting()
     leftBehind = {}
-    unload("bulk")
     print("Walking back to the start, collecting valuables.")
     for k = home.k, 1, -1 do
         local h = homeAt(k)
         alongAxis("x", 0); alongAxis("y", 0)
         alongAxis("z", h.z)
         T.face(h.face)
+        leaveBulk(h, k > 1)                -- (home 1: the last of it; none goes to the start)
         if containerOn("front") then
+            bulkOutOfValuables(h)
             local left = collect("front")
             if left > 0 then leftBehind[k] = left end
         end

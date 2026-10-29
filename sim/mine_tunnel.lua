@@ -155,12 +155,42 @@ check("brought back every diamond and all the iron", (got["minecraft:diamond"] o
     (got["minecraft:diamond"] or 0) .. " diamond, " .. (got["minecraft:raw_iron"] or 0) .. " raw iron, "
     .. (got["minecraft:string"] or 0) .. " string")
 check("said what it left in home 1", logHas("No room to bring back %d+ items from home 1"))
+local h1bulk = 0
+for name, n in pairs(select(2, contents(chestAt(-1, 0, 8)))) do
+    if not (name:find("string") or name:find("raw_iron") or name:find("diamond") or name:find("coal")
+        or name:find("chest") or name:find("torch")) then h1bulk = h1bulk + n end
+end
+check("swapped nothing bulk into home 1's valuables chest to make room", h1bulk == 0, h1bulk .. " other items there")
 check("back at the start", atStart())
 
 -- 4c. `mine haul`: out to the last home (5) and back collecting, as many
---     trips as it takes, until home 1's string is all at the start
+--     trips as it takes, until home 1's string is all at the start.  Bulk
+--     never goes in a valuables chest, nor back to the start: cobblestone
+--     put in home 3's valuables chest goes down into its bulk chest
+local BULK_NAMES = { cobblestone = true, cobbled_deepslate = true, andesite = true, diorite = true,
+                     granite = true, tuff = true, gravel = true, stone = true, deepslate = true }
+local function bulkIn(c)
+    local n = 0
+    for name, count in pairs(select(2, contents(c))) do
+        if BULK_NAMES[name:gsub("^%a+:", "")] then n = n + count end
+    end
+    return n
+end
+table.insert(chestAt(-1, 0, 24), { name = "minecraft:cobblestone", count = 40 })
+local h3bulk = bulkIn(chestAt(0, -1, 24))
+local startBulk = bulkIn(chestAt(0, -1, 0))
 FUEL = 500
 run("haul")
+local inVal = {}
+for k = 1, 5 do
+    local n = bulkIn(chestAt(-1, 0, k * 8))
+    if n > 0 then inVal[#inVal + 1] = n .. " in home " .. k end
+end
+check("no bulk in any home's valuables chest", #inVal == 0, table.concat(inVal, ", "))
+check("home 3's cobblestone went down into its bulk chest", bulkIn(chestAt(0, -1, 24)) == h3bulk + 40,
+    h3bulk .. " -> " .. bulkIn(chestAt(0, -1, 24)))
+check("carried no bulk back to the start", bulkIn(chestAt(0, -1, 0)) == startBulk
+    and bulkIn(chestAt(0, 1, 0)) == 0, startBulk .. " -> " .. bulkIn(chestAt(0, -1, 0)))
 local _, got2 = contents(chestAt(0, 1, 0))
 local _, h1left = contents(chestAt(-1, 0, 8))
 check("hauled the rest of home 1's string back", (got2["minecraft:string"] or 0) == 640 and not h1left["minecraft:string"],

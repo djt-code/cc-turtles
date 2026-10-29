@@ -620,8 +620,14 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   every coal vein the tunnel touches (and, with a scanner, every one in
   reach) ends up in the chests, and the surplus travels forward with the
   supplies. All the wood it mines (logs, planks, sticks) and the crafting
-  table travel forward too. Bulk stays in the home it was mined near.
-  Valuables stay in their home's chest until the end. It checks every chest
+  table travel forward too. Bulk stays in the home it was mined near, and
+  only ever goes in bulk chests: walking back (at the end of a job, or in
+  `mine haul`) it leaves the bulk it carries in the bulk chest of each home
+  it passes, keeping one stack of filler for sealing water on the way until
+  home 1, so no bulk reaches the start; it never swaps bulk into a
+  valuables chest to make room, and bulk it finds in a valuables chest goes
+  down into that home's bulk chest. Valuables stay in their home's chest
+  until the end. It checks every chest
   it places is really there: a minecart standing where a chest goes (in a
   mineshaft) only gets right-clicked by `turtle.place`, which still reports
   success, so the turtle breaks the minecart, picks it and whatever spilled
