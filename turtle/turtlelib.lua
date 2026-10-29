@@ -211,12 +211,16 @@ function T.hasFuel(n)
     return level == "unlimited" or level >= n
 end
 
+-- Burn fuel from the inventory until the tank holds `target`.  Only what
+-- T.fuel lists is burnt: logs, planks, sticks, chests and crafting tables
+-- burn too, but they're what chests and torches are made from.
 function T.refuelTo(target)
     if turtle.getFuelLevel() == "unlimited" then return true end
     if turtle.getFuelLevel() >= target then return true end
     local sel = turtle.getSelectedSlot()
     for slot = 1, 16 do
-        if turtle.getItemCount(slot) > 0 then
+        local it = turtle.getItemDetail(slot)
+        if it and T.fuel[it.name] then
             turtle.select(slot)
             if turtle.refuel(0) then
                 while turtle.getFuelLevel() < target and turtle.refuel(1) do end
@@ -266,25 +270,19 @@ function T.ensureFuel()
     end
 end
 
--- Fuel in tank plus fuel value of everything in the inventory.
--- Burns one item of each fuel type to learn its value.
+-- Fuel in tank plus the fuel value of the T.fuel items in the inventory
+-- (what CC:Tweaked gives: a furnace's burn time / 20).  Burns nothing.
+T.FUEL_VALUE = {
+    ["minecraft:coal"] = 80, ["minecraft:charcoal"] = 80, ["minecraft:coal_block"] = 800,
+    ["minecraft:lava_bucket"] = 1000, ["minecraft:blaze_rod"] = 120, ["minecraft:dried_kelp_block"] = 200,
+}
 function T.totalFuelAvailable()
     if turtle.getFuelLevel() == "unlimited" then return math.huge end
     local total = turtle.getFuelLevel()
-    local sel = turtle.getSelectedSlot()
     for slot = 1, 16 do
-        local n = turtle.getItemCount(slot)
-        if n > 0 then
-            turtle.select(slot)
-            if turtle.refuel(0) then
-                local before = turtle.getFuelLevel()
-                if turtle.refuel(1) then
-                    total = total + (turtle.getFuelLevel() - before) * n
-                end
-            end
-        end
+        local it = turtle.getItemDetail(slot)
+        if it and T.fuel[it.name] then total = total + (T.FUEL_VALUE[it.name] or 80) * it.count end
     end
-    turtle.select(sel)
     return total
 end
 
@@ -1398,6 +1396,27 @@ function T.restockFrom(side, name, target, opts)
     if not opts.quiet then
         print(string.format("%s on board: %d (target %d)", label, T.countItem(name), target))
     end
+end
+
+-- Take `name` from the container on `side` into the turtle's slot `slot`
+-- (empty, or holding some of it already) until that slot holds n (at most
+-- a stack).  Needs a readable container.  Returns how many the slot holds.
+function T.takeInto(side, name, n, slot)
+    local suck, drop = sideFuncs(side)
+    local chest = peripheral and peripheral.wrap(side)
+    if not (chest and chest.list and chest.pushItems and chest.size) then return turtle.getItemCount(slot) end
+    for _ = 1, 64 do
+        local have = turtle.getItemCount(slot)
+        if have >= n then break end
+        local found, held = frontStack(chest, name, suck)
+        if not found then break end
+        turtle.select(slot)
+        local got = suck(n - have)
+        if held then turtle.select(held); drop() end
+        if not got then break end
+    end
+    turtle.select(1)
+    return turtle.getItemCount(slot)
 end
 
 -- Burn fuel from the container on `side` until the tank holds `target`

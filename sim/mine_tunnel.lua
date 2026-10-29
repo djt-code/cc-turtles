@@ -797,3 +797,52 @@ run("reset")
 local dug = before - leftIn(-20, 20, -3, 5, 1, 41)
 check("stopped, saying its position or heading must be wrong", logHas("position or heading must be wrong"))
 check("dug no more than its limit (12)", dug <= 12, dug .. " blocks")
+
+-- 15. through a mineshaft: oak planks and a rail in the tunnel, a rail in
+--     the floor, and a chest minecart standing where home 1's wall chest
+--     goes (placing a chest at it only right-clicks it).  2 chests, 1
+--     torch, 16 oak logs and a crafting table in the start chest: after
+--     home 1 it's low on both, so it swaps the table in for the pickaxe
+--     and crafts chests, and torches for the segments they start; the
+--     wood goes forward, never into the tank
+local st = stock(2, 128, 1)
+st[#st + 1] = { name = "minecraft:oak_log", count = 16 }
+st[#st + 1] = { name = "minecraft:crafting_table", count = 1 }
+setup(st); remember()
+for z = 5, 8 do set(1, 1, z, { name = "minecraft:oak_planks" }) end
+set(1, 0, 12, { name = "minecraft:rail" })
+set(2, -1, 14, { name = "minecraft:rail" })
+set(-1, 0, 16, nil)
+Mine.ENTITIES["-1,0,16"] = { item = "minecraft:chest_minecart",
+    inv = { { name = "minecraft:iron_ingot", count = 3 }, { name = "minecraft:rail", count = 5 } } }
+startAt(); Mine.inv, Mine.files = {}, {}
+EQ = { left = "advancedperipherals:chunk_controller", right = "minecraft:diamond_pickaxe" }
+FUEL, LOWEST, DRY, SPILLED = 200, 200, 0, 0
+run("3", "3", "50", "--spacing", "16")
+check("tunnel clear", leftIn(0, 2, 0, 2, 1, 50) == 0, leftIn(0, 2, 0, 2, 1, 50) .. " blocks left")
+check("broke the minecart, so home 1's wall chest is a real chest", chestAt(-1, 0, 16) ~= nil
+    and not Mine.ENTITIES["-1,0,16"])
+checkHomes(16, 3)
+tn = checkStart()
+check("the chest minecart, what it held and the rails brought back",
+    (tn["minecraft:chest_minecart"] or 0) == 1 and (tn["minecraft:iron_ingot"] or 0) == 3
+        and (tn["minecraft:rail"] or 0) == 7,
+    (tn["minecraft:chest_minecart"] or 0) .. " minecart, " .. (tn["minecraft:iron_ingot"] or 0) .. " iron, "
+        .. (tn["minecraft:rail"] or 0) .. " rails")
+check("crafted chests and torches", (CRAFTED["minecraft:chest"] or 0) >= 4 and (CRAFTED["minecraft:torch"] or 0) >= 2,
+    (CRAFTED["minecraft:chest"] or 0) .. " chests, " .. (CRAFTED["minecraft:torch"] or 0) .. " torches")
+checkLight(0, 2, -1, 1, 50)
+local burnt = {}
+for name, n in pairs(BURNT) do
+    if not (name == "minecraft:coal" or name == "minecraft:charcoal") then burnt[#burnt + 1] = n .. " " .. name end
+end
+check("burnt nothing but coal", #burnt == 0, table.concat(burnt, ", "))
+local _, last = contents(chestAt(-1, 0, 48))
+check("the crafting table and the spare wood are in the last home",
+    last["minecraft:crafting_table"] == 1 and ((last["minecraft:oak_log"] or 0) + (last["minecraft:oak_planks"] or 0)) > 0)
+check("pickaxe back on, chunk controller still on",
+    EQ.left == "advancedperipherals:chunk_controller" and EQ.right == "minecraft:diamond_pickaxe")
+check("back at the start", atStart())
+check("never moved on an empty tank", DRY == 0, "tried " .. DRY)
+check("nothing spilled", (SPILLED or 0) == 0, tostring(SPILLED or 0))
+check("job done", jobState() == "done", tostring(jobState()))

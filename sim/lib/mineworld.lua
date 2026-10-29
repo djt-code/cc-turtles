@@ -19,7 +19,10 @@
 -- (the tunnel, for INGRESS: water flowing into it where it's open, past
 -- the block just dug), WASHED (torches water took), PLACED, DIGS, SPLIT,
 -- SPILLED, TRAVEL_DIGS (digging on a trip home and back), STOP_AT_DIG (a
--- Ctrl+T after so many digs), ONMOVE(ox, oy, oz, nx, ny, nz).
+-- Ctrl+T after so many digs), ONMOVE(ox, oy, oz, nx, ny, nz).  Minecarts:
+-- Mine.ENTITIES[key] = { item = name, inv = {...} } (a chest minecart has
+-- an inv); what they spill lies in Mine.GROUND[key].  BURNT[name]: what
+-- refuelling burnt; CRAFTED[name]: what a crafting table made.
 
 local M = require("mock")
 local Mine = M.state()
@@ -58,6 +61,7 @@ Mine.SIZE = SIZE
 -- The start (chests above and below), with the top one stocked.
 function Mine.setup(stock)
     for key in pairs(W) do W[key] = nil end
+    Mine.ENTITIES, Mine.GROUND, BURNT, CRAFTED = {}, {}, {}, {}
     set(0, 1, 0, Mine.chest(stock))                 -- valuables and supplies
     set(0, -1, 0, Mine.chest())                     -- bulk
 end
@@ -272,6 +276,7 @@ local function solid(b) return b and not passable(b) and b.name ~= "minecraft:to
 local function place(x, y, z, dir)
     local it = Mine.inv[Mine.sel]
     if not it then return false end
+    if Mine.ENTITIES[k(x, y, z)] then return true end   -- as in game: right-clicks the minecart
     if not passable(get(x, y, z)) then return false end
     local on                               -- what a torch hangs on or stands on
     if it.name == "minecraft:torch" then
@@ -293,15 +298,91 @@ end
 
 local function drop(x, y, z, _, n)
     local c = chestAt(x, y, z)
+    local e = Mine.ENTITIES[k(x, y, z)]
+    if not c and e and e.inv then c = e.inv end     -- a turtle drops into a chest minecart too
     if not c then error("dropped on the ground") end
     return M.dropInto(Mine, c, SIZE, n)
 end
 
 local function suck(x, y, z, _, n)
     local c = chestAt(x, y, z)
-    if not c then return false end
-    return M.suckFrom(Mine, c, SIZE, n)
+    local e = Mine.ENTITIES[k(x, y, z)]
+    if not c and e and e.inv then c = e.inv end
+    if c then return M.suckFrom(Mine, c, SIZE, n) end
+    local items = Mine.GROUND[k(x, y, z)]          -- items lying there: one stack
+    if not (items and items[1]) then return false end
+    local it = table.remove(items, 1)
+    M.addItem(Mine, it.name, it.count)
+    return true
 end
+
+-- Hitting a minecart breaks it: the turtle gets the minecart, and what
+-- was in it falls on the ground.
+local function attack(x, y, z)
+    local key = k(x, y, z)
+    local e = Mine.ENTITIES[key]
+    if not e then return false end
+    Mine.ENTITIES[key] = nil
+    M.addItem(Mine, e.item, 1)
+    Mine.GROUND[key] = Mine.GROUND[key] or {}
+    for _, it in pairs(e.inv or {}) do table.insert(Mine.GROUND[key], it) end
+    return true
+end
+
+-- A crafting table equipped: the 3x3 at one of the four corners of the
+-- inventory, every other slot empty, as CC:Tweaked has it.  The recipes
+-- mine.lua uses: a log -> 4 planks; planks over planks -> 4 sticks; coal
+-- over a stick -> 4 torches; 8 planks round an empty middle -> a chest.
+local function isPlanksItem(n) return n:find("_planks$") ~= nil end
+local function craft(limit)
+    local inv = Mine.inv
+    local cells
+    for r0 = 0, 1 do for c0 = 0, 1 do
+        if not cells then
+            local ok, got = true, {}
+            for s = 1, 16 do
+                local r, c = math.floor((s - 1) / 4), (s - 1) % 4
+                local inside = r >= r0 and r < r0 + 3 and c >= c0 and c < c0 + 3
+                if inv[s] and not inside then ok = false end
+                if inv[s] and inside then got[#got + 1] = { s = s, r = r, c = c, name = inv[s].name } end
+            end
+            if ok and #got > 0 then cells = got end
+        end
+    end end
+    if not cells then return false, "No matching recipes" end
+    local r1, c1, r2, c2 = 9, 9, -1, -1
+    for _, cl in ipairs(cells) do
+        r1, c1, r2, c2 = math.min(r1, cl.r), math.min(c1, cl.c), math.max(r2, cl.r), math.max(c2, cl.c)
+    end
+    local function name(r, c)
+        for _, cl in ipairs(cells) do if cl.r == r1 + r and cl.c == c1 + c then return cl.name end end
+    end
+    local out, per
+    if #cells == 1 and (cells[1].name:find("_log$") or cells[1].name:find("_wood$")) then
+        out, per = cells[1].name:gsub("_log$", "_planks"):gsub("_wood$", "_planks"), 4
+    elseif #cells == 2 and c1 == c2 and r2 == r1 + 1 then
+        local top, bottom = name(0, 0), name(1, 0)
+        if isPlanksItem(top) and isPlanksItem(bottom) then out, per = "minecraft:stick", 4
+        elseif (top == "minecraft:coal" or top == "minecraft:charcoal") and bottom == "minecraft:stick" then
+            out, per = "minecraft:torch", 4
+        end
+    elseif #cells == 8 and r2 - r1 == 2 and c2 - c1 == 2 and not name(1, 1) then
+        local all = true
+        for _, cl in ipairs(cells) do if not isPlanksItem(cl.name) then all = false end end
+        if all then out, per = "minecraft:chest", 1 end
+    end
+    if not out then return false, "No matching recipes" end
+    local steps = math.min(limit or 64, 64)
+    for _, cl in ipairs(cells) do steps = math.min(steps, inv[cl.s].count) end
+    for _, cl in ipairs(cells) do
+        inv[cl.s].count = inv[cl.s].count - steps
+        if inv[cl.s].count == 0 then inv[cl.s] = nil end
+    end
+    M.addItem(Mine, out, steps * per)
+    CRAFTED[out] = (CRAFTED[out] or 0) + steps * per
+    return true
+end
+Mine.TABLE = "minecraft:crafting_table"
 
 local function moved(ox, oy, oz)
     if WATERY then
@@ -314,6 +395,31 @@ local function moved(ox, oy, oz)
         if P.x ~= BACK[1] or P.y ~= BACK[2] or P.z ~= BACK[3] then LEFT_SPOT = true
         elseif LEFT_SPOT then TRAVELLING = false end
     end
+end
+
+-- What burns, as in game: coal and the rest, and wood (logs, planks,
+-- sticks, chests, crafting tables: a furnace takes them all), which
+-- mine.lua must never burn.  BURNT counts what was.
+BURNS = setmetatable({}, { __index = function(_, name)
+    if M.FUEL_VALUE[name] then return M.FUEL_VALUE[name] end
+    if name:find("_log$") or name:find("_planks$") or name == "minecraft:chest"
+        or name == "minecraft:crafting_table" then return 15 end
+    if name == "minecraft:stick" then return 5 end
+end })
+local fuelApi = M.fuelApi
+function M.fuelApi(S, values)
+    local api = fuelApi(S, values)
+    local refuel = api.refuel
+    api.refuel = function(n)
+        local it = S.inv[S.sel]
+        local name, before = it and it.name, it and it.count or 0
+        local ok = refuel(n)
+        local now = S.inv[S.sel]
+        local used = before - ((now and now.name == name) and now.count or 0)
+        if ok and name and used > 0 then BURNT[name] = (BURNT[name] or 0) + used end
+        return ok
+    end
+    return api
 end
 
 -- Upgrades on each side; equipping swaps the selected slot with one.
@@ -333,12 +439,12 @@ turtle = M.merge(
     M.actingApi(Mine, "place", place),
     M.actingApi(Mine, "drop", drop),
     M.actingApi(Mine, "suck", suck),
-    M.noAttackApi(),
+    M.actingApi(Mine, "attack", attack),
     M.inventoryApi(Mine),
     -- (as in game, a freshly equipped scanner may not show up as a
     -- peripheral at once: here not until it's been asked for once)
     M.equipmentApi(Mine, function(side) if EQ[side] == SCANNER then ATTACHING = side end end),
-    M.fuelApi(Mine)
+    M.fuelApi(Mine, BURNS)
 )
 
 --------------------------------------------------------------------------
@@ -384,6 +490,7 @@ peripheral = {
     wrap = function(side)
         if side == "left" or side == "right" then
             if ATTACHING == side then ATTACHING = nil; return nil end
+            if EQ[side] == Mine.TABLE then return { craft = craft } end
             return EQ[side] == SCANNER and geoScanner() or nil
         end
         local c
@@ -394,7 +501,11 @@ peripheral = {
         return M.containerPeripheral(c, SIZE, side)
     end,
     getName = function(p) return p._name end,
-    getType = function(side) return (side == "left" or side == "right") and EQ[side] == SCANNER and "geo_scanner" or nil end,
+    getType = function(side)
+        if not (side == "left" or side == "right") then return nil end
+        if EQ[side] == Mine.TABLE then return "workbench" end
+        return EQ[side] == SCANNER and "geo_scanner" or nil
+    end,
 }
 -- methods by name, as CC has them: through wrap, as the scanner shows up
 peripheral.getMethods = function(side)
@@ -458,7 +569,8 @@ end
 
 local BULKY = { cobblestone = true, cobbled_deepslate = true, andesite = true, diorite = true,
                 granite = true, tuff = true, gravel = true }
-local SUPPLY = { chest = true, coal = true, torch = true }
+local SUPPLY = { chest = true, coal = true, torch = true, crafting_table = true, oak_log = true,
+                 oak_planks = true, stick = true }
 
 function Mine.startAt() P.x, P.y, P.z, P.d = 0, 0, 0, 0 end
 function Mine.atStart() return P.x == 0 and P.y == 0 and P.z == 0 and P.d == 0 end

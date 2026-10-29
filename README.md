@@ -597,7 +597,8 @@ supplies last.
 
 Put **two chests** at the start: one directly **above** the turtle for
 valuables and supplies, and one directly **below** it for bulk. Stock the top
-one with **fuel and chests**, and **torches** if you want the tunnel lit. Bulk is stone, cobblestone, deepslate,
+one with **fuel and chests**, **torches** if you want the tunnel lit, and a
+**crafting table** so it can make more chests and torches from wood it finds. Bulk is stone, cobblestone, deepslate,
 andesite, diorite, granite, tuff, dirt, gravel, sand, netherrack and the
 like. Everything else counts as a valuable, including anything it doesn't
 recognise. Needs a pickaxe, equipped or in the inventory.
@@ -618,8 +619,31 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   the home's chest and fuels it too: coal ore is ore like any other, so
   every coal vein the tunnel touches (and, with a scanner, every one in
   reach) ends up in the chests, and the surplus travels forward with the
-  supplies. Bulk stays in the home it was mined near. Valuables stay in
-  their home's chest until the end.
+  supplies. All the wood it mines (logs, planks, sticks) and the crafting
+  table travel forward too. Bulk stays in the home it was mined near.
+  Valuables stay in their home's chest until the end. It checks every chest
+  it places is really there: a minecart standing where a chest goes (in a
+  mineshaft) only gets right-clicked by `turtle.place`, which still reports
+  success, so the turtle breaks the minecart, picks it and whatever spilled
+  out of it up, and places the chest again.
+- **Crafting:** at the newest home, when it has fewer chests than two more
+  homes need, or fewer torches than two segments need, it crafts. Its wood
+  becomes as many chests as it can make, less the planks for the sticks of
+  the torches that light the segments those chests start. The torches are
+  made from coal it can spare beyond the fuel to build the next home and get
+  back. To craft, it swaps the crafting table in for the pickaxe (as with
+  the Geo Scanner) and puts everything it carries in the home's chests,
+  because a turtle crafts from its own inventory and it must hold only the
+  recipe. Afterwards the pickaxe goes back on and the table goes in the
+  chest with the supplies. Without a crafting table it says so, and when it
+  runs out of chests the stop message says there's wood for more.
+- **Fuel is coal and the like, never wood:** it only burns what turtlelib's
+  `T.fuel` lists (coal, charcoal, coal blocks, lava buckets, blaze rods,
+  dried kelp blocks). Logs, planks, sticks, chests and crafting tables would
+  burn too, but they're what chests and torches are made from.
+- **Mineshafts:** rails in the tunnel, its walls or its floor are dug out
+  (the wall or floor is filled where they were), and minecarts in its way
+  are broken. Both are valuables and come back to the start.
 - **Stopping:** it stops when:
   - it runs out of chests for the next home;
   - it doesn't have enough fuel to go on and still get back;

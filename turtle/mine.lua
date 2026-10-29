@@ -36,7 +36,9 @@
 -- one directly BELOW it for bulk (stone, cobblestone, deepslate, dirt,
 -- gravel, sand...).  Stock the top chest with fuel and with CHESTS: the
 -- turtle builds a new home out of two of them every `spacing` blocks.
--- Torches in it too, and it lights the tunnel (unless --no-lights).
+-- Torches in it too, and it lights the tunnel (unless --no-lights).  And a
+-- crafting table, so it can craft more chests and torches from wood it
+-- finds (see Crafting below).
 --
 -- How it works:
 --  * Homes: the tunnel is dug a segment at a time.  At the end of each
@@ -46,9 +48,20 @@
 --    chosen so a segment's bulk fits in its home's chest (at most 64), and
 --    trips to unload or refuel only ever go back to the nearest home.
 --  * Supplies move forward: building a home, the turtle carries the spare
---    chests and the fuel from the old home to the new one, as many trips
---    as it takes.  Bulk stays in the home it was mined near; valuables
---    stay in their home's chest until the end.
+--    chests, the fuel, the torches, all the wood it has mined (logs,
+--    planks, sticks) and the crafting table from the old home to the new
+--    one, as many trips as it takes.  Bulk stays in the home it was mined
+--    near; valuables stay in their home's chest until the end.  It checks
+--    each chest it places is really there: in a mineshaft, a minecart
+--    standing where a chest goes is broken and picked up first.
+--  * Crafting: at the newest home, when it has fewer chests than two more
+--    homes take, or fewer torches than two segments do, it crafts its wood
+--    into as many chests as it can, keeping back planks for the torches
+--    those homes' segments need, and crafts the torches from coal it can
+--    spare.  It swaps the crafting table in for the pickaxe to craft, and
+--    empties its inventory into the home's chests for it (a turtle crafts
+--    from its inventory); then everything goes back.  No table: it says
+--    so, and stops when it's out of chests.
 --  * Stopping: out of chests for the next home, not enough fuel to go on
 --    and still get back, a home chest full or missing, or something it
 --    can't dig through.  Then (or once the tunnel is as long as asked) it
@@ -59,6 +72,10 @@
 --    chests and fuel from the start's top chest with it).
 --  * Fuel: the tank always keeps enough to get back to the start; the
 --    turtle refuels from each home's chest, and coal it mines lands there.
+--    It only burns coal, charcoal and the like, never wood or chests.
+--  * Mineshafts: rails in the tunnel, its walls or floor are dug out (and
+--    the wall or floor filled), and minecarts in its way broken; both are
+--    valuables, brought back to the start.
 --  * Lanes: each segment is mined in lanes running along it, one per row
 --    in the side columns and every third row (plus the top and bottom ones)
 --    in the middle columns, digging the rows in between up and down.  So
@@ -255,7 +272,10 @@ for _, n in ipairs({ "short_grass", "grass", "tall_grass", "fern", "large_fern",
         "vine", "glow_lichen", "snow", "moss_carpet", "sculk_vein", "cobweb",
         "pointed_dripstone", "hanging_roots", "cave_vines", "cave_vines_plant",
         "spore_blossom", "small_dripleaf", "big_dripleaf", "big_dripleaf_stem", "sea_pickle",
-        "seagrass", "tall_seagrass", "kelp", "kelp_plant" }) do
+        "seagrass", "tall_seagrass", "kelp", "kelp_plant",
+        -- a mineshaft's rails in the walls or floor: taken (they're
+        -- valuables) and the block filled
+        "rail", "powered_rail", "detector_rail", "activator_rail" }) do
     SOFT["minecraft:" .. n] = true
 end
 -- Water plants: water blocks with something growing in them.
@@ -277,13 +297,24 @@ function waterIn(data)
     return WATER_PLANTS[data.name] or (data.state and data.state.waterlogged == true) or false
 end
 
--- Supplies: what homes are built from, fuel and torches.  They travel
--- forward.
+-- Supplies: what homes are built from, fuel and torches, and the wood and
+-- crafting table more chests and torches are crafted with (see Crafting;
+-- wood is never burnt).  They travel forward to the newest home.
 CHEST_ITEMS = { ["minecraft:chest"] = true, ["minecraft:barrel"] = true }
 TORCHES = { ["minecraft:torch"] = true, ["minecraft:soul_torch"] = true }
+CRAFTING_TABLE, STICK = "minecraft:crafting_table", "minecraft:stick"
+COAL = { ["minecraft:coal"] = true, ["minecraft:charcoal"] = true }   -- what torches are lit with
+function isLog(name)
+    return (name:find("_log$") or name:find("_wood$") or name:find("_stem$") or name:find("_hyphae$")) ~= nil
+end
+function isPlanks(name) return name:find("_planks$") ~= nil end
+function isWood(name) return isLog(name) or isPlanks(name) or name == STICK end
 -- The Advanced Peripherals Geo Scanner: kept on board, never unloaded.
 function isScanner(name) return name:find("geo_scanner") ~= nil end
-function isSupply(name) return CHEST_ITEMS[name] or T.fuel[name] or (lights and TORCHES[name]) end
+function isSupply(name)
+    return CHEST_ITEMS[name] or T.fuel[name] or (lights and TORCHES[name]) or isWood(name)
+        or name == CRAFTING_TABLE
+end
 
 -- What's worth carrying back first when the turtle can't carry it all.
 -- Anything not listed: 40 if it looks like an ore's drop, else 10.
@@ -293,6 +324,10 @@ VALUE = {
     ["minecraft:gold_nugget"] = 30, ["minecraft:amethyst_shard"] = 35,
     ["minecraft:lapis_lazuli"] = 45, ["minecraft:raw_iron"] = 50, ["minecraft:raw_copper"] = 25,
     ["minecraft:redstone"] = 30, ["minecraft:quartz"] = 30,
+    -- from mineshafts: rails dug out of the tunnel and its walls, and
+    -- minecarts it breaks that are in its way
+    ["minecraft:rail"] = 20, ["minecraft:powered_rail"] = 30, ["minecraft:detector_rail"] = 20,
+    ["minecraft:activator_rail"] = 20, ["minecraft:minecart"] = 25, ["minecraft:chest_minecart"] = 25,
 }
 function value(name)
     if VALUE[name] then return VALUE[name] end
@@ -1092,7 +1127,10 @@ function takeSupplies()
 end
 
 -- Put the supplies the turtle carries in the valuables chest in front.
+-- False (keeping them) if there's no chest there: dropped at nothing,
+-- they'd land on the ground, and at a minecart, in it.
 function leaveSupplies()
+    if not containerOn("front") then return false end
     for s = 1, 16 do
         local it = turtle.getItemDetail(s)
         if it and isSupply(it.name) then
@@ -1101,9 +1139,43 @@ function leaveSupplies()
         end
     end
     turtle.select(1)
+    return true
+end
+
+-- The side ("front", "top" or "bottom") that is direction d.
+function sideOf(d) return d == "up" and "top" or d == "down" and "bottom" or "front" end
+
+function attackDir(d)
+    if d == "up" then return turtle.attackUp() end
+    if d == "down" then return turtle.attackDown() end
+    T.face(d)
+    return turtle.attack()
+end
+
+function suckDir(d)
+    if d == "up" then return turtle.suckUp() end
+    if d == "down" then return turtle.suckDown() end
+    T.face(d)
+    return turtle.suck()
+end
+
+-- Clear what isn't a block out of the space in direction d: a minecart
+-- there (mineshafts have them) is hit until it breaks, and the minecart
+-- and anything it spills are picked up.
+function clearEntities(d)
+    for _ = 1, 20 do
+        if not attackDir(d) then break end
+    end
+    for _ = 1, 30 do
+        if T.freeSlots() == 0 or not suckDir(d) then break end
+    end
+    turtle.select(1)
 end
 
 -- Dig out the block on side `d` (outside the tunnel) and put a chest there.
+-- True once a chest is really there: placing a chest where a minecart
+-- stands only right-clicks the minecart, which turtle.place counts as
+-- placed.
 function placeChest(d)
     for _ = 1, 10 do
         local ok, data = look(d)
@@ -1116,10 +1188,14 @@ function placeChest(d)
         end
         if not digDir(d) then return false end
     end
-    if not T.selectItem(function(n) return CHEST_ITEMS[n] end) then return false end
-    local ok = placeDir(d)
-    turtle.select(1)
-    return ok
+    for _ = 1, 3 do
+        clearEntities(d)
+        if not T.selectItem(function(n) return CHEST_ITEMS[n] end) then return false end
+        placeDir(d)
+        turtle.select(1)
+        if containerOn(sideOf(d)) then return true end
+    end
+    return false
 end
 
 -- A chest can't be opened with a solid block on top.  The valuables chest
@@ -1143,16 +1219,256 @@ function roomAboveChest(h)
     T.face(h.face)
 end
 
+--------------------------------------------------------------------------
+-- Crafting chests and torches
+--------------------------------------------------------------------------
+-- The wood it mines (mineshafts' planks, trees' logs) travels forward
+-- with the supplies.  At the newest home, when chests or torches run low,
+-- it crafts the wood into as many chests as it can (two build a home),
+-- keeping back the planks for the sticks of the torches that light the
+-- segments those chests start, and crafts those torches from coal it can
+-- spare.  It needs a crafting table, kept with the supplies and swapped
+-- in for the pickaxe while it crafts (as the Geo Scanner is).  A turtle
+-- crafts from its inventory, which must hold nothing but the recipe, so
+-- everything goes into the home's chests first, the pickaxe too while
+-- the table is on.
+
+-- Where each recipe's items go: the turtle's slots, 4 to a row.
+RECIPE_SLOTS = {
+    planks = { 1 },                          -- a log: 4 planks
+    sticks = { 1, 5 },                       -- planks over planks: 4 sticks
+    torch = { 1, 5 },                        -- coal over a stick: 4 torches
+    chest = { 1, 2, 3, 5, 7, 9, 10, 11 },    -- planks round an empty middle: a chest
+}
+
+-- Torches to light one segment.
+function torchesPerSegment()
+    if not lights then return 0 end
+    return torchWalls * math.ceil(SPACING / torchEvery)
+end
+
+-- What the home's valuables chest and the turtle hold, by name.
+function atHand()
+    local n = chestCounts(home.val)
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s)
+        if it then n[it.name] = (n[it.name] or 0) + it.count end
+    end
+    return n
+end
+
+-- What there is to craft with, and what to make: { logs (to cut into
+-- planks), sticks, torches, chests } (crafting steps: 4 planks, 4 sticks,
+-- 4 torches or 1 chest each).  Coal for torches is what's left over the
+-- fuel to build the next home and get back, and the stock left in homes.
+function craftPlan(n)
+    local have = { logs = 0, planks = 0, sticks = n[STICK] or 0, chests = 0, torches = 0, coal = 0 }
+    for name, c in pairs(n) do
+        if isLog(name) then have.logs = have.logs + c
+        elseif isPlanks(name) then have.planks = have.planks + c
+        elseif CHEST_ITEMS[name] then have.chests = have.chests + c
+        elseif TORCHES[name] then have.torches = have.torches + c
+        elseif COAL[name] then have.coal = have.coal + c end
+    end
+    local level = turtle.getFuelLevel()
+    local need = 2 * (home.z + SPACING) + T.cfg.fuelMargin + FUEL_WORK
+    local reserve = (level == "unlimited" and 0 or math.max(0, math.ceil((need - level) / 80))) + FUEL_STOCK
+    local spare = math.max(0, have.coal - reserve)
+    local wood = have.planks + 4 * have.logs
+    local per = torchesPerSegment()
+    for chests = math.floor(wood / 8 / 2) * 2, 0, -2 do
+        local homes = math.floor((have.chests + chests) / 2)
+        local torches = math.ceil(math.min(math.max(0, homes * per - have.torches), 4 * spare) / 4)
+        local sticks = math.ceil(math.max(0, torches - have.sticks) / 4)
+        local left = wood - 8 * chests
+        if 2 * sticks > left then              -- (only with no chests: fewer torches)
+            sticks = math.floor(left / 2)
+            torches = math.min(torches, have.sticks + 4 * sticks)
+        end
+        if 8 * chests + 2 * sticks <= wood then
+            local planks = 8 * chests + 2 * sticks
+            return { logs = math.max(0, math.ceil((planks - have.planks) / 4)), sticks = sticks,
+                     torches = torches, chests = chests }, have
+        end
+    end
+    return { logs = 0, sticks = 0, torches = 0, chests = 0 }, have
+end
+
+-- Put everything the turtle holds in the home's chests (bulk in the bulk
+-- chest).  True if it's empty.
+function emptyOut()
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s, true)
+        if it then
+            turtle.select(s)
+            dropSide(isBulk(it) and home.bulk or home.val)
+        end
+    end
+    turtle.select(1)
+    return T.freeSlots() == 16
+end
+
+-- Free slots in the container on `side`.
+function roomIn(side)
+    local c = peripheral.wrap(side)
+    if not (c and c.list and c.size) then return 0 end
+    local used = 0
+    for _ in pairs(c.list()) do used = used + 1 end
+    return c.size() - used
+end
+
+-- Fill the recipe's slots with `steps` each of items picked by `pick(name)`
+-- from the valuables chest (any mix of names: oak and spruce planks make
+-- a chest), craft, and put it all back.  How many steps it crafted.
+function craftSteps(side, recipe, picks, steps)
+    local slots = RECIPE_SLOTS[recipe]
+    local most = steps
+    for i, slot in ipairs(slots) do
+        local pick = picks[i] or picks[1]
+        for _ = 1, 8 do
+            local short = steps - turtle.getItemCount(slot)
+            if short <= 0 then break end
+            local counts, name = chestCounts(home.val), nil
+            for _, nm in ipairs(T.sortedKeys(counts)) do
+                local it = turtle.getItemDetail(slot)
+                if pick(nm) and (not it or it.name == nm) then name = nm; break end
+            end
+            if not name then break end
+            T.takeInto(home.val, name, steps, slot)
+            local it = turtle.getItemDetail(slot)
+            if not it or it.name ~= name then break end
+        end
+        most = math.min(most, turtle.getItemCount(slot))
+    end
+    local made = 0
+    if most > 0 then
+        local before = turtle.getItemCount(slots[1])
+        turtle.select(16)                  -- (what's made goes in from here)
+        pcall(peripheral.call, side, "craft", most)
+        turtle.select(1)
+        made = before - turtle.getItemCount(slots[1])   -- each step uses one from every slot
+    end
+    emptyOut()
+    return made
+end
+
+function firstEmpty()
+    for s = 1, 16 do
+        if turtle.getItemCount(s) == 0 then return s end
+    end
+end
+
+function pickaxeOn()
+    return T.equipped("left") == pickaxe or T.equipped("right") == pickaxe
+end
+
+-- Craft what craftPlan says.  The turtle is at the home, facing it.
+warnedTable = false
+function craftSupplies()
+    if home.val == "front" then T.face(home.face) end
+    local plan, have = craftPlan(atHand())
+    if plan.chests + plan.torches == 0 then return end
+    local tableIn = T.countItem(CRAFTING_TABLE) > 0 or (chestCounts(home.val)[CRAFTING_TABLE] or 0) > 0
+    local side = (T.equipped("left") == CRAFTING_TABLE and "left") or (T.equipped("right") == CRAFTING_TABLE and "right")
+    if not side and not pickaxeOn() then return end   -- (a pickaxe in the inventory isn't swapped)
+    if not tableIn and not side then
+        if not warnedTable then
+            warnedTable = true
+            print(string.format("There's wood for %d chests, but no crafting table: put one in the start's top chest.",
+                plan.chests))
+        end
+        return
+    end
+    local scanners = {}
+    for s = 1, 16 do
+        local it = turtle.getItemDetail(s)
+        if it and isScanner(it.name) then scanners[#scanners + 1] = it.name end
+    end
+    if roomIn(home.val) < 16 - T.freeSlots() + 3 then
+        print("No room in home " .. home.k .. "'s chest to craft in; not crafting.")
+        return
+    end
+    print(string.format("Crafting %d chests and %d torches at home %d.", plan.chests, 4 * plan.torches, home.k))
+    if not emptyOut() then restockKit(); return end
+    if not side then
+        side = (T.equipped("left") == pickaxe and "left") or (T.equipped("right") == pickaxe and "right")
+        if not side or T.takeInto(home.val, CRAFTING_TABLE, 1, 1) == 0 then
+            print("Couldn't swap the crafting table in for the pickaxe; not crafting.")
+            side = nil
+        else
+            turtle.select(1)
+            if side == "left" then turtle.equipLeft() else turtle.equipRight() end
+            emptyOut()                     -- the pickaxe, into the chest for now
+        end
+    end
+    if side then
+        for _ = 1, 20 do                   -- (a moment before it shows up)
+            if peripheral.getType(side) == "workbench" then break end
+            sleep(0.1)
+        end
+        local function steps(recipe, picks, total, per)
+            local done = 0
+            while done < total do
+                local n = craftSteps(side, recipe, picks, math.min(per, total - done))
+                if n == 0 then break end
+                done = done + n
+            end
+            return done
+        end
+        steps("planks", { isLog }, plan.logs, 16)
+        steps("sticks", { isPlanks }, plan.sticks, 16)
+        local function isCoal(nm) return COAL[nm] end
+        local function isStick(nm) return nm == STICK end
+        steps("torch", { isCoal, isStick }, plan.torches, 16)
+        steps("chest", { isPlanks }, plan.chests, 64)
+    end
+    if side and not pickaxeOn() then       -- the pickaxe back on, the table into the chest
+        T.takeInto(home.val, pickaxe, 1, 1)
+        turtle.select(1)
+        if turtle.getItemCount(1) > 0 then
+            if side == "left" then turtle.equipLeft() else turtle.equipRight() end
+        end
+        emptyOut()
+    end
+    if not pickaxeOn() then
+        stop("The pickaxe didn't go back on after crafting: it's in home " .. home.k .. "'s chest.")
+    end
+    for _, name in ipairs(scanners) do T.takeInto(home.val, name, 1, firstEmpty() or 16) end
+    restockKit()                           -- filler, torches and fuel back on board
+    local now = atHand()
+    local chests, torches = 0, 0
+    for name, c in pairs(now) do
+        if CHEST_ITEMS[name] then chests = chests + c elseif TORCHES[name] then torches = torches + c end
+    end
+    print(string.format("Crafted %d chests and %d torches.", chests - have.chests, torches - have.torches))
+end
+
+-- Running low: fewer chests than two more homes take, or torches than
+-- two segments do (none needed with --no-lights).
+function suppliesLow()
+    local n = atHand()
+    local chests, torches = 0, 0
+    for name, c in pairs(n) do
+        if CHEST_ITEMS[name] then chests = chests + c elseif TORCHES[name] then torches = torches + c end
+    end
+    return chests < 4 or torches < 2 * torchesPerSegment()
+end
+
 -- The segment is done: build the next home at its end and move the
 -- supplies there from this one.  The turtle starts and ends at a home.
 function advance()
     local next = homeAt(home.k + 1)
     local exists = next.k <= lastHome  -- going over the tunnel again (resumed from an earlier home)
+    if not exists and suppliesLow() then craftSupplies() end
     local have = T.countItem("minecraft:chest") + T.countItem("minecraft:barrel")
     for name, n in pairs(chestCounts(home.val)) do
         if CHEST_ITEMS[name] then have = have + n end
     end
-    if have < 2 and not exists then stop("Out of chests to build the next home (needs 2).") end
+    if have < 2 and not exists then
+        local plan = craftPlan(atHand())
+        stop("Out of chests to build the next home (needs 2)."
+            .. (plan.chests > 0 and " There's wood for more: put a crafting table in the start's top chest." or ""))
+    end
     -- onto a home that's there already, the supplies (fuel among them) are
     -- there: only the fuel to get there is needed
     if not fuelToGoOn(next.z - home.z + (exists and 0 or 4 * SPACING)) then
@@ -1171,7 +1487,9 @@ function advance()
         end
         roomAboveChest(next)               -- (homes built before this get it too)
         T.face(next.face)
-        leaveSupplies()
+        if not leaveSupplies() then
+            stop(string.format("Home %d's valuables chest isn't there (z=%d).", next.k, next.z))
+        end
         if not more then break end
         if took == 0 then
             print("Can't carry the rest of the supplies (no room); leaving them in home " .. home.k .. ".")
