@@ -115,7 +115,8 @@ function cu.isTerminal() return io.output() == io.stdout end
 function cu.hidden(path)
     if fs.getName(path):sub(1, 1) == "." then return true end
     local pool = fs.jbodPool
-    return pool ~= nil and pool.isMember(path)
+    -- (a pool mounted by an older jbod.lua, before a git pull, can't tell)
+    return pool ~= nil and pool.isMember ~= nil and pool.isMember(path)
 end
 
 -- Is input coming from the keyboard?

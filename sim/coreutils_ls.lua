@@ -107,3 +107,13 @@ r = W:run("craftix", "-c", "echo *")
 check("Craftix: * leaves them out", not r.out:find("disk") and r.out:find("dusty") and r.out:find("jbod"), show(r.out))
 r = W:run("craftix", "-c", "echo d*")
 check("and d* matches them, as .* does dot files", r.out == "d disk disk2 dusty\n", show(r.out))
+
+-- a pool mounted by an older jbod.lua (before a git pull: no isMember):
+-- ls and Craftix carry on, showing the disks
+local isMember = W.fs.jbodPool.isMember
+W.fs.jbodPool.isMember = nil
+r = W:run("ls", "/")
+local r2 = W:run("craftix", "-c", "echo *")
+check("an older pool (no isMember): ls and Craftix work, disks shown",
+    r.status == 0 and r.out:find("disk2") and r2.out:find("disk2"), show(r.out) .. " / " .. show(r2.out))
+W.fs.jbodPool.isMember = isMember

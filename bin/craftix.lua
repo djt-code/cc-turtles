@@ -580,6 +580,7 @@ local function glob(f)
                         -- the fileserver's pool: its disks' mounts are hidden too, unless
                         -- the pattern starts with a plain character
                         local pool = fs.jbodPool
+                        if pool and not pool.isMember then pool = nil end   -- (an older jbod.lua's)
                         local wildFirst = s.magic[1] and (s.chars[1] == "*" or s.chars[1] == "?" or s.chars[1] == "[")
                         for _, n in ipairs(fs.list(e.path)) do
                             if n:match(s.pat) and (n:sub(1, 1) ~= "." or s.name:sub(1, 1) == ".")
