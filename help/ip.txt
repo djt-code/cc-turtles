@@ -4,8 +4,8 @@ ip: set up and look at the network (lib/net.lua)
       the interfaces, routes and whether it's up
   ip up | ip down
       start or stop the network on this computer
-  ip boot
-      start it at every boot (a line in startup)
+  ip boot [off]
+      start it at every boot (the setting net.boot; setup's net and router apps turn it on)
   ip link
       the modems there are, and which are set up
   ip addr

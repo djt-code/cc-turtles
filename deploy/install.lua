@@ -1,7 +1,7 @@
 -- install.lua -- put cc-turtles on the shell's search path, then reboot
 --
 -- Usage (from wherever the repo was cloned):
---   cc-turtles/deploy/install [--craftix] [--autostart <app>] [--no-reboot]
+--   cc-turtles/deploy/install [--craftix] [--net] [--router] [--autostart <app>] [--no-reboot]
 --
 -- Adds lines to the top of /startup.lua (or, if /startup is a directory,
 -- writes /startup/00-cc-turtles.lua, which runs first) that add the
@@ -10,7 +10,9 @@
 -- on a computer, so they run from any directory, and help/ to the help
 -- path, so `help mine` works, and makes `ls` run bin/ls (CraftOS's ls is
 -- an alias for list, and aliases win over the path, so ours is an alias
--- too; `alias ls list` brings the old one back until the next boot).
+-- too; `alias ls list` brings the old one back until the next boot), and
+-- brings the network up (`ip up`) while the setting net.boot is on:
+-- --net turns that on, --router too and forwarding (net.forward) with it.
 -- lib/ holds modules the programs require,
 -- not programs, so it stays off the path.  The lines go first so a
 -- startup program that never returns (autocompost, say) doesn't keep them
@@ -21,11 +23,13 @@
 -- and runs it in one go.
 --
 -- At the end of startup go, in this order:
---  * on a turtle, the autostart (/startup/zy-autostart.lua with a startup
---    folder): turtle/autostart runs the program the setting
---    cc-turtles.autostart names, resuming its job after a reboot.
---    --autostart <app> sets it (mine, farm, mow or autocompost); `set
---    cc-turtles.autostart ""` turns it off.
+--  * the autostart (/startup/zy-autostart.lua with a startup folder): what
+--    the setting cc-turtles.autostart names.  On a turtle turtle/autostart
+--    runs it, resuming its job after a reboot (mine, farm, mow or
+--    autocompost); on a computer, router (pc/router: the network up,
+--    forwarding, and its status screen).  --autostart <app> sets it (and
+--    --autostart router is --router too); `set cc-turtles.autostart ""`
+--    turns it off.
 --  * Craftix, the POSIX-style shell (/startup/zz-craftix.lua), while the
 --    setting craftix.login is on; --craftix adds it and turns that on.
 --    Leaving Craftix (exit) gives the stock prompt; to stop it starting,
@@ -33,20 +37,24 @@
 -- Last, so the rest of startup runs first; a job that never returns
 -- means no Craftix until you stop it with Ctrl+T.
 
-local noReboot, login, autostart = false, false, nil
-local AUTOSTART = { mine = true, farm = true, mow = true, autocompost = true }
+local noReboot, login, autostart, netBoot, router = false, false, nil, false, false
+local AUTOSTART = turtle and { mine = true, farm = true, mow = true, autocompost = true } or { router = true }
+local CHOICES = turtle and "mine|farm|mow|autocompost" or "router"
 local args = { ... }
 local i = 1
 while i <= #args do
     local a = args[i]
     if a == "--no-reboot" then noReboot = true
     elseif a == "--craftix" then login = true
-    elseif a == "--autostart" and AUTOSTART[args[i + 1]] and turtle then
+    elseif a == "--net" then netBoot = true
+    elseif a == "--router" then netBoot, router = true, true
+    elseif a == "--autostart" and AUTOSTART[args[i + 1]] then
         autostart = args[i + 1]
+        if autostart == "router" then netBoot, router = true, true end
         i = i + 1
     else
-        print("Usage: install [--craftix] [--autostart mine|farm|mow|autocompost] [--no-reboot]")
-        if a == "--autostart" and not turtle then print("(--autostart is for turtles)") end
+        print("Usage: install [--craftix] [--net] [--router] [--autostart " .. CHOICES .. "] [--no-reboot]")
+        if a == "--autostart" then print("(--autostart on a " .. (turtle and "turtle" or "computer") .. ": " .. CHOICES .. ")") end
         return
     end
     i = i + 1
@@ -73,11 +81,18 @@ lines[#lines + 1] = string.format(
 lines[#lines + 1] = string.format(
     'if fs.exists("%s/bin/ls.lua") and fs.exists("%s/lib/cu.lua") then shell.setAlias("ls", "%s/bin/ls.lua") end',
     repo, repo, repo)
+-- the network, while net.boot is on (ip up returns at once: see lib/net.lua)
+lines[#lines + 1] = string.format(
+    'if settings.get("net.boot") and fs.exists("%s/bin/ip.lua") then shell.run("%s/bin/ip", "up") end', repo, repo)
 local block = table.concat(lines, "\n") .. "\n"
 local loginLine = loginLineFor(repo .. "/bin/craftix")
-local autoLine = string.format(
+local turtleAutoLine = string.format(
     'if settings.get("cc-turtles.autostart", "") ~= "" and fs.exists("%s/turtle/autostart.lua") then shell.run("%s/turtle/autostart") end',
     repo, repo)
+local computerAutoLine = string.format(
+    'if settings.get("cc-turtles.autostart", "") == "router" and fs.exists("%s/pc/router.lua") then shell.run("%s/pc/router") end',
+    repo, repo)
+local autoLine = turtle and turtleAutoLine or computerAutoLine
 -- what earlier installs wrote, when the programs were in the repo's top folder
 local stale = { pathLine(repo), loginLineFor(repo .. "/craftix") }
 
@@ -143,14 +158,14 @@ if folder then
     local old = read("/startup/zz-craftix.lua") or ""
     wasLogin = old:find(loginLine, 1, true) ~= nil or old:find(stale[2], 1, true) ~= nil
     if old:find(stale[2], 1, true) then fs.delete("/startup/zz-craftix.lua") end
-    hadAuto = put("/startup/zy-autostart.lua", autoLine, turtle ~= nil)
+    hadAuto = put("/startup/zy-autostart.lua", autoLine, true)
     put("/startup/zz-craftix.lua", loginLine, login or wasLogin)
 else
     local text = read(target) or ""
     wasLogin = text:find(loginLine .. "\n", 1, true) ~= nil or text:find(stale[2] .. "\n", 1, true) ~= nil
     hadAuto = text:find(autoLine .. "\n", 1, true) ~= nil
-    local body = without(text, { loginLine, stale[2], autoLine })
-    local tail = (turtle and (autoLine .. "\n") or "") .. ((login or wasLogin) and (loginLine .. "\n") or "")
+    local body = without(text, { loginLine, stale[2], turtleAutoLine, computerAutoLine })
+    local tail = autoLine .. "\n" .. ((login or wasLogin) and (loginLine .. "\n") or "")
     local new = body .. ((body == "" or body:sub(-1) == "\n" or tail == "") and "" or "\n") .. tail
     if new ~= text then write(target, new) end
 end
@@ -160,15 +175,22 @@ if login then
     settings.set("craftix.login", true)
     settings.save()
 end
+if netBoot then
+    settings.set("net.boot", true)
+    if router then settings.set("net.forward", true) end
+    settings.save()
+    print("The network comes up at boot" .. (router and ", forwarding (a router)" or "") .. ": `help network` says how to set it up.")
+end
 if autostart then
     settings.set("cc-turtles.autostart", autostart)
     settings.save()
-    print("At boot this turtle runs " .. autostart .. ": `help autostart` says how.")
+    print("At boot this " .. (turtle and "turtle" or "computer") .. " runs " .. autostart
+        .. (turtle and ": `help autostart` says how." or " (its status screen; q leaves it, routing goes on)."))
 end
 
 if noReboot then
     -- this shell gets it now; others after a reboot
-    load(block, "=startup", "t", { shell = shell, help = help, fs = fs })()
+    load(block, "=startup", "t", { shell = shell, help = help, fs = fs, settings = settings })()
     print("Not rebooting: on the path in this shell now, everywhere after a reboot.")
     if login then print("Type craftix to start it now.") end
     return

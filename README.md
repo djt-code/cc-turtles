@@ -108,12 +108,15 @@ just those, with what they need and their help:
 | `craftix` | [Craftix](#craftix), started at every boot |
 | `diskclone` | for a computer with a disk drive |
 | `fileserver` | its disk drives as one folder, `/jbod` |
-| `net` | the network: `ip`, `ping`, `traceroute`, `nc` |
-| `router` | the network, and `router` to route between networks |
+| `net` | the network: `ip`, `ping`, `traceroute`, `nc`, up at every boot |
+| `router` | the network, and `router` to route between networks: forwarding on, up at every boot |
 
 `git` and `deploy/` always come. Options: `--autostart <app>` (a turtle
-runs it at every boot, see [Autostart](#autostart)), `--craftix` (Craftix
-at boot without naming it), `--no-reboot`, `--all`, `--skip <dir>`.
+runs it at every boot, see [Autostart](#autostart); on a computer,
+`router`: its status screen), `--craftix` (Craftix at boot without naming
+it), `--no-reboot`, `--all`, `--skip <dir>`. For example, `setup router
+--autostart router` makes a router that's routing, its screen up, after
+every boot; `setup net` a computer on the network.
 
 ```
 wget run .../deploy/setup.lua mine --autostart mine     a miner that carries on after reboots
@@ -153,12 +156,14 @@ It adds lines to the top of `/startup.lua` (or writes
 repo's `bin/` on the path at boot, and `turtle/` on a turtle or `pc/` on a
 computer, and `help/` on the help path (`help mine`, `help grep`; `help
 cc-turtles` lists them all), and make `ls` run the repo's `ls` instead of
-CraftOS's, then reboots. `--no-reboot` puts them on the
+CraftOS's, and bring the [network](#network) up while the setting
+`net.boot` is on (`--net` turns it on; `--router` forwarding too; `ip boot`
+and `ip boot off` later), then reboots. `--no-reboot` puts them on the
 path in the current shell instead. Running it again changes nothing.
 `deploy/` and `lib/` aren't on the path, so `install` and `cu` don't
-become commands. At the end of startup, on a turtle, goes the
-[autostart](#autostart) (`--autostart <app>` picks what it runs), then
-Craftix with `--craftix`.
+become commands. At the end of startup goes the [autostart](#autostart)
+(`--autostart <app>` picks what it runs: a turtle's job, or a computer's
+router screen), then Craftix with `--craftix`.
 
 The shell looks a program name up in each directory on the path in turn,
 `.lua` optional. Run from anywhere, a program still finds its modules
@@ -210,6 +215,11 @@ prompt) and then:
 - `mow`: a pass cut short: `mow reset`, then `mow`. On repeat
   (`mow.repeat` > 0): `mow`. Otherwise nothing: the lawn was mowed.
 - `autocompost`: `autocompost`.
+
+On a computer the one choice is `router` (`setup router --autostart
+router`, `install --autostart router`): the network comes up with
+forwarding on, then the router's status screen (`q` leaves it; routing
+goes on).
 
 `set cc-turtles.autostart ""` turns it off.
 

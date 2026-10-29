@@ -9,17 +9,21 @@
 --   craftix                            the POSIX-style shell, started at boot
 --   diskclone                          for a computer with a disk drive
 --   fileserver                         its disk drives as one folder, /jbod
---   net                                the network: ip, ping, traceroute, nc
---   router                             the network, and routing between networks
+--   net                                the network: ip, ping, traceroute, nc;
+--                                      up at every boot
+--   router                             the network, and routing between
+--                                      networks: forwarding on, up at boot
 -- git and deploy/ always come; so do the help files of what you pick.
 --
 -- Options: --autostart <app> (a turtle runs it at every boot: resumes its
--- job, or starts one from the settings; see turtle/autostart.lua),
+-- job, or starts one from the settings; see turtle/autostart.lua; on a
+-- computer: router, its status screen at every boot),
 -- --craftix (Craftix at boot without naming it), --no-reboot, --all
 -- (everything, sim/ too), --skip <dir> (leave out more).
 --
 --   setup mine --autostart mine        a miner that carries on after reboots
 --   setup farm coreutils craftix       a farmer you can also use as a shell
+--   setup router --autostart router    a router, its screen up at boot
 --
 -- It fetches the latest git, then clones the repo into /cc-turtles, or
 -- pulls it if it's there already, and runs deploy/install to put the
@@ -58,7 +62,7 @@ local APPS = {
                "lib/cu.lua", "help/network.txt" },
 }
 local ALWAYS = { "bin/git.lua", "lib/pager.lua", "deploy/", "help/cc-turtles.txt" }
-local AUTOSTART = { mine = true, farm = true, mow = true, autocompost = true }
+local AUTOSTART = turtle and { mine = true, farm = true, mow = true, autocompost = true } or { router = true }
 
 local cloneArgs, installArgs, apps = {}, {}, {}
 local autostart
@@ -83,12 +87,11 @@ while i <= #args do
         for name in pairs(APPS) do names[#names + 1] = name end
         table.sort(names)
         print("Apps: " .. table.concat(names, " "))
-        print("--autostart: mine, farm, mow or autocompost")
+        print("--autostart: " .. (turtle and "mine, farm, mow or autocompost" or "router"))
         return
     end
     i = i + 1
 end
-if autostart and not turtle then print("--autostart is for turtles."); return end
 if autostart and #apps > 0 then
     local named = false
     for _, a in ipairs(apps) do named = named or a == autostart end
@@ -120,6 +123,8 @@ local function paths()
     for _, a in ipairs(apps) do
         addAll(APPS[a])
         if a == "craftix" then installArgs[#installArgs + 1] = "--craftix" end
+        if a == "net" then installArgs[#installArgs + 1] = "--net" end
+        if a == "router" then installArgs[#installArgs + 1] = "--router" end
     end
     return out
 end

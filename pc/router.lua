@@ -2,7 +2,9 @@
 --
 --   router          turn forwarding on, bring the network up, and watch it
 --   router boot     route from every boot (the network starts at boot,
---                   forwarding on)
+--                   forwarding on); `setup router --autostart router`
+--                   (or `deploy/install --autostart router`) brings this
+--                   screen up at boot too
 --
 -- A router is a computer with an interface on each network it joins: a
 -- modem each (wired or wireless), or VLANs on one modem ("back.10",

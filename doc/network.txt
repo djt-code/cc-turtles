@@ -9,25 +9,22 @@ Build it:
 Keep the two cables apart: touching, they're one wire. The modems don't need right-clicking (that only shares peripherals); messages cross a cable either way.
 
 Install (HTTP on):
-  on R: wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua router
-  on A and B: the same, with net instead of router
-Each reboots when done.
+  on R: wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua router --autostart router
+  on A and B: the same, with just net instead of router --autostart router
+Each reboots when done. The network then comes up at every boot (on R with forwarding on, and the router's screen).
 
-Configure (`ip link` lists the modems' names):
+Configure (`ip link` lists the modems' names); what's set is kept, and applies at once:
   on R:
     ip addr add left 10.0.1.1/24
     ip addr add right 10.0.2.1/24
-    router boot
     router
   on A (modem on its back):
     ip addr add back 10.0.1.10/24
     ip route add default via 10.0.1.1
-    ip boot
     ip up
   on B:
     ip addr add back 10.0.2.20/24
     ip route add default via 10.0.2.1
-    ip boot
     ip up
 
 Test, from A:

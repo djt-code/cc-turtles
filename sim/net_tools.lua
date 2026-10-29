@@ -156,3 +156,36 @@ check("and the port is free again after", ME.sockets[7] == nil)
 r = W:run("nc", "10.0.2.5", "7")
 check("nc without -u: a usage error", r.status == 2 and r.errText:find("only UDP"))
 _G.ccnet = nil
+
+--------------------------------------------------------------------------
+-- deploy/install --router on a computer: the network up at boot,
+-- forwarding on, and with --autostart router the router's screen at boot
+--------------------------------------------------------------------------
+local hf = assert(io.open(PROJ .. "/deploy/install.lua", "rb"))
+W:file("cc-turtles/deploy/install.lua", hf:read("a"))
+hf:close()
+W:install("ip")
+help = help or { path = function() return "/rom/help" end, setPath = function() end }
+local turtleWas = turtle
+turtle = nil
+STORE["net.boot"], STORE["net.forward"] = nil, nil
+r = W:session({}, function() return W:osRun("cc-turtles/deploy/install.lua", { "--autostart", "router", "--no-reboot" }) end)
+local startup = W:read("startup.lua") or ""
+check("install --autostart router on a computer: net.boot and forwarding on, the router at boot",
+    STORE["net.boot"] == true and STORE["net.forward"] == true and STORE["cc-turtles.autostart"] == "router"
+        and startup:find('settings.get("net.boot")', 1, true) and startup:find("/cc-turtles/pc/router", 1, true),
+    show(r.out) .. show(r.errText))
+check("and, not rebooting, the network came up in this shell (forwarding)", _G.ccnet ~= nil and _G.ccnet.forward == true,
+    show(r.out))
+local bootAt = startup:find("net.boot", 1, true)
+local routerAt = startup:find("/cc-turtles/pc/router", 1, true)
+check("the network first, the router's screen at the end", bootAt and routerAt and bootAt < routerAt)
+r = W:session({}, function() return W:osRun("cc-turtles/deploy/install.lua", { "--no-reboot" }) end)
+check("install again: the same startup", W:read("startup.lua") == startup, show(W:read("startup.lua")))
+r = W:run("ip", "boot", "off")
+check("ip boot off: net.boot off", STORE["net.boot"] == false and r.out:find("doesn't start"))
+r = W:run("ip", "boot")
+check("ip boot: on again, and no line of its own (install's is there)", STORE["net.boot"] == true
+    and W:read("startup.lua") == startup)
+N.down()
+turtle = turtleWas
