@@ -18,9 +18,15 @@
 --                         \, |, &&, || or inside quotes goes on to the next.
 --   X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $0
 --                         variables.  $PATH is the shell's path (setting
---                         it changes the path) and $PWD its directory.
---                         CraftOS has no environment, so programs can't
---                         see variables and X=1 cmd ignores the X=1.
+--                         it changes the path), $PWD its directory and
+--                         $HOSTNAME the computer's label (its ID if it
+--                         has none).  CraftOS has no environment, so
+--                         programs can't see variables and X=1 cmd
+--                         ignores the X=1.
+--   PS1                   the prompt: "label:/dir$ " ("/dir$ " with no
+--                         label), or $PS1 with \h (label, or ID), \w (the
+--                         directory), \W (its last part), \i (the ID),
+--                         \$, \n and \\: PS1='\h \W\$ '.
 --   *  ?  [abc]  [!a-z]   globs; a name starting with a dot only matches
 --                         an explicit dot, and the fileserver's member disks
 --                         (/disk, /disk2... with /jbod mounted) only a
@@ -425,6 +431,8 @@ local function getVar(name)
     elseif name == "@" or name == "*" then return pos, true
     elseif name == "PATH" then return shell.path()
     elseif name == "PWD" then return "/" .. shell.dir()
+    elseif name == "HOSTNAME" then
+        return os.getComputerLabel and os.getComputerLabel() or tostring(os.getComputerID())
     end
     return vars[name] or ""
 end
@@ -879,11 +887,27 @@ local function prompt(text, hist)
     error(line, 0)
 end
 
+-- The prompt's text: $PS1 with its escapes (\h the computer's label, or
+-- its ID if it has none; \w the directory; \W its last part; \i the ID;
+-- \$ \n \\), or, with no PS1, "label:/dir$ " ("/dir$ " with no label).
+local function promptText()
+    local label = os.getComputerLabel and os.getComputerLabel()
+    local ps1 = vars.PS1
+    if ps1 == nil then return (label and (label .. ":") or "") .. "/" .. shell.dir() .. "$ " end
+    local dir = "/" .. shell.dir()
+    local esc = {
+        h = label or tostring(os.getComputerID()), H = label or tostring(os.getComputerID()),
+        w = dir, W = dir == "/" and "/" or dir:match("([^/]+)$"), i = tostring(os.getComputerID()),
+        ["$"] = "$", n = "\n", ["\\"] = "\\",
+    }
+    return (ps1:gsub("\\(.)", function(c) return esc[c] or ("\\" .. c) end))
+end
+
 local function interactive()
     local hist = {}
     print("Craftix: exit, or hold Ctrl+T, to leave")
     while not exiting do
-        local line = prompt("/" .. shell.dir() .. "$ ", hist)
+        local line = prompt(promptText(), hist)
         if line and line:match("%S") and hist[#hist] ~= line then hist[#hist + 1] = line end
         local list, err
         while line do

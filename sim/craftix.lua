@@ -175,6 +175,15 @@ r = W:run("craftix", { stdin = "echo x\n" })
 check("Ctrl+T at the prompt leaves, status 0", r.status == 0 and r.out:find("x\n", 1, true) ~= nil, show(r.out))
 r = W:run("craftix", { stdin = "ask | cat\ntyped\n" })
 check("a command reading the keyboard while its output is piped", r.out:find("got typed\n", 1, true) ~= nil, show(r.out))
+W.label = "lab-r"
+r = W:run("craftix", { stdin = "echo $HOSTNAME\n" })
+check("a computer with a label: label:/dir$ , and $HOSTNAME", r.out:find("lab-r:/$ lab-r\n", 1, true) ~= nil, show(r.out))
+r = W:run("craftix", { stdin = "PS1='[\\i \\h \\W]\\$ '\necho y\n" })
+check("PS1 with \\i \\h \\W \\$", r.out:find("[1 lab-r /]$ y\n", 1, true) ~= nil, show(r.out))
+W.label = nil
+r = W:run("craftix", { stdin = "PS1='\\h> '\necho z\n" })
+check("no label: \\h is the ID; the default prompt unchanged", r.out:find("1> z\n", 1, true) ~= nil
+    and r.out:find("/$ PS1", 1, true) == nil and r.out:find("/$ ", 1, true) ~= nil, show(r.out))
 
 -- 11. scripts
 W:file("s.sh", "#!/cc-turtles/bin/craftix\n# a script\necho \"$0 $# $1\"\nargs \"$@\"\nshift\nargs $*\nexit 5\n")

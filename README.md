@@ -366,7 +366,8 @@ A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
 | Redirects | `< f`, `> f`, `>> f`, `2> f`, `2>> f`, `2>&1`, `>&2`, `n>&-`; `/dev/null` |
 | Lists | `a ; b`, `a && b`, `a \|\| b`, `! a`; a newline is a `;` |
 | Quoting | `'single'`, `"double $X"`, `\x`; `#` comments |
-| Variables | `X=value`, `$X`, `${X}`, `${X:-default}`, `$?`, `$#`, `$1`..`$9`, `$@`, `"$@"`, `$*`, `$$`, `$0`; `$PATH` is the shell's path (setting it changes the path), `$PWD` its directory |
+| Variables | `X=value`, `$X`, `${X}`, `${X:-default}`, `$?`, `$#`, `$1`..`$9`, `$@`, `"$@"`, `$*`, `$$`, `$0`; `$PATH` is the shell's path (setting it changes the path), `$PWD` its directory, `$HOSTNAME` the computer's label (or ID). These are the shell's own: CraftOS has no environment, so programs don't see them |
+| Prompt | `label:/dir$ ` on a computer with a label, `/dir$ ` without; or set `PS1`, with `\h` (label, or ID), `\w` (directory), `\W` (its last part), `\i` (ID), `\$`, `\n`: `PS1='\h \W\$ '` |
 | Globs | `*`, `?`, `[abc]`, `[!a-z]`; names starting with `.` only match an explicit dot |
 | Substitution | `$(cmd)`, `` `cmd` `` |
 | Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export name=value`, `. file` |

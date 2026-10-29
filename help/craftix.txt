@@ -18,7 +18,9 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
   'single' "double" \x
       quoting; # starts a comment.  A line ending in \, |, &&, || or inside quotes goes on to the next.
   X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $0
-      variables.  $PATH is the shell's path (setting it changes the path) and $PWD its directory. CraftOS has no environment, so programs can't see variables and X=1 cmd ignores the X=1.
+      variables.  $PATH is the shell's path (setting it changes the path), $PWD its directory and $HOSTNAME the computer's label (its ID if it has none).  CraftOS has no environment, so programs can't see variables and X=1 cmd ignores the X=1.
+  PS1
+      the prompt: "label:/dir$ " ("/dir$ " with no label), or $PS1 with \h (label, or ID), \w (the directory), \W (its last part), \i (the ID), \$, \n and \\: PS1='\h \W\$ '.
   *  ?  [abc]  [!a-z]
       globs; a name starting with a dot only matches an explicit dot, and the fileserver's member disks (/disk, /disk2... with /jbod mounted) only a pattern that starts with a plain character (disk*, not *). No match leaves the word as is.
   $(cmd)  `cmd`
