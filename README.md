@@ -23,7 +23,7 @@ The repo is in four folders:
 | `turtle/home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
 | `bin/git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
 | `bin/cat.lua`, `bin/more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
-| `lib/pager.lua` | Library: a `less`-style viewer for `more` and `git log`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
+| `lib/pager.lua` | Library: a `less`-style viewer for `more`, `git log` and `claude`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), the mouse wheel 3 lines, `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. |
 | `bin/echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
 | POSIX utilities (`bin/`) | `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs`, plus `which`: the basic options of each, for the commands CraftOS lacks. `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
 | `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
@@ -874,7 +874,10 @@ code prints or returns goes back to it. Two more tools: `status` (where it
 is, fuel, what's in front, above and below, the inventory) and `ask_user`
 (it asks you at the keyboard). It works at the goal call by call, says what
 it did when it stops, and then waits for the next thing to do; an empty
-line quits. Ctrl+T stops it, and because it runs under `T.run` the saved
+line quits. When more comes out than fits on the screen, it opens in the
+pager before the next prompt, at the first line you haven't seen (the
+mouse wheel, arrows or space to scroll, `q` back to the prompt); at an
+empty prompt the wheel up or PgUp opens the whole session. Ctrl+T stops it, and because it runs under `T.run` the saved
 position stays right, so `home` works afterwards. It picks up `.turtlepos`
 from the last job if there is one; otherwise where it starts is `(0,0,0)`
 facing `+z`.

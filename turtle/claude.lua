@@ -21,6 +21,12 @@
 -- or press Enter on an empty line to quit.  Ctrl+T stops it (under T.run,
 -- so the saved position stays right).
 --
+-- Reading back: when more comes out than the screen holds, it opens in
+-- the pager (lib/pager.lua) at the first line you haven't seen before it
+-- asks you anything: the mouse wheel, arrows or space to scroll, q to
+-- get to the prompt.  At an empty prompt, the wheel up (or PgUp) opens
+-- the whole session.
+--
 -- Setup:
 --   * put an API key in `claude.key` next to this program (`edit
 --     claude.key`, paste the key, save).  Make it a key of its own with a
@@ -39,6 +45,12 @@
 -- facing +z.
 
 local T = require("turtlelib")
+-- the pager is in lib/, beside turtle/; without it the output just scrolls
+if shell and shell.getRunningProgram then
+    package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path
+end
+local okPager, pager = pcall(require, "pager")
+if not (okPager and type(pager) == "table" and pager.page) then pager = nil end
 
 local API_URL = "https://api.anthropic.com/v1/messages"
 local API_VERSION = "2026-10-21"
@@ -127,6 +139,98 @@ local TOOLS = {
 }
 
 --------------------------------------------------------------------------
+-- The screen: what's shown is kept, to read back in the pager
+--------------------------------------------------------------------------
+local SCROLLBACK = 3000         -- lines kept
+local shown = {}                -- the lines shown this session
+local seen = 0                  -- how many of them were out at the last prompt
+local screenPrint = print
+
+local function keep(text)
+    for l in (text .. "\n"):gmatch("([^\n]*)\n") do shown[#shown + 1] = l end
+    if #shown > SCROLLBACK + 500 then
+        local cut, t = #shown - SCROLLBACK, {}
+        for i = cut + 1, #shown do t[#t + 1] = shown[i] end
+        shown, seen = t, math.max(0, seen - cut)
+    end
+end
+
+-- everything printed goes through here: claude's notes, the code, what
+-- the code and turtlelib print
+print = function(...)
+    local parts = {}
+    for i = 1, select("#", ...) do parts[#parts + 1] = tostring(select(i, ...)) end
+    keep(table.concat(parts, " "))
+    return screenPrint(...)
+end
+
+-- If more came out since the last prompt than fits above it, show it in
+-- the pager from its first line.  After the pager, the screen shows the
+-- end of the session again, above the prompt.
+local function view(opts)
+    opts.wrap, opts.always = true, true
+    pager.page(shown, opts)
+    local w, h = term.getSize()
+    local tail = {}
+    for i = math.max(1, #shown - h + 2), #shown do tail[#tail + 1] = shown[i] end
+    local rows = pager.wrap(tail, w)
+    for r = 1, h do
+        term.setCursorPos(1, r)
+        term.clearLine()
+        local l = r < h and rows[#rows - (h - 1) + r]
+        if l then term.write(l) end
+    end
+    term.setCursorPos(1, h)
+end
+
+local function catchUp()
+    if not (pager and term) then return end
+    local w, h = term.getSize()
+    local new = {}
+    for i = seen + 1, #shown do new[#new + 1] = shown[i] end
+    if #pager.wrap(new, w) > h - 1 then view({ from = seen + 1 }) end
+end
+
+-- read(), except that the wheel up or PgUp before anything is typed
+-- comes back as `back`.
+local function readLine()
+    if not (pager and term and parallel) then return read() or "" end
+    local line, back, typed
+    parallel.waitForAny(
+        function() line = read() end,
+        function()
+            while true do
+                local ev, a = os.pullEvent()
+                if ev == "char" or ev == "paste" then typed = true
+                elseif not typed and ev == "mouse_scroll" and a < 0 then
+                    back = 3                -- as far as a notch goes in the pager
+                    return
+                elseif not typed and ev == "key" and a == keys.pageUp then
+                    back = select(2, term.getSize()) - 2      -- a page
+                    return
+                end
+            end
+        end)
+    return line or "", back
+end
+
+-- Ask for a line after `label`, the pager first if need be.
+local function ask(label)
+    catchUp()
+    while true do
+        write(label)
+        local line, back = readLine()
+        if not back then
+            keep(label .. line)
+            seen = #shown
+            return line
+        end
+        term.setCursorBlink(false)
+        view({ from = math.huge, up = back })
+    end
+end
+
+--------------------------------------------------------------------------
 -- The tools
 --------------------------------------------------------------------------
 local function log(line)
@@ -211,8 +315,7 @@ end
 
 local function askUser(question)
     print("Claude asks: " .. tostring(question))
-    write("> ")
-    return read() or "", false
+    return ask("> "), false
 end
 
 local function runTool(name, input)
@@ -223,8 +326,7 @@ local function runTool(name, input)
         print(code)
         log("lua:\n" .. code)
         if CONFIRM then
-            write("Run it? [y/N] ")
-            local a = read() or ""
+            local a = ask("Run it? [y/N] ")
             if not a:lower():find("^y") then
                 print("--- not run")
                 return "The user declined to run this code.", true
@@ -374,8 +476,7 @@ local function main()
     print(string.format("Claude at the controls (%s, effort %s). Turtle at %s facing %d, fuel %s.",
         MODEL, EFFORT, T.posString(), T.dir, tostring(turtle.getFuelLevel())))
     if goal == "" then
-        write("Goal: ")
-        goal = read() or ""
+        goal = ask("Goal: ")
     end
     while goal ~= "" do
         local before = { input = usage.input, output = usage.output, cached = usage.cached }
@@ -383,9 +484,10 @@ local function main()
         print(string.format("[%d tokens in (%d from cache), %d out; %d in all]",
             usage.input - before.input, usage.cached - before.cached, usage.output - before.output,
             usage.input + usage.output))
-        write("> ")
-        goal = read() or ""
+        goal = ask("> ")
     end
 end
 
-T.run(main)
+local ok, err = pcall(T.run, main)
+print = screenPrint
+if not ok then error(err, 0) end

@@ -32,7 +32,7 @@ local function press(lines, ...)
         seen[#seen + 1] = { row1 = T.text(1), row5 = T.rows[5], status = T.text(13), inv = T.inverse[13] }
         return pull()
     end
-    pager.page(lines)
+    pager.page(lines, OPTS)
     os.pullEvent = pull
     local left = T.events[1]
     T.events = {}
@@ -79,6 +79,44 @@ check("l and right 8 columns right, $ to the end of the widest line",
     shows(2, 9) and shows(3, 17) and shows(4, #full - 38) and v[2].status:find("col 9") ~= nil)
 check("h and left 8 back, 0 to the left edge, not past it",
     shows(5, #full - 46) and shows(6, #full - 54) and shows(7, 1) and shows(8, 1))
+
+-- 3b. the mouse wheel: 3 lines a notch, not past either end
+v = press(text, { "mouse_scroll", 1, 5, 5 }, { "mouse_scroll", 1, 5, 5 }, { "mouse_scroll", -1, 5, 5 },
+    { "mouse_scroll", -1, 5, 5 }, { "mouse_scroll", -1, 5, 5 }, { "key", keys["end"] }, { "mouse_scroll", 1, 5, 5 })
+check("the wheel down 3 lines a notch, up 3, not above the top or past the end",
+    topOf(v[2]) == 4 and topOf(v[3]) == 7 and topOf(v[4]) == 4 and topOf(v[5]) == 1 and topOf(v[6]) == 1
+        and topOf(v[8]) == 29, topOf(v[2]) .. " " .. topOf(v[3]) .. " " .. topOf(v[4]) .. " " .. topOf(v[8]))
+
+-- 3c. wrapping: at word breaks, a word longer than a row cut, an empty
+--     line kept
+local rows, first = pager.wrap({ "aaa bbb ccc", "", string.rep("x", 20), "dd  ee" }, 7)
+check("wrap: at spaces, a long word cut, empty lines kept, where each line starts",
+    table.concat(rows, "|") == "aaa bbb|ccc||xxxxxxx|xxxxxxx|xxxxxx|dd  ee"
+        and table.concat(first, ",") == "1,3,4,7", table.concat(rows, "|") .. " / " .. table.concat(first, ","))
+local prose = {}
+for i = 1, 8 do prose[i] = "para " .. i .. ": " .. string.rep("word ", 15) end
+OPTS = { wrap = true }
+v = press(prose, { "char", "G" })
+local widestRow = 0
+for r = 1, 12 do widestRow = math.max(widestRow, #T.text(r)) end
+check("wrap = true: long lines wrap to the screen, no sideways scroll",
+    v[1].row1:find("^para 1: word") and widestRow <= 39 and T.text(1):find("^%w") and not v[1].status:find("col"), v[1].status)
+OPTS = { from = 20 }
+v = press(text)
+check("from = 20 opens at line 20", topOf(v[1]) == 20, v[1].row1)
+OPTS = { from = math.huge }
+v = press(text)
+check("from = math.huge opens at the end", topOf(v[1]) == 29 and v[1].status:find("END"), v[1].status)
+OPTS = { from = math.huge, up = 3 }
+v = press(text)
+check("up = 3: 3 rows above where from lands", topOf(v[1]) == 26, v[1].row1)
+OPTS = { wrap = true, from = 3 }
+v = press(prose)
+check("with wrap, from counts lines, not rows", v[1].row1:find("^para 3:") ~= nil, v[1].row1)
+OPTS = { always = true }
+v = press({ "just one line" })
+check("always = true: the viewer even for text that fits", v[1].row1 == "just one line" and v[1].status:find("1%-1/1"), v[1].status)
+OPTS = nil
 
 -- 4. more: files one after another in the pager (cat just copies them)
 local SW = require("shellworld")

@@ -2,11 +2,19 @@
 --
 --   local pager = require("pager")
 --   pager.page(text)            -- a string, or a list of lines
+--   pager.page(text, opts)      -- with options:
+--     wrap = true     long lines wrap at word breaks instead of scrolling
+--                     sideways
+--     from = n        open at line n of the text (math.huge: at the end)
+--     up = n          then n rows up from there
+--     always = true   open the viewer even if the text fits on the screen
 --
 -- Text that fits on the screen is just printed.  Anything longer or wider
 -- opens in a viewer: every line but the bottom one shows text, the bottom
--- one says where you are.  Lines aren't wrapped; scroll sideways instead.
+-- one says where you are.  Lines aren't wrapped unless asked; scroll
+-- sideways instead.
 --
+--   mouse wheel           3 lines up / down
 --   space, f, PgDn        a page down (the screen less one line)
 --   b, PgUp               a page up
 --   j, down, Enter        a line down
@@ -20,6 +28,7 @@
 local P = {}
 
 local HSTEP = 8            -- columns per sideways step
+local WHEEL = 3            -- lines per notch of the mouse wheel
 
 -- The text as a list of lines: no carriage returns, tabs as 4 spaces.
 function P.lines(text)
@@ -30,24 +39,67 @@ function P.lines(text)
     return out
 end
 
-function P.page(src)
+-- `lines` wrapped to `w` columns at spaces (a word longer than a row is
+-- cut), and for each line the row it starts on.
+function P.wrap(lines, w)
+    local rows, first = {}, {}
+    for i, l in ipairs(lines) do
+        first[i] = #rows + 1
+        local rest = l
+        while #rest > w do
+            local cut = rest:sub(1, w + 1):match("^.*() ")
+            if cut and cut > 1 and rest:sub(1, cut - 1):find("%S") then
+                rows[#rows + 1] = rest:sub(1, cut - 1)
+                rest = rest:sub(cut + 1):gsub("^ +", "")
+            else
+                rows[#rows + 1] = rest:sub(1, w)
+                rest = rest:sub(w + 1)
+            end
+        end
+        if rest ~= "" or first[i] == #rows + 1 then rows[#rows + 1] = rest end
+    end
+    return rows, first
+end
+
+function P.page(src, opts)
+    opts = opts or {}
     local lines = type(src) == "table" and src or P.lines(src)
     local widest = 0
     for _, l in ipairs(lines) do widest = math.max(widest, #l) end
 
     local w, h = term.getSize()
-    if #lines <= h - 1 and widest <= w then
-        for _, l in ipairs(lines) do print(l) end
-        return
+    if not opts.always and #lines <= h - 1 and (widest <= w or opts.wrap) then
+        local rows = opts.wrap and P.wrap(lines, w) or lines
+        if #rows <= h - 1 then
+            for _, l in ipairs(lines) do print(l) end
+            return
+        end
     end
 
-    local top, left = 1, 1
+    local rows, first, wrappedAt = lines, nil, nil
+    local top, left = opts.from or 1, 1
+    local up = opts.up
     while true do
         w, h = term.getSize()
+        if opts.wrap and wrappedAt ~= w then
+            -- (again if the screen changed width), keeping the line at the top
+            local line = 1
+            if first then
+                for i = #first, 1, -1 do if first[i] <= top then line = i; break end end
+            else
+                line = top
+            end
+            rows, first = P.wrap(lines, w)
+            wrappedAt = w
+            top = first[line] or #rows + 1
+            widest = 0
+            for _, l in ipairs(rows) do widest = math.max(widest, #l) end
+        end
         local view = h - 1
         local step = math.max(1, view - 1)      -- a page keeps one line of the last
-        local maxTop = math.max(1, #lines - view + 1)
+        local maxTop = math.max(1, #rows - view + 1)
         local maxLeft = math.max(1, widest - w + 1)
+        if up then top, up = math.min(top, maxTop) - up, nil end
         top = math.max(1, math.min(top, maxTop))
         left = math.max(1, math.min(left, maxLeft))
 
@@ -56,10 +108,10 @@ function P.page(src)
         for r = 1, view do
             term.setCursorPos(1, r)
             term.clearLine()
-            local l = lines[top + r - 1]
+            local l = rows[top + r - 1]
             if l then term.write(l:sub(left, left + w - 1)) end
         end
-        local status = string.format("%d-%d/%d", top, math.min(top + view - 1, #lines), #lines)
+        local status = string.format("%d-%d/%d", top, math.min(top + view - 1, #rows), #rows)
         if maxLeft > 1 then status = status .. " col " .. left end
         if top >= maxTop then status = status .. " END" end
         status = status .. "  q:quit"
@@ -75,7 +127,9 @@ function P.page(src)
         -- event off the queue, so q doesn't reach the shell's prompt);
         -- keys with no char as key events
         local ev, k = os.pullEvent()
-        if ev == "char" then
+        if ev == "mouse_scroll" then
+            top = top + k * WHEEL                  -- k: 1 down, -1 up
+        elseif ev == "char" then
             if k == "q" or k == "Q" then break
             elseif k == " " or k == "f" then top = top + step
             elseif k == "b" then top = top - step

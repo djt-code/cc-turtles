@@ -16,6 +16,8 @@ Usage:
 
 When it stops, type the next thing to do (it keeps the conversation), or press Enter on an empty line to quit.  Ctrl+T stops it (under T.run, so the saved position stays right).
 
+Reading back: when more comes out than the screen holds, it opens in the pager (lib/pager.lua) at the first line you haven't seen before it asks you anything: the mouse wheel, arrows or space to scroll, q to get to the prompt.  At an empty prompt, the wheel up (or PgUp) opens the whole session.
+
 Setup:
   * put an API key in `claude.key` next to this program (`edit claude.key`, paste the key, save).  Make it a key of its own with a spending limit: anything on a computer's disk can be read by whoever can open the turtle or the server's save folder.  The file is in .gitignore, and `git pull` never touches untracked files.
   * the server's CC:Tweaked config must allow HTTP to api.anthropic.com (the same `http.rules` allow-list that lets `git` reach your host).

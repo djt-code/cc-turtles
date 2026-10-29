@@ -201,3 +201,26 @@ fresh({})
 Mine.files = {}
 run("anything")
 check("without a key it says where to put one, and calls nothing", Mine.logHas("No API key") and #HTTP.requests == 0)
+
+-- 9. the pager: what's longer than the screen opens in it before the next
+--    prompt, at the first line not yet seen; what fits doesn't
+package.path = PROJ .. "/lib/?.lua;" .. package.path
+local Tm = M.termApi(39, 13)
+fresh({ "more please", "" })
+local long = {}
+for i = 1, 30 do long[i] = "note line " .. i end
+HTTP.queue = {
+    reply({ text("Ready.") }, "end_turn"),
+    reply({ text(table.concat(long, "\n")) }, "end_turn"),
+}
+local opened = {}
+Tm.events = { { "char", "q" }, { "char", "MARK" } }
+local pull = os.pullEvent
+os.pullEvent = function(...) opened[#opened + 1] = Tm.text(1); return pull(...) end
+run("say ready")
+os.pullEvent = pull
+check("a short reply: no pager at its prompt; a long one opens at its first line",
+    #opened == 1 and opened[1] == "note line 1", table.concat(opened, " | "))
+check("q gives the prompt back, the next key left for it", Tm.events[1] and Tm.events[1][2] == "MARK")
+check("everything still printed as before", Mine.logHas("note line 30") and Mine.logHas("^Ready%.$"))
+term, Tm = nil, nil
