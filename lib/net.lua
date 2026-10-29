@@ -44,7 +44,8 @@
 -- bridge (a TUN device in the server, say, on one modem channel) can turn
 -- them into real IPv4 and back field for field: the bridge is a host (or
 -- router) on that channel, answering ARP for its address, with routes
--- pointing at it.
+-- pointing at it.  mod/ (the Craftix Gateway mod, a submodule) is one: a
+-- block on CC cables, and a TUN device on the Minecraft server.
 --   IP    { src, dst (numbers: a.b.c.d as a*2^24 + ...), ttl, id, proto,
 --         data }; proto "icmp" = 1, "tcp" = 6, "udp" = 17.  No options,
 --         fragments or TOS (the bridge reassembles, and fills in 0).

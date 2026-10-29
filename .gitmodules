@@ -1,0 +1,3 @@
+[submodule "mod"]
+	path = mod
+	url = ../craftix-gateway.git

@@ -1126,10 +1126,17 @@ computer hearing everything (as with rednet):
 
 **Bridging to a real network:** packets are Lua tables, but each field is
 the real header's (IP addresses as numbers, TCP's seq, ack, flags, window
-and payload bytes), so a bridge (a TUN device in the Minecraft server on
-one modem channel, say) could turn them into real IPv4 and back. The
+and payload bytes), so a bridge can turn them into real IPv4 and back. The
 header of `lib/net.lua` lists the mapping. Only string payloads can cross:
 UDP datagrams carrying tables stay in ComputerCraft.
+[Craftix Gateway](mod/) (the `mod/` submodule: `git submodule update --init`)
+is that bridge, a Minecraft mod. It adds a Network Gateway block for CC
+cables, with an address on its network (`10.0.0.1/24`). Routers on the cable
+route at it. Behind it, a TUN device on the server (Linux) carries their
+packets as real IPv4: a real machine can `telnet` to a CC computer, and CC
+computers reach whatever the server reaches. Its README has the server's
+setup. A device's `git clone` never fetches it: the submodule is a link,
+not files.
 
 **How it runs:** a plain computer can't run programs in the background, so
 `ip up` hooks the network into `os.pullEventRaw`, which every program's
