@@ -40,6 +40,10 @@
 -- conversation, so a long job is many calls; the system prompt and tools
 -- are marked for prompt caching.  The totals are printed when a goal ends.
 --
+-- The code has the turtle, turtlelib, peripherals, the plain Lua bits and
+-- `require` for CraftOS's cc.* modules (cc.strings, cc.pretty, ...), but
+-- not fs, http or shell, so it can't read the key.
+--
 -- Position: it picks up turtlelib's saved position (.turtlepos) if there
 -- is one, so `home` still works afterwards; otherwise here is (0,0,0)
 -- facing +z.
@@ -115,7 +119,7 @@ Each tool call is a slow network round trip, so do several steps per call: write
 local TOOLS = {
     {
         name = "lua",
-        description = "Run Lua on the turtle. The code runs as a chunk with turtle, T (turtlelib), peripheral, os, textutils, math, string, table and sleep in scope; print output and return values come back to you (tables are serialised). Errors come back as an error result. Definitions persist between calls.",
+        description = "Run Lua on the turtle. The code runs as a chunk with turtle, T (turtlelib), peripheral, os, textutils, math, string, table and sleep in scope, and require for the CraftOS modules cc.strings, cc.pretty, cc.expect, cc.base64, cc.completion, cc.shell.completion, cc.image.nft, cc.audio.dfpwm and cc.require; print output and return values come back to you (tables are serialised). Errors come back as an error result. Definitions persist between calls.",
         input_schema = {
             type = "object",
             properties = { code = { type = "string", description = "The Lua code to run." } },
@@ -263,6 +267,56 @@ local API = {
     pcall = pcall, error = error, assert = assert,
 }
 local env = setmetatable({}, { __index = API })
+
+-- `require` in the code: CraftOS's cc.* modules, and only those.  They're
+-- loaded afresh from /rom with a world of their own, so that what reads
+-- files (cc.image.nft's load, cc.require's loaders) can't open the key or
+-- a .gitlite (which may hold a git token), and cc.require's package.loaded
+-- gets the code's globals as _G, not the real ones.
+local CC_MODULES = {
+    ["cc.audio.dfpwm"] = true, ["cc.base64"] = true, ["cc.completion"] = true, ["cc.expect"] = true,
+    ["cc.image.nft"] = true, ["cc.pretty"] = true, ["cc.require"] = true,
+    ["cc.shell.completion"] = true, ["cc.strings"] = true,
+}
+local function secret(path)
+    local p = fs.combine(tostring(path), ""):lower()
+    return p == fs.combine(KEY_FILE, ""):lower() or p:match("[^/]*$") == ".gitlite"
+end
+local function guard(open)
+    return function(path, ...)
+        if secret(path) then return nil, tostring(path) .. ": not readable from here" end
+        return open(path, ...)
+    end
+end
+local modWorld = {
+    fs = setmetatable({ open = guard(fs.open) }, { __index = fs }),
+    io = setmetatable({ open = guard(io.open), lines = guard(io.lines) }, { __index = io }),
+    loadfile = guard(loadfile),
+    dofile = function(path) return assert(guard(loadfile)(path))() end,
+    debug = { getregistry = function() return nil end },
+    _G = env,
+    shell = shell,                  -- cc.shell.completion asks it for the directory
+}
+setmetatable(modWorld, { __index = _G })
+local loadedMods = {}
+local function ccRequire(name)
+    if type(name) ~= "string" or not CC_MODULES[name] then
+        local names = {}
+        for n in pairs(CC_MODULES) do names[#names + 1] = n end
+        table.sort(names)
+        error("require: only CraftOS's modules here: " .. table.concat(names, ", "), 2)
+    end
+    if loadedMods[name] == nil then
+        local path = "/rom/modules/main/" .. name:gsub("%.", "/") .. ".lua"
+        local chunk, err = loadfile(path, "t", modWorld)
+        if not chunk then error("require: " .. tostring(err), 2) end
+        local m = chunk(name, path)
+        loadedMods[name] = m == nil and true or m
+    end
+    return loadedMods[name]
+end
+modWorld.require = ccRequire
+API.require = ccRequire
 
 local function runLua(code)
     local out = {}

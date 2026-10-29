@@ -224,3 +224,17 @@ check("a short reply: no pager at its prompt; a long one opens at its first line
 check("q gives the prompt back, the next key left for it", Tm.events[1] and Tm.events[1][2] == "MARK")
 check("everything still printed as before", Mine.logHas("note line 30") and Mine.logHas("^Ready%.$"))
 term, Tm = nil, nil
+
+-- 10. require: only CraftOS's cc.* modules (they're tried for real under
+--     the ROM; here there's no /rom, so only the refusals)
+fresh({ "" })
+HTTP.queue = {
+    reply({ toolUse("lua", { code = "return require('turtlelib')" }) }, "tool_use"),
+    reply({ toolUse("lua", { code = "return require('fs')" }) }, "tool_use"),
+    reply({ text("Checked.") }, "end_turn"),
+}
+run("poke at require")
+local q1, q2 = resultsIn(2).toolu_1, resultsIn(3).toolu_2
+check("require of anything but a cc module is an error result naming what it can have",
+    q1 and q1.is_error and tostring(q1.content):find("only CraftOS's modules") and tostring(q1.content):find("cc.strings", 1, true)
+        and q2 and q2.is_error, q1 and q1.content)

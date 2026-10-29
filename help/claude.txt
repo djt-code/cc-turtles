@@ -24,4 +24,6 @@ Setup:
 
 What it costs: every round trip (one tool call) sends the whole conversation, so a long job is many calls; the system prompt and tools are marked for prompt caching.  The totals are printed when a goal ends.
 
+The code has the turtle, turtlelib, peripherals, the plain Lua bits and `require` for CraftOS's cc.* modules (cc.strings, cc.pretty, ...), but not fs, http or shell, so it can't read the key.
+
 Position: it picks up turtlelib's saved position (.turtlepos) if there is one, so `home` still works afterwards; otherwise here is (0,0,0) facing +z.
