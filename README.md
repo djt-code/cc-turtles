@@ -382,8 +382,10 @@ A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
 | Startup | `/.profile` runs when Craftix starts at the prompt: set `PS1`, `export` variables |
 | Prompt | `PS1`, an exported variable: it starts as `'\h:\w\$ '` (`label:/dir$ `) on a computer with a label, `'\w\$ '` (`/dir$ `) without, unless the environment brought one. Set it with `\h` (label, or ID), `\w` (directory), `\W` (its last part), `\i` (ID), `\$`, `\n`: `PS1='\h \W\$ '` |
 | Globs | `*`, `?`, `[abc]`, `[!a-z]`; names starting with `.` only match an explicit dot |
-| Substitution | `$(cmd)`, `` `cmd` `` |
-| Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill` |
+| Substitution | `$(cmd)`, `` `cmd` `` (a subshell) |
+| Compound commands | `if a; then b; elif c; then d; else e; fi`, `while`/`until a; do b; done`, `for x in words; do b; done` (without `in`: `"$@"`), `case w in a\|b*) x;; *) y;; esac`, `{ a; b; }`, `( a; b )` (a subshell: its variables, functions, `exit` and `cd` are its own), `break [n]`, `continue [n]`. Each can be piped and redirected whole: `for f in *.lua; do wc -l $f; done \| sort -n`, `while read l; do ...; done < file` |
+| Functions | `name() { body; }` (or `function name { body; }`): `$1`... are its arguments, `return [n]`, `local x=1` until it returns |
+| Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill`, `break`, `continue`, `return`, `local` |
 | Scripts | `craftix file [args]`, `craftix -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/bin/craftix` run by name |
 
 A line ending in `\`, `|`, `&&` or `||`, or inside quotes, carries on at a
@@ -424,8 +426,8 @@ at its pipe or file, and `os.getenv` at its environment. They are put back whene
 multishell tabs don't see them. That lets stock programs be piped as
 well as the utilities.
 
-Not yet: `if`/`while`/`for`/`case`, functions, `( )` subshells,
-here-documents, `$(( ))` arithmetic, `~`. And what CraftOS rules out:
+Not yet: here-documents, `$(( ))` arithmetic (`expr` does sums), `~`.
+And what CraftOS rules out:
 
 - Nothing streams: `a | head` still runs all of `a`, holding its output
   in memory.

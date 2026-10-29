@@ -41,7 +41,23 @@
 --                         pattern that starts with a plain character
 --                         (disk*, not *).
 --                         No match leaves the word as is.
---   $(cmd)  `cmd`         command substitution.
+--   $(cmd)  `cmd`         command substitution (in a subshell).
+--   if a; then b; elif c; then d; else e; fi
+--   while a; do b; done   until a; do b; done
+--   for x in words; do b; done   (no `in words`: "$@")
+--   case word in pat|pat) a;; (pat) b;; *) c;; esac   (globs, as in names)
+--   { a; b; }             a group; ( a; b ) a subshell: its variables,
+--                         functions, exit and directory are its own
+--   name() { body; }      a function (function name { body; } too):
+--                         $1... are its arguments; return [n]; local
+--                         name[=value] until it returns
+--   break [n], continue [n] out of, or on round, the n'th loop out.
+--                         Any of these can be piped and redirected as a
+--                         whole: for f in *; do ...; done | sort,
+--                         while read l; do ...; done < file.  They span
+--                         lines at the prompt.  A loop lets the rest of
+--                         the computer run every 100 turns, and Ctrl+T
+--                         stops it.
 --   a &                   a background job: the line goes on while it
 --                         runs.  It gets its own copy of the variables
 --                         and every event but the keyboard's and the
@@ -64,8 +80,7 @@
 --                         shift [n], unset name..., . file,
 --                         export [-n] name[=value]... and export -p
 --
--- Not yet: if/while/for/case, functions, ( subshells ), here-documents,
--- $(( arithmetic )), ~.
+-- Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 --
 -- At the prompt, Craftix first runs the commands in /.profile (PS1,
 -- export...), as `. /.profile` would.  Leave with exit, or by holding
@@ -108,8 +123,14 @@ local P = {
     subStatus = nil,                 -- the last $(...)'s status
     exiting = false,                 -- exit ran
     interrupted = false,             -- Ctrl+T stopped a command: skip the rest
-    defaultOut = nil,                -- where commands write, inside $(...)
+    defaultOut = nil,                -- where commands write, inside $(...) or a redirected { }
+    defaultIn = nil,                 -- what they read ({ handle }), in a piped or redirected compound
+    defaultErr = nil,                -- where their errors go
     lastBg = nil,                    -- $!
+    funcs = {},                      -- name -> the function's body
+    loopDepth = 0, funcDepth = 0, dotDepth = 0,
+    locals = nil,                    -- in a function: what `local` hid, name -> { value, exported }
+    -- breaking, continuing (how many loops), returning: stop what's running
 }
 local mainP = P
 
@@ -121,7 +142,7 @@ end
 
 local function cloneState(s)
     local c = copy(s)
-    c.vars, c.exported, c.pos = copy(s.vars), copy(s.exported), copy(s.pos)
+    c.vars, c.exported, c.pos, c.funcs = copy(s.vars), copy(s.exported), copy(s.pos), copy(s.funcs)
     return c
 end
 
@@ -322,7 +343,7 @@ local function closer(src, i)
     bad("unterminated $(", true)
 end
 
-local OPS2 = { ["&&"] = true, ["||"] = true, [">>"] = true, [">&"] = true, ["<&"] = true, [">|"] = true }
+local OPS2 = { ["&&"] = true, ["||"] = true, [">>"] = true, [">&"] = true, ["<&"] = true, [">|"] = true, [";;"] = true }
 local OPS1 = { ["|"] = true, [";"] = true, ["&"] = true, ["<"] = true, [">"] = true, ["("] = true, [")"] = true }
 
 -- Tokens: { parts = word } or { op = "|", fd = n (2>), nl = true (a newline) }.
@@ -424,26 +445,61 @@ end
 
 local REDIR = { ["<"] = true, [">"] = true, [">>"] = true, [">|"] = true, [">&"] = true, ["<&"] = true }
 
--- A list of and-or lists: { { pipe = p }, { conn = "&&", pipe = p }, ... },
--- a pipeline { neg, cmds }, a command { words, assigns, redirs }.
+-- A list is and-or lists: { { pipe = p }, { conn = "&&", pipe = p }, ...,
+-- bg = true (it ended in &), text = its source }.  A pipeline is { neg,
+-- cmds }; a command is one of
+--   { kind = "simple", words, assigns, redirs }
+--   { kind = "group", body, redirs }               { list; }
+--   { kind = "subshell", body, redirs }            ( list )
+--   { kind = "if", clauses = { { cond, body }... }, otherwise, redirs }
+--   { kind = "while", cond, body, ["until"] = true, redirs }
+--   { kind = "for", name, items (nil: "$@"), body, redirs }
+--   { kind = "case", subject, items = { { patterns, body }... }, redirs }
+--   { kind = "func", name, body }                  name() compound
+-- Reserved words count only unquoted, where a command starts.
+local ENDS = { ["then"] = true, ["else"] = true, ["elif"] = true, ["fi"] = true, ["do"] = true, ["done"] = true,
+    ["esac"] = true, ["}"] = true, ["in"] = false }
 local function parse(src)
     local toks = lex(src)
     local i = 1
+    local list, command
     local function op(...)
         local t = toks[i]
         if t and t.op then
             for _, o in ipairs({ ... }) do if t.op == o then return o end end
         end
     end
+    -- the plain word token t is (one unquoted literal), or nil
+    local function plain(t)
+        if t and t.parts and #t.parts == 1 and t.parts[1].t == "lit" and not t.parts[1].q then return t.parts[1].s end
+    end
+    local function is(w) return plain(toks[i]) == w end
     local function newlines() while toks[i] and toks[i].nl do i = i + 1 end end
     local function unexpected()
         local t = toks[i]
         if not t then bad("unexpected end of line", true) end
-        if t.op == "(" or t.op == ")" then bad("( ) subshells aren't supported") end
-        bad("unexpected " .. (t.nl and "newline" or t.op))
+        bad("unexpected " .. (t.nl and "newline" or t.op or plain(t) or "word"))
     end
-    local function command()
-        local cmd = { words = {}, assigns = {}, redirs = {} }
+    local function expect(w)
+        if is(w) then i = i + 1; return end
+        if not toks[i] then bad("unexpected end of line (" .. w .. " missing)", true) end
+        unexpected()
+    end
+    local function redirect(cmd)
+        local t = toks[i]
+        local target = toks[i + 1]
+        if not target then bad("missing file name after " .. t.op) end
+        if not target.parts then i = i + 1; unexpected() end
+        cmd.redirs[#cmd.redirs + 1] = { fd = t.fd or (t.op:sub(1, 1) == "<" and 0 or 1), op = t.op, target = target.parts }
+        i = i + 2
+    end
+    local function redirects(cmd)
+        while toks[i] and REDIR[toks[i].op] do redirect(cmd) end
+        return cmd
+    end
+    local function simple()
+        local cmd = { kind = "simple", words = {}, assigns = {}, redirs = {} }
+        if ENDS[plain(toks[i])] then unexpected() end
         while toks[i] do
             local t = toks[i]
             if t.parts then
@@ -458,12 +514,7 @@ local function parse(src)
                 end
                 i = i + 1
             elseif REDIR[t.op] then
-                local target = toks[i + 1]
-                if not target then bad("missing file name after " .. t.op) end
-                if not target.parts then i = i + 1; unexpected() end
-                cmd.redirs[#cmd.redirs + 1] = { fd = t.fd or (t.op:sub(1, 1) == "<" and 0 or 1), op = t.op,
-                                                target = target.parts }
-                i = i + 2
+                redirect(cmd)
             else
                 break
             end
@@ -471,13 +522,115 @@ local function parse(src)
         if #cmd.words + #cmd.assigns + #cmd.redirs == 0 then unexpected() end
         return cmd
     end
+    local function name(what)
+        local n = plain(toks[i])
+        if not n or not n:match("^[%a_][%w_]*$") then
+            if not toks[i] then bad("unexpected end of line", true) end
+            bad(what .. ": bad name " .. (n or "here"))
+        end
+        i = i + 1
+        return n
+    end
+    function command()
+        local t = toks[i]
+        local w = plain(t)
+        if t and t.op == "(" then
+            i = i + 1
+            local body = list({ [")"] = true })
+            if not op(")") then if not toks[i] then bad("unexpected end of line () missing)", true) end; unexpected() end
+            i = i + 1
+            return redirects({ kind = "subshell", body = body, redirs = {} })
+        elseif w == "{" then
+            i = i + 1
+            local body = list({ ["}"] = true })
+            expect("}")
+            return redirects({ kind = "group", body = body, redirs = {} })
+        elseif w == "if" then
+            i = i + 1
+            local cmd = { kind = "if", clauses = {}, redirs = {} }
+            while true do
+                local cond = list({ ["then"] = true })
+                expect("then")
+                cmd.clauses[#cmd.clauses + 1] = { cond = cond, body = list({ ["elif"] = true, ["else"] = true, ["fi"] = true }) }
+                if is("elif") then i = i + 1
+                else
+                    if is("else") then i = i + 1; cmd.otherwise = list({ ["fi"] = true }) end
+                    expect("fi")
+                    return redirects(cmd)
+                end
+            end
+        elseif w == "while" or w == "until" then
+            i = i + 1
+            local cond = list({ ["do"] = true })
+            expect("do")
+            local body = list({ ["done"] = true })
+            expect("done")
+            return redirects({ kind = "while", ["until"] = w == "until", cond = cond, body = body, redirs = {} })
+        elseif w == "for" then
+            i = i + 1
+            local cmd = { kind = "for", name = name("for"), redirs = {} }
+            newlines()
+            if is("in") then
+                i = i + 1
+                cmd.items = {}
+                while toks[i] and toks[i].parts do cmd.items[#cmd.items + 1] = toks[i].parts; i = i + 1 end
+                if op(";") then i = i + 1 elseif toks[i] then unexpected() end
+            elseif op(";") then
+                i = i + 1
+            end
+            newlines()
+            expect("do")
+            cmd.body = list({ ["done"] = true })
+            expect("done")
+            return redirects(cmd)
+        elseif w == "case" then
+            i = i + 1
+            local subject = toks[i]
+            if not (subject and subject.parts) then unexpected() end
+            i = i + 1
+            local cmd = { kind = "case", subject = subject.parts, items = {}, redirs = {} }
+            newlines()
+            expect("in")
+            newlines()
+            while not is("esac") do
+                if not toks[i] then bad("unexpected end of line (esac missing)", true) end
+                if op("(") then i = i + 1 end
+                local pats = {}
+                while true do
+                    local p = toks[i]
+                    if not (p and p.parts) then unexpected() end
+                    pats[#pats + 1] = p.parts
+                    i = i + 1
+                    if op("|") then i = i + 1
+                    elseif op(")") then i = i + 1; break
+                    else unexpected() end
+                end
+                cmd.items[#cmd.items + 1] = { patterns = pats, body = list({ [";;"] = true, esac = true }) }
+                if op(";;") then i = i + 1; newlines()
+                elseif not is("esac") then unexpected() end
+            end
+            i = i + 1
+            return redirects(cmd)
+        elseif w == "function" or (w and w:match("^[%a_][%w_]*$") and toks[i + 1] and toks[i + 1].op == "("
+                and toks[i + 2] and toks[i + 2].op == ")") then
+            if w == "function" then i = i + 1 end
+            local n = name("function")
+            if op("(") then
+                i = i + 1
+                if not op(")") then unexpected() end
+                i = i + 1
+            end
+            newlines()
+            if not toks[i] then bad("unexpected end of line", true) end
+            local body = command()
+            if body.kind == "simple" or body.kind == "func" then bad("a function's body is { ... } or another compound command") end
+            return { kind = "func", name = n, body = body }
+        end
+        return simple()
+    end
     local function pipeline()
         local p = { cmds = {} }
-        local t = toks[i]
-        if t and t.parts and #t.parts == 1 and t.parts[1].t == "lit" and not t.parts[1].q and t.parts[1].s == "!" then
-            p.neg = true
-            i = i + 1
-        end
+        if is("!") then p.neg = true; i = i + 1 end
         while true do
             p.cmds[#p.cmds + 1] = command()
             if not op("|") then break end
@@ -486,13 +639,21 @@ local function parse(src)
         end
         return p
     end
-    -- an and-or list ended by & runs in the background (ao.bg); ao.text is
-    -- its source, for jobs
-    local list = {}
-    while toks[i] do
-        if op(";") then
-            i = i + 1
-        else
+    -- and-or lists until one of ends (reserved words, or ")" ";;") or
+    -- the end
+    function list(ends)
+        ends = ends or {}
+        local out = {}
+        local function atEnd()
+            local t = toks[i]
+            if not t then return true end
+            if t.op then return ends[t.op] == true end
+            local w = plain(t)
+            return w ~= nil and ends[w] == true
+        end
+        while true do
+            while op(";") do i = i + 1 end
+            if atEnd() then return out end
             local first = toks[i]
             local ao = { { pipe = pipeline() } }
             while op("&&", "||") do
@@ -502,15 +663,15 @@ local function parse(src)
                 ao[#ao + 1] = { conn = o, pipe = pipeline() }
             end
             ao.text = src:sub(first.s, toks[i - 1].e)
-            list[#list + 1] = ao
-            if toks[i] then
-                if op("&") then ao.bg = true; i = i + 1
-                elseif op(";") then i = i + 1
-                else unexpected() end
-            end
+            out[#out + 1] = ao
+            if op("&") then ao.bg = true; i = i + 1
+            elseif op(";") then i = i + 1
+            elseif not atEnd() then unexpected() end
         end
     end
-    return list
+    local top = list()
+    if toks[i] then unexpected() end
+    return top
 end
 
 --------------------------------------------------------------------------
@@ -554,21 +715,23 @@ local function processEnv(assigns)
     return env
 end
 
--- What $(src) writes, trailing newlines dropped.
+local subshell                      -- (below, with the jobs)
+
+-- What $(src) writes, trailing newlines dropped.  It runs in a subshell.
 local function substitute(src)
     local buf = buffer()
-    local out, ex = P.defaultOut, P.exiting
-    P.defaultOut = buf
-    runSource(src)
-    P.defaultOut, P.exiting = out, ex
-    P.subStatus = P.status
+    P.subStatus = subshell(function()
+        P.defaultOut = buf
+        runSource(src)
+    end)
     return (buf.text():gsub("\n+$", ""))
 end
 
 -- The fields a word expands to, each { chars, magic }: magic marks the
 -- unquoted characters, the ones a glob can use.  Unquoted expansions are
 -- split at blanks; "$@" is a field per argument.  whole: one string, no
--- splitting (assignments and redirect targets).
+-- splitting (assignments and redirect targets); "pattern": one field, not
+-- split, unquoted expansions still magic (case's patterns).
 local function fields(parts, whole)
     local out, cur = {}, nil
     local function new() cur = { chars = {}, magic = {}, keep = false } end
@@ -603,8 +766,10 @@ local function fields(parts, whole)
                 end
             else
                 if list then v = table.concat(v, " ") end
-                if p.q or whole then
+                if p.q or whole == true then
                     add(v, true)
+                elseif whole == "pattern" then
+                    add(v, false)
                 else
                     local k = 1
                     while true do
@@ -619,6 +784,7 @@ local function fields(parts, whole)
         end
     end
     cut()
+    if whole == "pattern" then return out[1] or { chars = {}, magic = {} } end
     if whole then return out[1] and table.concat(out[1].chars) or "" end
     return out
 end
@@ -805,12 +971,13 @@ end
 
 -- Resume j with ...; it ends ("done", j.status), waits for an event
 -- (j.filter) or blocks in fg or wait (j.req).
+local currentJob                     -- the one step() is running
 local function step(j, ...)
     if coroutine.status(j.co) ~= "suspended" then return end
-    local saved = P
-    P = j.P
+    local saved, savedJob = P, currentJob
+    P, currentJob = j.P, j
     local r = table.pack(coroutine.resume(j.co, ...))
-    P = saved
+    P, currentJob = saved, savedJob
     if coroutine.status(j.co) == "dead" then
         j.state = "done"
         if r[1] then j.value, j.status = r[2], type(r[2]) == "number" and r[2] or 0
@@ -823,6 +990,27 @@ local function step(j, ...)
 end
 
 local function touch(j) touches = touches + 1; j.touched = touches end
+
+-- Run fn in a subshell: a copy of the shell's state (variables,
+-- functions, $?...), and the directory and path put back after.  Its
+-- status.
+function subshell(fn)
+    local outer, j = P, currentJob
+    local sub = cloneState(P)
+    sub.exiting, sub.breaking, sub.continuing, sub.returning = false, nil, nil, nil
+    sub.loopDepth, sub.funcDepth, sub.dotDepth, sub.locals = 0, 0, 0, nil
+    local dir, path = shell.dir(), shell.path()
+    P = sub
+    if j and j.P == outer then j.P = sub end
+    local ok, e = pcall(fn)
+    P = outer
+    if j and j.P == sub then j.P = outer end
+    if shell.dir() ~= dir then shell.setDir(dir) end
+    if shell.path() ~= path then shell.setPath(path) end
+    if sub.interrupted then outer.interrupted = true end   -- (Ctrl+T stops the whole line)
+    if not ok then error(e, 0) end
+    return sub.status
+end
 
 -- Give j a number (and a process ID, for $! and kill).
 local function addJob(j)
@@ -1208,23 +1396,107 @@ builtins["."] = function(a, b)
     if not a[2] then b.err(".: needs a file name"); return 2 end
     local text = readFile(a[2])
     if not text then b.err(".: " .. a[2] .. ": not found"); return 1 end
+    P.dotDepth = P.dotDepth + 1
     runSource(text)
+    P.dotDepth = P.dotDepth - 1
+    P.returning = nil
     return P.status
 end
-
--- Run one command: inText is what the pipe before it wrote (nil: none),
--- out the pipe after it (nil: the shell's output).  Returns its status.
-local function runCommand(cmd, inText, out)
-    local fd = { [0] = inText and { data = inText } or TTY, [1] = out or P.defaultOut or TTY, [2] = TTY }
-    local opened = {}
-    local function done(st)
-        for _, s in ipairs(opened) do s.close() end
-        return st
+-- break [n] and continue [n]: out of the n'th loop out, or on to its
+-- next turn
+local function loopJump(kind)
+    return function(a, b)
+        local n = tonumber(a[2] or "1")
+        if not n or n < 1 or n ~= math.floor(n) then b.err(kind .. ": " .. a[2] .. ": loop count out of range"); return 1 end
+        if P.loopDepth == 0 then b.err(kind .. ": only meaningful in a loop"); return 0 end
+        P[kind == "break" and "breaking" or "continuing"] = math.min(n, P.loopDepth)
+        return 0
     end
+end
+builtins["break"] = loopJump("break")
+builtins["continue"] = loopJump("continue")
+builtins["return"] = function(a, b)
+    if P.funcDepth == 0 and P.dotDepth == 0 then b.err("return: only in a function or a . file"); return 1 end
+    local n = a[2] and tonumber(a[2])
+    if a[2] and not n then b.err("return: " .. a[2] .. ": numeric argument required"); n = 2 end
+    P.returning = true
+    return n or P.status
+end
+-- local name[=value]...: the variable as it was comes back when the
+-- function returns
+builtins["local"] = function(a, b)
+    if not P.locals then b.err("local: only in a function"); return 1 end
+    for k = 2, #a do
+        local name, v = a[k]:match("^([%a_][%w_]*)=(.*)$")
+        name = name or a[k]:match("^[%a_][%w_]*$")
+        if not name then b.err("local: " .. a[k] .. ": not a valid name"); return 1 end
+        if not P.locals[name] then P.locals[name] = { value = P.vars[name], exported = P.exported[name] } end
+        P.vars[name] = v
+    end
+    return 0
+end
+-- builtins a function can't hide
+local SPECIAL = { [":"] = true, ["."] = true, ["break"] = true, ["continue"] = true, ["return"] = true,
+    exit = true, export = true, unset = true, shift = true, ["local"] = true }
 
-    P.subStatus = nil
+-- Something has to stop what's running: Ctrl+T, exit, break, continue or return.
+local function halted() return P.interrupted or P.exiting or P.breaking or P.continuing or P.returning end
+
+-- Apply redirects to fd; what they open goes in opened (to close after).
+-- False if one couldn't be done (said so).
+local function redirect(redirs, fd, opened)
+    for _, r in ipairs(redirs) do
+        local name = fields(r.target, true)
+        if r.op == ">&" or r.op == "<&" then
+            local n = tonumber(name)
+            if name == "-" then fd[r.fd] = r.op == "<&" and { data = "" } or stream(function() end)
+            elseif n and fd[n] then fd[r.fd] = fd[n]
+            else report(fd[2], "craftix: " .. name .. ": bad file descriptor"); return false end
+        elseif r.op == "<" then
+            local text = name == "/dev/null" and "" or readFile(name)
+            if not text then report(fd[2], "craftix: " .. name .. ": No such file or directory"); return false end
+            fd[r.fd] = { data = text }
+        elseif name == "/dev/null" then
+            fd[r.fd] = stream(function() end)
+        else
+            local path = shell.resolve(name)
+            local f = not fs.isDir(path) and fs.open(path, r.op == ">>" and "ab" or "wb")
+            if not f then report(fd[2], "craftix: " .. name .. ": can't create"); return false end
+            local s = stream(function(x) f.write(x) end, function() f.close() end)
+            opened[#opened + 1] = s
+            fd[r.fd] = s
+        end
+    end
+    return true
+end
+local function closeAll(opened) for _, s in ipairs(opened) do s.close() end end
+
+-- What a command starts with: the pipe's ends, else the shell's (or, in
+-- a piped or redirected compound command, its).
+local function startFds(inText, out)
+    return { [0] = inText and { data = inText } or P.defaultIn or TTY, [1] = out or P.defaultOut or TTY,
+             [2] = P.defaultErr or TTY }
+end
+
+-- fn(), with what's in fd as what the commands inside read and write.
+-- Their input is one reader they share: each takes what it reads.
+local function withFds(fd, fn)
+    local i0, o1, e2 = P.defaultIn, P.defaultOut, P.defaultErr
+    local inp = fd[0]
+    if inp ~= TTY and inp.data then inp = { handle = reader(inp.data) } end
+    P.defaultIn = inp ~= TTY and inp.handle and inp or nil
+    P.defaultOut = fd[1] ~= TTY and fd[1].raw and fd[1] or nil
+    P.defaultErr = fd[2] ~= TTY and fd[2].raw and fd[2] or nil
+    local ok, st = pcall(fn)
+    P.defaultIn, P.defaultOut, P.defaultErr = i0, o1, e2
+    if not ok then error(st, 0) end
+    return st
+end
+
+-- Words as a command's arguments: expanded, split, globbed.
+local function expandWords(words)
     local argv = {}
-    for _, w in ipairs(cmd.words) do
+    for _, w in ipairs(words) do
         for _, f in ipairs(fields(w)) do
             local g = glob(f)
             if g then
@@ -1234,29 +1506,152 @@ local function runCommand(cmd, inText, out)
             end
         end
     end
+    return argv
+end
 
-    for _, r in ipairs(cmd.redirs) do
-        local name = fields(r.target, true)
-        if r.op == ">&" or r.op == "<&" then
-            local n = tonumber(name)
-            if name == "-" then fd[r.fd] = r.op == "<&" and { data = "" } or stream(function() end)
-            elseif n and fd[n] then fd[r.fd] = fd[n]
-            else report(fd[2], "craftix: " .. name .. ": bad file descriptor"); return done(1) end
-        elseif r.op == "<" then
-            local text = name == "/dev/null" and "" or readFile(name)
-            if not text then report(fd[2], "craftix: " .. name .. ": No such file or directory"); return done(1) end
-            fd[r.fd] = { data = text }
-        elseif name == "/dev/null" then
-            fd[r.fd] = stream(function() end)
-        else
-            local path = shell.resolve(name)
-            local f = not fs.isDir(path) and fs.open(path, r.op == ">>" and "ab" or "wb")
-            if not f then report(fd[2], "craftix: " .. name .. ": can't create"); return done(1) end
-            local s = stream(function(x) f.write(x) end, function() f.close() end)
-            opened[#opened + 1] = s
-            fd[r.fd] = s
-        end
+local runList, execCompound
+
+-- A loop's turn ends: true to leave the loop (break, Ctrl+T, exit,
+-- return; continue for a loop further out).
+local function loopTurn()
+    if P.breaking then
+        P.breaking = P.breaking > 1 and P.breaking - 1 or nil
+        return true
+    elseif P.continuing then
+        P.continuing = P.continuing > 1 and P.continuing - 1 or nil
+        return P.continuing ~= nil
     end
+    return halted() and true or false
+end
+
+-- Every 100 turns of a loop, let the rest of the computer run (and see
+-- Ctrl+T): a loop of builtins alone would never wait for anything.
+local turns = 0
+local function breathe()
+    turns = turns + 1
+    if turns % 100 ~= 0 then return end
+    os.queueEvent("craftix_loop")
+    if os.pullEventRaw("craftix_loop") == "terminate" then P.interrupted, P.status = true, 130 end
+end
+
+local function loop(cmd, items)
+    local st = 0
+    P.loopDepth = P.loopDepth + 1
+    local k = 0
+    while true do
+        local go = true                 -- (false: the condition was cut short, by continue say)
+        if items then
+            k = k + 1
+            if k > #items then break end
+            setVar(cmd.name, items[k])
+        else
+            runList(cmd.cond)
+            if halted() then
+                if loopTurn() then break end
+                go = false
+            elseif (P.status == 0) == (cmd["until"] == true) then
+                break
+            end
+        end
+        if go then
+            runList(cmd.body)
+            st = P.status
+            if halted() and loopTurn() then break end
+        end
+        breathe()
+        if P.interrupted then break end
+    end
+    P.loopDepth = P.loopDepth - 1
+    return P.interrupted and 130 or st
+end
+
+-- if, while, until, for, case, { }, ( ): its status.
+local function compound(cmd)
+    local kind = cmd.kind
+    if kind == "group" then
+        runList(cmd.body)
+        return P.status
+    elseif kind == "subshell" then
+        return subshell(function() runList(cmd.body) end)
+    elseif kind == "if" then
+        for _, c in ipairs(cmd.clauses) do
+            runList(c.cond)
+            if halted() then return P.status end
+            if P.status == 0 then
+                P.status = 0
+                runList(c.body)
+                return P.status
+            end
+        end
+        P.status = 0
+        if cmd.otherwise then runList(cmd.otherwise) end
+        return P.status
+    elseif kind == "while" then
+        return loop(cmd)
+    elseif kind == "for" then
+        local items = cmd.items and expandWords(cmd.items) or copy(P.pos)
+        return loop(cmd, items)
+    elseif kind == "case" then
+        local subject = fields(cmd.subject, true)
+        for _, item in ipairs(cmd.items) do
+            for _, p in ipairs(item.patterns) do
+                local f = fields(p, "pattern")
+                local pat = globPattern(f.chars, f.magic)
+                if (pat and subject:match(pat)) or (not pat and table.concat(f.chars) == subject) then
+                    P.status = 0
+                    runList(item.body)
+                    return P.status
+                end
+            end
+        end
+        return 0
+    end
+end
+
+-- A compound command (or a function definition), in a pipe or not, with
+-- its redirects.
+function execCompound(cmd, inText, out)
+    if cmd.kind == "func" then
+        P.funcs[cmd.name] = cmd.body
+        return 0
+    end
+    local fd, opened = startFds(inText, out), {}
+    if not redirect(cmd.redirs, fd, opened) then closeAll(opened); return 1 end
+    local ok, st = pcall(withFds, fd, function() return compound(cmd) end)
+    closeAll(opened)
+    if not ok then error(st, 0) end
+    return st
+end
+
+-- A function called: its arguments as $1..., its body with the call's
+-- input and output.
+local function callFunction(body, argv, fd)
+    if P.funcDepth >= 64 then report(fd[2], "craftix: " .. argv[1] .. ": functions nested too deep"); return 1 end
+    local pos, loops, locals = P.pos, P.loopDepth, P.locals
+    P.pos, P.loopDepth, P.locals = { table.unpack(argv, 2) }, 0, {}
+    P.funcDepth = P.funcDepth + 1
+    local ok, st = pcall(withFds, fd, function() return execCompound(body) end)
+    for name, v in pairs(P.locals) do P.vars[name], P.exported[name] = v.value, v.exported end
+    P.pos, P.loopDepth, P.locals = pos, loops, locals
+    P.funcDepth = P.funcDepth - 1
+    if not ok then error(st, 0) end
+    if P.returning then P.returning = nil; st = P.status end
+    return st
+end
+
+-- Run one command: inText is what the pipe before it wrote (nil: none),
+-- out the pipe after it (nil: the shell's output).  Returns its status.
+local function runCommand(cmd, inText, out)
+    if cmd.kind ~= "simple" then return execCompound(cmd, inText, out) end
+    local fd, opened = startFds(inText, out), {}
+    local function done(st)
+        closeAll(opened)
+        return st
+    end
+
+    P.subStatus = nil
+    local argv = expandWords(cmd.words)
+    if not redirect(cmd.redirs, fd, opened) then return done(1) end
 
     local assigns = {}
     for k, a in ipairs(cmd.assigns) do assigns[k] = { name = a.name, value = fields(a.value, true) } end
@@ -1265,7 +1660,10 @@ local function runCommand(cmd, inText, out)
         return done(P.subStatus or 0)
     end
 
-    local input = fd[0] == TTY and real.input or reader(type(fd[0].data) == "string" and fd[0].data or "")
+    local fn = P.funcs[argv[1]]
+    if fn and not SPECIAL[argv[1]] then return done(callFunction(fn, argv, fd)) end
+
+    local input = fd[0] == TTY and real.input or fd[0].handle or reader(type(fd[0].data) == "string" and fd[0].data or "")
     local builtin = builtins[argv[1]]
     if builtin then
         return done(builtin(argv, {
@@ -1326,7 +1724,7 @@ local function runPipeline(p)
         local out = k < #p.cmds and buffer() or nil
         st = runCommand(cmd, data, out)
         data = out and out.text()
-        if P.interrupted or P.exiting then break end
+        if halted() then break end
     end
     if p.neg then st = st == 0 and 1 or 0 end
     P.status = st
@@ -1335,14 +1733,14 @@ end
 function runAndOr(ao)
     for k, item in ipairs(ao) do
         if k == 1 or (item.conn == "&&") == (P.status == 0) then runPipeline(item.pipe) end
-        if P.interrupted or P.exiting then return end
+        if halted() then return end
     end
 end
 
-local function runList(list)
+function runList(list)
     for _, ao in ipairs(list) do
+        if halted() then return end
         if ao.bg then background(ao); P.status = 0 else runAndOr(ao) end
-        if P.interrupted or P.exiting then return end
     end
 end
 
@@ -1475,7 +1873,7 @@ local function spawn(token)
     end
     local words = {}
     for k, a in ipairs(rec.argv) do words[k] = { { t = "lit", s = a, q = true } } end
-    runTop(function() runList({ { { pipe = { cmds = { { words = words, assigns = {}, redirs = {} } } } } } }) end)
+    runTop(function() runList({ { { pipe = { cmds = { { kind = "simple", words = words, assigns = {}, redirs = {} } } } } } }) end)
 end
 
 if args[1] == "-c" then

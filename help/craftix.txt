@@ -26,7 +26,21 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
   *  ?  [abc]  [!a-z]
       globs; a name starting with a dot only matches an explicit dot, and the fileserver's member disks (/disk, /disk2... with /jbod mounted) only a pattern that starts with a plain character (disk*, not *). No match leaves the word as is.
   $(cmd)  `cmd`
-      command substitution.
+      command substitution (in a subshell).
+  if a; then b; elif c;
+      then d; else e; fi
+  while a; do b; done
+      until a; do b; done
+  for x in words; do b; done
+      (no `in words`: "$@")
+  case word in pat|pat) a;; (pat) b;; *) c;; esac
+      (globs, as in names)
+  { a; b; }
+      a group; ( a; b ) a subshell: its variables, functions, exit and directory are its own
+  name() { body; }
+      a function (function name { body; } too): $1... are its arguments; return [n]; local name[=value] until it returns
+  break [n], continue [n] out of, or on round, the n'th loop out.
+      Any of these can be piped and redirected as a whole: for f in *; do ...; done | sort, while read l; do ...; done < file.  They span lines at the prompt.  A loop lets the rest of the computer run every 100 turns, and Ctrl+T stops it.
   a &
       a background job: the line goes on while it runs.  It gets its own copy of the variables and every event but the keyboard's and the mouse's.  At the prompt, Ctrl+Z stops the job in front (a stopped job keeps the events it misses for later).
   jobs [-l|-p]          the jobs: [1]+ Running
@@ -42,7 +56,7 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
   builtins
       also exit [n], :, true, false, read [-r] name..., shift [n], unset name..., . file, export [-n] name[=value]... and export -p
 
-Not yet: if/while/for/case, functions, ( subshells ), here-documents, $(( arithmetic )), ~.
+Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 
 At the prompt, Craftix first runs the commands in /.profile (PS1, export...), as `. /.profile` would.  Leave with exit, or by holding Ctrl+T at the prompt; with jobs left, the first try only warns, and the jobs end with the shell.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.  A script or -c waits for its background jobs before it ends: they can't outlive it.
 

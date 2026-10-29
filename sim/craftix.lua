@@ -147,7 +147,8 @@ local function synErr(line, want)
 end
 check("echo | : unexpected end of line, status 2", synErr("echo |", "unexpected end of line"))
 check("true && : unexpected end of line", synErr("true &&", "unexpected end of line"))
-check("( ) is refused", synErr("(echo)", "( ) subshells aren't supported"))
+check("a stray )", synErr("echo )", "unexpected )"))
+check("fi with no if", synErr("fi", "unexpected fi"))
 check("an open quote", synErr("echo 'x", "unterminated '"))
 check("> with no file", synErr("echo >", "missing file name after >"))
 check("$(( )) is refused", synErr("echo $((1+1))", "$(( )) arithmetic isn't supported"))
@@ -289,6 +290,64 @@ r = sh([[fg genv; fg %1]])
 check("no tabs (no multishell), or no such job: said, status 1",
     r.err[1] == "craftix: fg: genv: no such job, and no tabs to run it in (multishell needs an advanced computer)"
     and r.err[2] == "craftix: fg: %1: no such job" and r.status == 1, show(r.errText))
+
+-- 16. compound commands: if, while, until, for, case, { }, ( ), functions
+for _, u in ipairs({ "test", "expr", "seq", "sort" }) do W:install(u) end
+W:file("cc-turtles/bin/cdto.lua", [[shell.setDir(shell.resolve(... or ""))]])
+r = sh([[if false; then echo a; elif true; then echo b; else echo c; fi; if false; then echo x; fi; echo "s=$?"
+X=3; if test "$X" -gt 2; then echo big; else echo small; fi]])
+check("if, elif, else; an if with nothing true is status 0; test as the condition", r.out == "b\ns=0\nbig\n", show(r.out))
+r = sh([[i=0; while test $i -lt 3; do echo $i; i=$(expr $i + 1); done; until true; do echo no; done; echo "w=$?"]])
+check("while counting with expr; until; a loop that never ran is status 0", r.out == "0\n1\n2\nw=0\n", show(r.out))
+r = sh([[for x in a "b c" d; do echo "[$x]"; done; for i in $(seq 3); do echo $i; done]])
+check("for: words as they're split and quoted, $(...)", r.out == "[a]\n[b c]\n[d]\n1\n2\n3\n", show(r.out))
+r = sh([[for f in *.txt; do echo $f; done]], { cwd = "g" })
+check("for over a glob", r.out == "a1.txt\na2.txt\nb.txt\n", show(r.out))
+W.shell.setDir("")
+r = W:run("craftix", "-c", [[for a; do echo "<$a>"; done]], "name", "x", "y z")
+check("for with no in: the arguments", r.out == "<x>\n<y z>\n", show(r.out))
+r = sh([[for i in 1 2 3 4; do if test $i = 2; then continue; fi; if test $i = 4; then break; fi; echo $i; done
+for a in 1 2; do for b in x y; do echo $a$b; break 2; done; done
+for a in 1 2; do for b in x y; do echo $a$b; continue 2; done; echo never; done]])
+check("break and continue, and break 2, continue 2 out of an inner loop", r.out == "1\n3\n1x\n1x\n2x\n", show(r.out))
+r = sh([[for w in apple b.txt Zed other; do case $w in a*|Z*) echo "AZ $w";; *.txt) echo "txt $w";; *) echo "else $w";; esac; done
+case '*' in "*") echo star;; esac; X='a*'; case abc in $X) echo glob;; esac; case abc in "$X") echo no;; esac
+case x in (x) ;; esac; echo "e=$?"; case nothing in a) echo a;; esac; echo "n=$?"]])
+check("case: | and globs, the first match; a quoted pattern is literal, an unquoted $X a glob; (pat); empty; no match 0",
+    r.out == "AZ apple\ntxt b.txt\nAZ Zed\nelse other\nstar\nglob\ne=0\nn=0\n", show(r.out))
+r = sh([[greet() { echo "hi $1 ($#)"; }; greet bob; greet "a b" c; f() { return 3; echo no; }; f; echo $?
+x=1; g() { local x=2; echo "in $x"; }; g; echo "out $x"
+c() { if test $1 -gt 0; then echo $1; c $(expr $1 - 1); fi; }; c 3
+function k { echo k; }; k; s() { echo b; echo a; }; s | sort]])
+check("functions: arguments and $#, return n, local, recursion, the function keyword, piped",
+    r.out == "hi bob (1)\nhi a b (2)\n3\nin 2\nout 1\n3\n2\n1\nk\na\nb\n", show(r.out))
+r = W:run("craftix", "-c", [[f() { echo "f $1"; }; f in; echo "after $1"]], "name", "out")
+check("a function's arguments are its own: $1 is back after", r.out == "f in\nafter out\n", show(r.out))
+r = sh([[w() { echo inside; } > ff.txt; w; w; cat ff.txt; echo hi > m2.txt
+for i in 3 1 2; do echo $i; done | sort; { echo a; echo b; } > g.txt; cat g.txt
+while read l; do echo "<$l>"; done < m2.txt; printf 'x\ny\n' | while read l; do echo "$l!"; done
+{ cat nope; } 2> e2.txt; cat e2.txt]])
+check("redirects on a definition, a for in a pipe, { } to a file, while read from a file and from a pipe, 2> on { }",
+    r.out == "inside\n1\n2\n3\na\nb\n<hi>\nx!\ny!\ncat: nope: No such file or directory\n" and W:read("ff.txt") == "inside\n",
+    show(r.out))
+r = sh([[X=1; (X=2; echo $X); echo $X; (exit 3); echo $?; (cdto g; echo $PWD); echo $PWD
+Y=$(X=5; echo $X); echo "$X $Y"; (f() { echo sub; }; f); f 2>/dev/null; echo $?]])
+check("( ): its own variables, exit, directory and functions; $(...) is a subshell too",
+    r.out == "2\n1\n3\n/g\n/\n1 5\nsub\n127\n", show(r.out))
+r = W:run("craftix", { stdin = "for i in 1 2\ndo echo $i\ndone\nif true\nthen echo yes; fi\n" })
+check("at the prompt, a for or if goes on to the next line until it's done",
+    r.out:find("/$ > > 1\n2\n", 1, true) ~= nil and r.out:find("/$ > yes\n", 1, true) ~= nil, show(r.out))
+check("syntax: fi twice", synErr("if true; then :; fi fi", "unexpected fi"))
+check("syntax: a for's bad name", synErr("for 1x in a; do :; done", "for: bad name 1x"))
+check("syntax: case without esac", synErr("case x in a) echo;;", "unexpected end of line (esac missing)"))
+check("syntax: a function's body must be compound", synErr("f() echo", "a function's body is { ... } or another compound command"))
+r = sh([[while true; do :; done; echo never]], { events = { { "terminate" } } })
+check("a loop of builtins alone still sees Ctrl+T (status 130, the rest of the line skipped)",
+    r.status == 130 and r.out == "", show(r.out) .. " " .. r.status)
+r = sh([[break; return; echo after]])
+check("break outside a loop, return outside a function: said, and the line goes on",
+    r.out == "after\n" and r.err[1] == "craftix: break: only meaningful in a loop"
+        and r.err[2] == "craftix: return: only in a function or a . file", show(r.errText))
 
 -- 15. nothing left behind
 check("after: the screen, io, printing globals, POSIX_SH and os.getenv are as they were",
