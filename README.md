@@ -1130,3 +1130,8 @@ bigger), with a top-down (for the mine, a plan) and a side view; see
 See [sim/README.md](sim/README.md) for what each one covers. They're tests
 for the code, not for the game: the mock world only models the vanilla
 mechanics the programs rely on, so confirm anything new in game too.
+
+## License
+
+BSD 3-Clause, copyright (c) 2026 Dan Theisen <dan@wi7fi.dev>. See
+[LICENSE](LICENSE).
