@@ -13,6 +13,12 @@
 --                                      up at every boot
 --   router                             the network, and routing between
 --                                      networks: forwarding on, up at boot
+--   init                               processes and services: init at
+--                                      boot, ps, kill, service
+--   telnet                             the telnet client, and the network
+--   telnetd                            the telnet server as a service, with
+--                                      init and the network (then set
+--                                      telnetd.password)
 -- git and deploy/ always come; so do the help files of what you pick.
 --
 -- Options: --autostart <app> (a turtle runs it at every boot: resumes its
@@ -46,6 +52,9 @@ local DIR = "/cc-turtles"
 
 -- What each app needs.  A path ending in / is a whole folder.
 local TURTLE = { "turtle/turtlelib.lua", "turtle/home.lua", "turtle/autostart.lua" }
+local NET = { "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua", "lib/cu.lua",
+              "help/network.txt" }
+local INIT = { "bin/init.lua", "bin/ps.lua", "bin/kill.lua", "bin/service.lua", "lib/proc.lua", "lib/cu.lua" }
 local APPS = {
     mine = { "turtle/mine.lua", TURTLE },
     farm = { "turtle/farm.lua", TURTLE },
@@ -56,10 +65,11 @@ local APPS = {
     craftix = { "bin/craftix.lua" },
     diskclone = { "pc/diskclone.lua" },
     fileserver = { "pc/fileserver.lua", "lib/jbod.lua" },
-    net = { "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua", "lib/cu.lua",
-            "help/network.txt" },
-    router = { "pc/router.lua", "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua",
-               "lib/cu.lua", "help/network.txt" },
+    net = { NET },
+    router = { "pc/router.lua", NET },
+    init = { INIT },
+    telnet = { "bin/telnet.lua", "lib/telnet.lua", NET },
+    telnetd = { "bin/telnetd.lua", "lib/telnet.lua", NET, INIT },
 }
 local ALWAYS = { "bin/git.lua", "lib/pager.lua", "deploy/", "help/cc-turtles.txt" }
 local AUTOSTART = turtle and { mine = true, farm = true, mow = true, autocompost = true } or { router = true }
@@ -123,8 +133,9 @@ local function paths()
     for _, a in ipairs(apps) do
         addAll(APPS[a])
         if a == "craftix" then installArgs[#installArgs + 1] = "--craftix" end
-        if a == "net" then installArgs[#installArgs + 1] = "--net" end
+        if a == "net" or a == "telnet" or a == "telnetd" then installArgs[#installArgs + 1] = "--net" end
         if a == "router" then installArgs[#installArgs + 1] = "--router" end
+        if a == "init" or a == "telnetd" then installArgs[#installArgs + 1] = "--init" end
     end
     return out
 end
@@ -189,6 +200,18 @@ if fs.exists("/git.lua") and not fs.isDir("/git.lua") then
     if head:find("minimal git client", 1, true) then
         fs.delete("/git.lua")
         print("Removed the old /git.lua (git is in " .. DIR .. "/bin now)")
+    end
+end
+
+-- telnetd: a service init starts at every boot
+for _, a in ipairs(apps) do
+    if a == "telnetd" then
+        settings.set("service.telnetd.cmd", "telnetd")
+        settings.set("service.telnetd.enabled", true)
+        settings.save()
+        if not settings.get("telnetd.password") then
+            print("telnetd needs a password: set telnetd.password <password> (then reboot, or service start telnetd)")
+        end
     end
 end
 

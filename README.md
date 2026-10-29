@@ -30,6 +30,7 @@ The repo is in four folders:
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, UDP and TCP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc` makes TCP connections (and `nc -u` sends datagrams). See [Network](#network). |
+| Telnet (`bin/telnet.lua`, `bin/telnetd.lua`, `lib/telnet.lua`) | Another computer's shell, or its console (the miner's screen), over the network, in real Telnet with ANSI, so any telnet client works too. See [Telnet](#telnet). |
 | Processes (`bin/init.lua`, `bin/ps.lua`, `bin/kill.lua`, `bin/service.lua`, `lib/proc.lua`) | `init` runs every program as a process (an ID, its own terminal and environment) and keeps services running in the background, on any computer or turtle. `ps` lists the processes, `kill` signals them, `service` starts, stops and sets up services. See [Processes and services](#processes-and-services). |
 | `pc/router.lua` | Runs on a computer with an interface on each of several networks (modems, or VLANs on one): forwards between them, and shows a live status screen. |
 | `pc/fileserver.lua` | Runs on a plain computer: every floppy in its disk drives (beside it or over wired modems) as one folder, `/jbod`, that grows as drives and disks are added; files too big for one floppy are split across several. The layer is `lib/jbod.lua`. |
@@ -111,6 +112,9 @@ just those, with what they need and their help:
 | `fileserver` | its disk drives as one folder, `/jbod` |
 | `net` | the network: `ip`, `ping`, `traceroute`, `nc`, up at every boot |
 | `router` | the network, and `router` to route between networks: forwarding on, up at every boot |
+| `init` | [processes and services](#processes-and-services): `init` at boot, `ps`, `kill`, `service` |
+| `telnet` | the [telnet](#telnet) client, and the network |
+| `telnetd` | the [telnet](#telnet) server as a service, with `init` and the network (then `set telnetd.password ...`) |
 
 `git` and `deploy/` always come. Options: `--autostart <app>` (a turtle
 runs it at every boot, see [Autostart](#autostart); on a computer,
@@ -1164,6 +1168,38 @@ What's set is kept in settings (`net.if.<iface>`, `net.routes`,
 addresses are set by hand. `help network` on a computer walks through a lab
 of three computers, two networks and a router (with the one-cable VLAN
 variant and what to look at when it doesn't work); it's `doc/network.txt`.
+
+## Telnet
+
+```
+telnet host [port]          another computer's shell or screen, here (Ctrl+] then q leaves)
+telnetd                     the server: run it as a service (setup telnetd does)
+```
+
+`telnetd` serves Telnet on port 23 over [TCP](#network), so any telnet
+client can use it as well as ours. After the password, a connection gets
+a shell of its own, sized to the client's screen (Craftix if
+`craftix.login` is on, else the CraftOS shell), or, with `telnetd.attach`
+set to `console`, the computer's console, whatever runs there: the miner's
+or the farmer's screen, which you then see and type into as if you were
+standing at it. On the console Ctrl+T isn't passed on, so a stray one
+doesn't stop the miner. Our client's Ctrl+] then t (Telnet's "interrupt
+process") does stop it.
+
+The screen goes as ANSI escapes in xterm's 256 colours, a row at a time
+as it changes. CC's Latin-1 characters go as UTF-8, and its block
+graphics as Unicode's sextants. Keys come back as a terminal sends them:
+arrows and the rest, Ctrl+letters, pastes and the mouse. The client
+(`telnet`) is that terminal on a CC screen, with greys for colours on a
+basic computer.
+
+Settings: `telnetd.password` (typed at `Password:`; it crosses the
+network as typed, as with any telnet); `telnetd.open` (`true`: no
+password); `telnetd.attach` (`console`, or unset for a shell each);
+`telnetd.port` (23). telnetd needs [init](#processes-and-services), which
+runs the shells, and the network up. `setup telnetd` sets it all up as a
+service started at boot; then `set telnetd.password ...`. `service status
+telnetd` shows who has connected.
 
 ## Processes and services
 

@@ -35,6 +35,8 @@ Anywhere (bin/):
   strings: find printable strings in files (POSIX strings)
   tail: copy the last part of a file to standard output (POSIX tail)
   tee: copy standard input to standard output and to files (POSIX tee)
+  telnet: a telnet client: another computer's shell or screen, here
+  telnetd: a telnet server: a shell, or the console, over the network
   test: evaluate a condition and exit 0 (true) or 1 (false) (POSIX test)
   touch: create files, or mark them modified now (POSIX touch)
   tr: translate, squeeze or delete characters (POSIX tr)
