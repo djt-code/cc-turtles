@@ -211,6 +211,13 @@ check("pull --only swaps the choice: what's no longer wanted goes, the new comes
     and has("bin/git.lua") and not has("bin/cat.lua") and not has("turtle/mine.lua"))
 ok = git("pull", "/cc-turtles")
 check("a plain pull keeps the choice", ok and has("lib/cu.lua") and not has("bin/cat.lua") and #fetched == 0)
+turtle = nil
+ok = git("pull", "/cc-turtles", "--only", "sim/", "--only", "turtle/mine.lua")
+check("on a computer, --only sim/ and a turtle program: fetched though the device rule leaves them out",
+    ok and has("sim/lib/mock.lua") and has("turtle/mine.lua") and not has("lib/cu.lua"))
+ok = git("pull", "/cc-turtles", "--only", "sim/", "--skip", "sim/lib")
+check("a --skip given as well still leaves its folder out", ok and has("sim/mine_tunnel.lua") and not has("sim/lib/mock.lua"))
+turtle = {}
 ok = git("pull", "/cc-turtles", "--all")
 check("pull --all brings everything back, sim/ too", ok and has("sim/lib/mock.lua") and has("pc/diskclone.lua")
     and has("bin/cat.lua"))

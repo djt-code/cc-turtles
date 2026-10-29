@@ -10,7 +10,9 @@
 -- A computer's disk is small (1 MB by default), so a clone leaves out
 -- what the device doesn't run: sim/ always, pc/ on a turtle and turtle/
 -- on a computer.  --skip <dir> leaves out more, --all nothing, and
--- --only <path> (a file, or a folder ending in /) takes just those; the choice
+-- --only <path> (a file, or a folder ending in /) takes just those, sim/
+-- and the other device's folder too if named (the device rule is for
+-- when nothing is); the choice
 -- is kept in .gitlite and pull keeps to it (a checkout from before this
 -- gets the device's rule on its next pull, and loses those folders).  If the disk fills anyway it
 -- stops, keeping what it got, and `git pull` carries on once there's room.
@@ -299,7 +301,7 @@ local function parseArgs(list)
         if a == "-b" or a == "--branch" then opts.branch = list[i + 1]; i = i + 1
         elseif a == "--token" then opts.token = list[i + 1]; i = i + 1
         elseif a == "--skip" then
-            opts.skip = opts.skip or defaultSkip()
+            opts.skip = opts.skip or {}
             opts.skip[#opts.skip + 1] = (list[i + 1] or ""):gsub("^/+", ""):gsub("/+$", "")
             i = i + 1
         elseif a == "--only" then
@@ -314,6 +316,19 @@ local function parseArgs(list)
     return pos, opts
 end
 
+-- What to leave out given the options, or nil if they don't say: --all
+-- nothing; --skip adds to the device's rule, but with --only the paths
+-- named are fetched wherever they are, so only --skip's folders are left out.
+local function chosenSkip(opts)
+    if opts.all then return {} end
+    if opts.only then return opts.skip or {} end
+    if opts.skip then
+        local skip = defaultSkip()
+        for _, d in ipairs(opts.skip) do skip[#skip + 1] = d end
+        return skip
+    end
+end
+
 local function cmdClone(pos, opts)
     local url = pos[1] or die("Usage: git clone <url> [dir] [-b branch] [--token t] [--skip dir]... [--only path]... [--all]")
     local R = makeRemote(url, opts.token)
@@ -321,7 +336,7 @@ local function cmdClone(pos, opts)
     if fs.exists(fs.combine(dir, STATE_FILE)) then
         die(dir .. " already contains a checkout; use `git pull`.")
     end
-    local skip = opts.all and {} or opts.skip or defaultSkip()
+    local skip = chosenSkip(opts) or defaultSkip()
     local branch = opts.branch or R.defaultBranch()
     local commit = R.headCommit(branch)
     print(string.format("Cloning %s (%s @ %s) into %s", R.url, branch, commit:sub(1, 7), dir))
@@ -346,7 +361,7 @@ local function cmdPull(pos, opts)
     local commit = R.headCommit(state.branch)
     if opts.all or opts.skip or opts.only then
         -- a new choice of what to keep: go over every file again
-        state.skip = opts.all and {} or opts.skip or state.skip or defaultSkip()
+        state.skip = chosenSkip(opts) or state.skip or defaultSkip()
         state.only = (not opts.all) and opts.only or nil
         state.commit = nil
     elseif state.skip == nil then
