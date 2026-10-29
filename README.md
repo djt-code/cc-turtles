@@ -29,7 +29,7 @@ The repo is in four folders:
 | `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables and an environment for programs, globs, `$(...)`, background jobs with `fg`/`bg`/Ctrl+Z, and `/.profile`. See [Craftix](#craftix). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
-| Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, and UDP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc -u` sends and receives datagrams. See [Network](#network). |
+| Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, UDP and TCP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc` makes TCP connections (and `nc -u` sends datagrams). See [Network](#network). |
 | `pc/router.lua` | Runs on a computer with an interface on each of several networks (modems, or VLANs on one): forwards between them, and shows a live status screen. |
 | `pc/fileserver.lua` | Runs on a plain computer: every floppy in its disk drives (beside it or over wired modems) as one folder, `/jbod`, that grows as drives and disks are added; files too big for one floppy are split across several. The layer is `lib/jbod.lua`. |
 | `pc/diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
@@ -1054,7 +1054,7 @@ ip                                 what's set up, and whether it's up
 ip addr add <iface> <addr/len>     ip route add <net/len|default> via <gw>
 ip up | ip down | ip boot          ip link | ip neigh | ip forward on|off | ip host <name> <addr>
 ping [-c n] [-t ttl] host          traceroute host
-nc -u host port                    nc -u -l port
+nc host port | nc -l port          (TCP)    nc -u host port | nc -u -l port   (UDP)
 router                             (on a router: forwarding on, and a status screen)
 ```
 
@@ -1097,6 +1097,28 @@ computer hearing everything (as with rednet):
   local data, from, port = sock:receive(5)   -- nil after 5 s
   sock:send(from, port, data)            -- echo it back
   ```
+- **TCP (layer 4):** connections carrying bytes, in order, sent again until
+  they're acknowledged: the least of real TCP (RFC 9293) that still works
+  with a real TCP stack. Sequence numbers count bytes, segments are at
+  most 536 bytes, the receiver advertises a 4 KB window, anything that
+  arrives out of order is dropped and sent again, the wait before sending
+  again doubles each time, keepalive probes find a side that's gone (about
+  40 s), and each side closes its half on its own. `nc host port` and
+  `nc -l port` use it; in Lua:
+
+  ```lua
+  local conn = net.connect("10.0.2.5", 23)   -- or net.listen(23):accept()
+  conn:send("hello\r\n")
+  local s, why = conn:read(5)            -- what came; nil and "closed" at the end
+  conn:close()
+  ```
+
+**Bridging to a real network:** packets are Lua tables, but each field is
+the real header's (IP addresses as numbers, TCP's seq, ack, flags, window
+and payload bytes), so a bridge (a TUN device in the Minecraft server on
+one modem channel, say) could turn them into real IPv4 and back. The
+header of `lib/net.lua` lists the mapping. Only string payloads can cross:
+UDP datagrams carrying tables stay in ComputerCraft.
 
 **How it runs:** a plain computer can't run programs in the background, so
 `ip up` hooks the network into `os.pullEventRaw`, which every program's

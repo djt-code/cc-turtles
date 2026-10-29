@@ -1,8 +1,14 @@
-nc: send and receive UDP datagrams (netcat, UDP only)
+nc: netcat: TCP connections and UDP datagrams over the network stack
 
+  nc [-v] [-w seconds] host port
+      connect (TCP); typed lines go, what comes is printed
+  nc -l [-v] [-p port | port]
+      wait for one connection, then the same
   nc -u [-v] [-p port] [-w seconds] host port
-      send each line typed (or piped in)
+      send each line as a UDP datagram
   nc -u -l [-v] port
-      print what comes to port
+      print the datagrams that come to port
 
-Sending: each line of standard input goes to host:port as a datagram (from -p port, else any free one); what comes back to that port is printed meanwhile, and for -w (1) seconds after the input ends (Ctrl+T at the keyboard).  Listening (-l): every datagram that comes to port is printed, until Ctrl+T.  -v puts "from address:port" first.  A datagram that's a string prints as it is; anything else (a table) serialised. -u is required (there's no TCP).  The network must be up (`ip up`).
+TCP (the default): each line of standard input goes down the connection with "\n" after it, and whatever comes back is printed as it arrives. When the input ends (Ctrl+T at the keyboard), nc closes its half and prints on until the other side closes; with -w, at most that many seconds more.  It also ends when the other side closes.  -l listens on port for one connection.  -v says who connected, and how it ended. Carriage returns before a newline aren't printed to the screen.
+
+UDP (-u): lines go as datagrams to host:port (from -p port, else any free one); what comes back to that port is printed meanwhile, and for -w (1) seconds after the input ends.  -l prints every datagram that comes to port until Ctrl+T.  -v puts "from address:port" first.  A datagram that's a string prints as it is; anything else (a table) serialised. The network must be up (`ip up`).  Exit status 1 if the connection couldn't be made or broke.

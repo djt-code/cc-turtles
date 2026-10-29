@@ -22,17 +22,42 @@
 --    an address is asked for (ARP_TRIES requests, a second apart), then
 --    are dropped as "host unreachable".
 --  * IP (layer 3): addresses "a.b.c.d" with a prefix length ("10.0.1.5/24"),
---    a packet { src, dst, ttl, proto = "icmp" | "udp", data, id }.  Routes:
+--    a packet { src, dst, ttl, proto = "icmp" | "udp" | "tcp", data, id }.  Routes:
 --    each interface's own network, and static ones ("10.0.2.0/24 via
 --    10.0.1.1"; "default" is 0.0.0.0/0); the longest prefix wins.  A host
 --    takes packets for its addresses, 127.x.x.x, 255.255.255.255 and its
 --    networks' broadcast addresses; a router (forward = true) passes the
 --    rest on, one less TTL.
 --  * ICMP: echo and echo reply (ping), destination unreachable (no route:
---    "net"; no ARP answer: "host"; no socket: "port") and time exceeded
+--    "net"; no ARP answer: "host"; no UDP socket: "port") and time exceeded
 --    (TTL ran out: traceroute uses it).  Never an error about an error.
 --  * UDP (layer 4): { sport, dport, data }; data is any value a modem can
 --    carry (strings, numbers, tables).  Sockets queue what comes in.
+--  * TCP (layer 4): connections carrying bytes, in order, sent again
+--    until acknowledged.  The least of RFC 9293 that still works with a
+--    real TCP stack: see "TCP" below for what's left out.
+--
+--   local conn = net.connect("10.0.2.5", 23)   -- or net.listen(23):accept()
+--   conn:send("hello\r\n"); local s = conn:read(5); conn:close()
+--
+-- Bridging to a real network.  Packets are Lua tables, but laid out so a
+-- bridge (a TUN device in the server, say, on one modem channel) can turn
+-- them into real IPv4 and back field for field: the bridge is a host (or
+-- router) on that channel, answering ARP for its address, with routes
+-- pointing at it.
+--   IP    { src, dst (numbers: a.b.c.d as a*2^24 + ...), ttl, id, proto,
+--         data }; proto "icmp" = 1, "tcp" = 6, "udp" = 17.  No options,
+--         fragments or TOS (the bridge reassembles, and fills in 0).
+--   TCP   { sport, dport, seq, ack, syn, fin, rst, wnd, data }: ack is
+--         present exactly when the ACK flag is; data is the payload as a
+--         string; no options are sent or needed (MSS 536).  The bridge
+--         adds the checksum, data offset and flag bits (PSH as it likes).
+--   UDP   { sport, dport, data }: only a string payload can cross.
+--   ICMP  { type = "echo" | "reply", id, seq, data } (8 and 0),
+--         { type = "unreachable", code = "net" | "host" | "port", orig }
+--         (3: 0, 1, 3) and { type = "timeexceeded", code = "ttl", orig }
+--         (11: 0); orig holds the original packet's addresses, proto,
+--         ports and ICMP id/seq rather than its first bytes.
 --
 -- ComputerCraft has no background programs on a plain computer, so the
 -- running stack lives in _G.ccnet and handles the network as events pass:
@@ -52,6 +77,13 @@ local ARP_RETRY, ARP_TRIES = 1, 3
 local QUEUE_MAX = 32            -- packets waiting on one ARP answer
 local SOCKET_MAX = 64           -- datagrams a socket holds unread
 local EPHEMERAL = 49152
+local MSS = 536                 -- TCP: bytes in a segment (the default, with no options)
+local RCV_WND = 4096            -- bytes a connection holds unread
+local TCP_RTO, TCP_RTO_MAX = 1, 16   -- seconds before sending again, doubling
+local TCP_RETRIES = 8
+local TCP_KEEPIDLE = 10         -- quiet this long: a keepalive probe
+local TCP_KEEPCNT = 3           -- probes unanswered: the connection is lost
+local TCP_TIMEWAIT = 4
 
 --------------------------------------------------------------------------
 -- Addresses
@@ -114,7 +146,7 @@ function N.cidrString(ip, len) return N.ipString(ip) .. "/" .. len end
 function N.new(opts)
     local S = {
         id = opts.id, forward = opts.forward or false,
-        ifaces = {}, links = {}, routes = {}, arp = {}, pending = {}, sockets = {},
+        ifaces = {}, links = {}, routes = {}, arp = {}, pending = {}, sockets = {}, tcpPorts = {},
         counters = { rx = 0, tx = 0, forwarded = 0, dropped = 0, arpAsked = 0 },
         log = {},
     }
@@ -342,6 +374,8 @@ function N.new(opts)
             end
         elseif pkt.proto == "udp" then
             udpIn(pkt, iface)
+        elseif pkt.proto == "tcp" then
+            S.tcpIn(pkt)
         end
     end
 
@@ -422,7 +456,8 @@ function N.new(opts)
         for _, cache in pairs(S.arp) do
             for ip, e in pairs(cache) do if e.expires <= now then cache[ip] = nil end end
         end
-        return next(S.pending) ~= nil
+        local tcp = S.tcpTick(now)
+        return next(S.pending) ~= nil or tcp
     end
 
     ----------------------------------------------------------------------
@@ -434,7 +469,7 @@ function N.new(opts)
         else
             for _ = 1, 16384 do
                 nextPort = nextPort >= 65535 and EPHEMERAL or nextPort + 1
-                if not S.sockets[nextPort] then port = nextPort; break end
+                if not S.sockets[nextPort] and not S.tcpPorts[nextPort] then port = nextPort; break end
             end
             if not port then return nil, "no free port" end
         end
@@ -452,6 +487,296 @@ function N.new(opts)
 
     function S.echo(dst, id, seq, ttl)
         return S.sendIP(dst, "icmp", { type = "echo", id = id, seq = seq }, ttl)
+    end
+
+    ----------------------------------------------------------------------
+    -- TCP: the least of RFC 9293 that still talks to a real stack
+    ----------------------------------------------------------------------
+    -- A segment is { sport, dport, seq, ack, syn, fin, rst, wnd, data }:
+    -- the TCP header's fields (ack present = the ACK flag; data a string
+    -- of bytes).  Sequence numbers count bytes, mod 2^32; SYN and FIN take
+    -- one each.  Kept simple:
+    --   * no options: segments of up to MSS (536) bytes, the default;
+    --   * a fixed receive window (RCV_WND bytes, less what's unread);
+    --   * only the next byte expected is taken: a segment out of order is
+    --     dropped and the last ACK sent again (the sender resends);
+    --   * after an RTO everything unacked goes again (go back N), the RTO
+    --     doubling each time, up to TCP_RETRIES tries; a zero window gets
+    --     an empty probe (seq one before snd.una) instead, for as long as
+    --     the other side answers;
+    --   * keepalive: quiet for TCP_KEEPIDLE, a probe (seq one before
+    --     snd.nxt, which any stack answers with an ACK); TCP_KEEPCNT
+    --     unanswered and the connection is lost;
+    --   * TIME_WAIT lasts TCP_TIMEWAIT seconds, not 2 MSL.
+    S.listeners, S.tcbs = {}, {}
+    local M32 = 4294967296
+    local nextConn = 0
+
+    local function add(a, n) return (a + n) % M32 end
+    local function minus(a, b)          -- a - b, signed, mod 2^32
+        local d = (a - b) % M32
+        return d >= M32 / 2 and d - M32 or d
+    end
+    local function key(lport, rip, rport) return lport .. "|" .. rip .. "|" .. rport end
+    local function window(c) return math.max(0, RCV_WND - #c.inbox) end
+    local function event(c) queue("net_tcp", c.id) end
+
+    local function emit(c, seg)
+        seg.sport, seg.dport, seg.wnd, seg.data = c.lport, c.rport, window(c), seg.data or ""
+        if seg.ack == nil then seg.ack = c.rcvNxt end   -- (nil before the SYN: no ACK flag)
+        c.lastSent = clock()
+        return S.sendIP(c.rip, "tcp", seg)
+    end
+
+    local function newTcb(lport, rip, rport, state)
+        nextConn = nextConn + 1
+        local iss = math.random(0, 65535) * 65536 + math.random(0, 65535)
+        local c = { id = nextConn, lport = lport, rip = rip, rport = rport, state = state, iss = iss,
+                    sndUna = iss, sndNxt = add(iss, 1), sndMax = add(iss, 1), sndWnd = MSS,
+                    out = "", inbox = "", rto = TCP_RTO, tries = 0, probes = 0,
+                    lastHeard = clock(), lastSent = clock(), rtxAt = clock() }
+        S.tcbs[key(lport, rip, rport)] = c
+        S.wantTick()
+        return c
+    end
+
+    -- Over: why (nil: closed in order).
+    local function finish(c, why)
+        if c.state == "CLOSED" then return end
+        c.state, c.err = "CLOSED", why
+        S.tcbs[key(c.lport, c.rip, c.rport)] = nil
+        if S.tcpPorts[c.lport] == c then S.tcpPorts[c.lport] = nil end
+        event(c)
+    end
+
+    local function sent(c, n)
+        if c.sndUna == c.sndNxt then c.rtxAt = clock() end     -- (the timer starts with the first unacked)
+        c.sndNxt = add(c.sndNxt, n)
+        if minus(c.sndNxt, c.sndMax) > 0 then c.sndMax = c.sndNxt end
+    end
+
+    -- Send from snd.nxt what the peer's window allows; then, everything
+    -- out and our side closing, the FIN.  (c.out: bytes from snd.una on.)
+    local function output(c)
+        if c.state == "SYN_SENT" or c.state == "SYN_RCVD" or c.state == "CLOSED" then return end
+        while true do
+            local off = minus(c.sndNxt, c.sndUna)
+            local room = minus(add(c.sndUna, c.sndWnd), c.sndNxt)
+            local chunk = c.out:sub(off + 1, off + math.min(MSS, room))
+            if #chunk == 0 then break end
+            local seq = c.sndNxt
+            sent(c, #chunk)                             -- (first: the answer can come back at once, on loopback)
+            emit(c, { seq = seq, data = chunk })
+        end
+        if c.closing and not c.finAcked and c.sndNxt == add(c.sndUna, #c.out) then
+            local seq = c.sndNxt
+            sent(c, 1)
+            emit(c, { seq = seq, fin = true })
+        end
+    end
+
+    -- The state from the two halves: ours (FIN acked) and theirs (FIN in).
+    local function settle(c)
+        if c.state == "SYN_SENT" or c.state == "SYN_RCVD" or c.state == "CLOSED" or c.state == "TIME_WAIT" then return end
+        if c.peerFin and c.finAcked then
+            if c.passive then return finish(c, nil) end     -- (LAST_ACK: done)
+            c.state, c.timeWait = "TIME_WAIT", clock()
+            event(c)
+        elseif c.peerFin then c.state = c.closing and "LAST_ACK" or "CLOSE_WAIT"
+        elseif c.closing then c.state = c.finAcked and "FIN_WAIT_2" or "FIN_WAIT_1"
+        else c.state = "ESTABLISHED" end
+    end
+
+    -- A reset for a segment with no connection (RFC 9293 3.10.7.1).
+    local function resetFor(pkt, d)
+        if d.rst then return end
+        local seg = { sport = d.dport, dport = d.sport, rst = true, wnd = 0, data = "" }
+        if d.ack then
+            seg.seq = d.ack
+        else
+            seg.seq = 0
+            seg.ack = add(d.seq, #(d.data or "") + (d.syn and 1 or 0) + (d.fin and 1 or 0))
+        end
+        S.sendIP(pkt.src, "tcp", seg)
+    end
+
+    function S.tcpIn(pkt)
+        local d = pkt.data
+        if type(d) ~= "table" or type(d.dport) ~= "number" or type(d.sport) ~= "number"
+            or type(d.seq) ~= "number" or (d.data ~= nil and type(d.data) ~= "string") then return end
+        local data = d.data or ""
+        local c = S.tcbs[key(d.dport, pkt.src, d.sport)]
+
+        if not c then                                   -- LISTEN, or nothing there
+            local l = S.listeners[d.dport]
+            if l and d.syn and not d.ack and not d.rst then
+                c = newTcb(d.dport, pkt.src, d.sport, "SYN_RCVD")
+                c.listener, c.rcvNxt, c.sndWnd = d.dport, add(d.seq, 1), d.wnd or MSS
+                emit(c, { seq = c.iss, syn = true })
+            else
+                resetFor(pkt, d)
+            end
+            return
+        end
+        c.lastHeard, c.probes = clock(), 0
+
+        if c.state == "SYN_SENT" then
+            if d.ack and d.ack ~= c.sndNxt then return resetFor(pkt, d) end
+            if d.rst then
+                if d.ack then finish(c, "connection refused") end
+            elseif d.syn and d.ack then
+                c.rcvNxt, c.sndUna, c.sndWnd = add(d.seq, 1), d.ack, d.wnd or MSS
+                c.state, c.tries, c.rto = "ESTABLISHED", 0, TCP_RTO
+                emit(c, { seq = c.sndNxt })
+                output(c)
+                event(c)
+            end
+            return
+        end
+
+        -- only what starts at or before rcv.nxt and reaches past it (or an
+        -- empty segment right at it) is taken
+        local off = minus(d.seq, c.rcvNxt)
+        local len = #data + (d.syn and 1 or 0) + (d.fin and 1 or 0)
+        local ok = (len == 0 and off == 0) or (off <= 0 and off + len > 0)
+        if d.rst then
+            if off == 0 then finish(c, (c.closing or c.peerFin) and nil or "connection reset") end
+            return
+        end
+        if d.syn then                                   -- (their SYN again: our SYN-ACK was lost)
+            emit(c, c.state == "SYN_RCVD" and { seq = c.iss, syn = true } or { seq = c.sndNxt })
+            return
+        end
+        if not ok then return emit(c, { seq = c.sndNxt }) end      -- (a repeat, a probe, out of order)
+        if not d.ack then return end
+
+        if c.state == "SYN_RCVD" then
+            if d.ack ~= add(c.iss, 1) then return resetFor(pkt, d) end
+            c.sndUna, c.state = d.ack, "ESTABLISHED"
+            local l = S.listeners[c.listener]
+            if l then l[#l + 1] = c; queue("net_accept", c.listener) end
+        end
+        local acked = minus(d.ack, c.sndUna)
+        if acked > 0 and minus(d.ack, c.sndMax) <= 0 then
+            if c.closing and acked > #c.out then c.finAcked = true end
+            c.out = c.out:sub(math.min(acked, #c.out) + 1)
+            c.sndUna, c.tries, c.rto, c.rtxAt = d.ack, 0, TCP_RTO, clock()
+            if minus(c.sndNxt, d.ack) < 0 then c.sndNxt = d.ack end
+        end
+        c.sndWnd = d.wnd or c.sndWnd
+        if c.sndWnd == 0 then c.tries = 0 end           -- (they're there, just full: keep probing)
+
+        if c.state ~= "TIME_WAIT" and not c.peerFin then
+            local skip = -off                           -- (bytes we have already)
+            local take = data:sub(skip + 1, skip + window(c))
+            if #take > 0 then
+                c.inbox = c.inbox .. take
+                c.rcvNxt = add(c.rcvNxt, #take)
+            end
+            if d.fin and skip + #take == #data then
+                c.peerFin, c.passive, c.rcvNxt = true, not c.closing, add(c.rcvNxt, 1)
+            end
+            if len > 0 then emit(c, { seq = c.sndNxt }) end
+            if #take > 0 or c.peerFin then event(c) end
+        end
+        output(c)
+        settle(c)
+    end
+
+    -- The timers: sending again, keepalive, TIME_WAIT.  True while any
+    -- connection is open.
+    function S.tcpTick(now)
+        for _, c in pairs(S.tcbs) do
+            local waiting = c.state == "SYN_SENT" or c.state == "SYN_RCVD" or #c.out > 0
+                or (c.closing and not c.finAcked)
+            if c.state == "TIME_WAIT" then
+                if now - c.timeWait >= TCP_TIMEWAIT then finish(c, nil) end
+            elseif waiting and now - c.rtxAt >= c.rto then
+                c.tries, c.rtxAt, c.rto = c.tries + 1, now, math.min(c.rto * 2, TCP_RTO_MAX)
+                if c.tries > TCP_RETRIES then
+                    finish(c, c.state == "SYN_SENT" and "connection timed out" or "connection lost")
+                elseif c.state == "SYN_SENT" or c.state == "SYN_RCVD" then
+                    emit(c, { seq = c.iss, syn = true })
+                elseif c.sndWnd == 0 and c.sndNxt == c.sndUna then
+                    emit(c, { seq = add(c.sndUna, -1) })     -- a window probe: their ACK says the window
+                else
+                    c.sndNxt = c.sndUna                 -- go back N
+                    output(c)
+                end
+            elseif not waiting and now - math.max(c.lastHeard, c.lastSent) >= TCP_KEEPIDLE then
+                c.probes = c.probes + 1
+                if c.probes > TCP_KEEPCNT then finish(c, "connection lost")
+                else emit(c, { seq = add(c.sndNxt, -1) }) end
+            end
+        end
+        return next(S.tcbs) ~= nil
+    end
+
+    function S.tcpListen(port)
+        if S.listeners[port] then return nil, "port " .. port .. " is in use" end
+        S.listeners[port] = {}
+        return true
+    end
+    function S.tcpUnlisten(port) S.listeners[port] = nil end
+    -- The next connection made to port (established), or nil.
+    function S.tcpAccept(port)
+        local l = S.listeners[port]
+        return l and table.remove(l, 1)
+    end
+
+    -- Open a connection to dst:dport: c.state is "SYN_SENT" until a
+    -- net_tcp event (c.id) finds it "ESTABLISHED", or "CLOSED" (c.err).
+    function S.tcpConnect(dst, dport)
+        dst = N.parseIP(dst)
+        if not dst then return nil, "bad address" end
+        local lport
+        for _ = 1, 16384 do
+            nextPort = nextPort >= 65535 and EPHEMERAL or nextPort + 1
+            if not S.sockets[nextPort] and not S.tcpPorts[nextPort] and not S.listeners[nextPort] then
+                lport = nextPort
+                break
+            end
+        end
+        if not lport then return nil, "no free port" end
+        local c = newTcb(lport, dst, dport, "SYN_SENT")
+        S.tcpPorts[lport] = c
+        local ok, err = emit(c, { seq = c.iss, syn = true })
+        if not ok then finish(c, err); return nil, err end
+        return c
+    end
+
+    -- Queue bytes on c.
+    function S.tcpSend(c, s)
+        if c.state == "CLOSED" then return false, c.err or "closed" end
+        if c.closing then return false, "closed" end
+        c.out = c.out .. s
+        output(c)
+        return true
+    end
+
+    -- What has come in on c (a string, maybe ""), and whether the other
+    -- side has closed (no more will come).
+    function S.tcpRead(c)
+        local s, wasLow = c.inbox, window(c) < MSS
+        c.inbox = ""
+        if wasLow and #s > 0 and c.state ~= "CLOSED" then emit(c, { seq = c.sndNxt }) end   -- (the window opens)
+        return s, c.peerFin == true or c.state == "CLOSED"
+    end
+
+    -- Close our half: what's queued still goes, then a FIN.
+    function S.tcpClose(c)
+        if c.state == "SYN_SENT" then return finish(c, nil) end
+        if c.state == "CLOSED" or c.closing then return end
+        c.closing = true
+        output(c)
+        settle(c)
+    end
+
+    -- Drop c at once, telling the other side (RST).
+    function S.tcpAbort(c)
+        if c.state == "CLOSED" then return end
+        if c.state ~= "SYN_SENT" then emit(c, { seq = c.sndNxt, rst = true }) end
+        finish(c, nil)
     end
 
     return S
@@ -629,5 +954,94 @@ function Socket:receive(timeout)
     end
 end
 function Socket:close() self.S.udpClose(self.port) end
+
+-- TCP.  A connection: conn:send(bytes), conn:read(timeout) (what's come
+-- in; nil and why at the end), conn:close() (our half), conn:abort().
+local Conn = {}
+Conn.__index = Conn
+
+local function waitConn(conn, done, timeout)
+    local deadline = timeout and os.clock() + timeout
+    while not done() do
+        local left = deadline and deadline - os.clock()
+        if left and left <= 0 then return false end
+        N.await("net_tcp", function(id) return id == conn.c.id end, left)
+    end
+    return true
+end
+
+-- Connect to host:port; the connection, or nil and why.  Waits up to
+-- timeout seconds (default: until TCP gives up).
+function N.connect(host, port, timeout)
+    local S, why = N.stack()
+    if not S then return nil, why end
+    local dst = N.resolve(host)
+    if not dst then return nil, "unknown host " .. tostring(host) end
+    local c, err = S.tcpConnect(dst, port)
+    if not c then return nil, err end
+    local conn = setmetatable({ S = S, c = c }, Conn)
+    if not waitConn(conn, function() return c.state ~= "SYN_SENT" end, timeout) then
+        S.tcpAbort(c)
+        return nil, "connection timed out"
+    end
+    if c.state == "CLOSED" then return nil, c.err or "connection closed" end
+    return conn
+end
+
+-- Send bytes; false and why if the connection is gone.
+function Conn:send(s) return self.S.tcpSend(self.c, tostring(s)) end
+
+-- What has come in, waiting up to timeout seconds (nil: as long as it
+-- takes) for something: a string, or nil and "timeout", or nil and
+-- "closed" (they closed: nothing more will come) or why it broke.
+function Conn:read(timeout)
+    local S, c = self.S, self.c
+    local s, ended
+    waitConn(self, function()
+        s, ended = S.tcpRead(c)
+        return #s > 0 or ended
+    end, timeout)
+    if #s > 0 then return s end
+    if ended then return nil, c.err or "closed" end
+    return nil, "timeout"
+end
+
+function Conn:close() self.S.tcpClose(self.c) end
+function Conn:abort() self.S.tcpAbort(self.c) end
+-- "ESTABLISHED", "CLOSE_WAIT"... as TCP names them; and why it closed.
+function Conn:state() return self.c.state, self.c.err end
+-- Bytes sent and not yet acknowledged (or not yet sent).
+function Conn:pending() return #self.c.out end
+function Conn:remote() return N.ipString(self.c.rip), self.c.rport end
+-- The event (net_tcp) and value that say something happened on it.
+function Conn:id() return self.c.id end
+
+-- Listen on a TCP port: listener:accept(timeout) -> a connection.
+local Listener = {}
+Listener.__index = Listener
+function N.listen(port)
+    local S, why = N.stack()
+    if not S then return nil, why end
+    local ok, err = S.tcpListen(port)
+    if not ok then return nil, err end
+    return setmetatable({ S = S, port = port }, Listener)
+end
+-- The next connection made (nil after timeout seconds).
+function Listener:accept(timeout)
+    local deadline = timeout and os.clock() + timeout
+    while true do
+        local c = self.S.tcpAccept(self.port)
+        if c then return setmetatable({ S = self.S, c = c }, Conn) end
+        local left = deadline and deadline - os.clock()
+        if left and left <= 0 then return nil end
+        N.await("net_accept", function(p) return p == self.port end, left)
+    end
+end
+-- A connection if one is waiting, without waiting.
+function Listener:poll()
+    local c = self.S.tcpAccept(self.port)
+    return c and setmetatable({ S = self.S, c = c }, Conn)
+end
+function Listener:close() self.S.tcpUnlisten(self.port) end
 
 return N

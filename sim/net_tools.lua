@@ -153,8 +153,56 @@ check("nc -u -l -v: each datagram, with who sent it, a table serialised",
     r.out:find("from 10%.0%.2%.5:1234: hello") and r.out:find("from 10%.0%.2%.5:1234: {n=1,?}")
         and not r.out:find("nil"), show(r.out) .. show(r.errText))
 check("and the port is free again after", ME.sockets[7] == nil)
-r = W:run("nc", "10.0.2.5", "7")
-check("nc without -u: a usage error", r.status == 2 and r.errText:find("only UDP"))
+-- nc over TCP.  parallel as CraftOS has it, over the world's os
+local parallelWas = parallel
+parallel = { waitForAny = function(...)
+    local cos, filters = {}, {}
+    for i, f in ipairs({ ... }) do cos[i] = coroutine.create(f) end
+    local ev = { n = 0 }
+    while true do
+        for i, co in ipairs(cos) do
+            if filters[i] == nil or filters[i] == ev[1] or ev[1] == "terminate" then
+                local ok, f = coroutine.resume(co, table.unpack(ev, 1, ev.n))
+                if not ok then error(f, 0) end
+                if coroutine.status(co) == "dead" then return i end
+                filters[i] = f
+            end
+        end
+        ev = table.pack(W.os.pullEventRaw())
+    end
+end }
+W.yieldEvents = true
+assert(B.tcpListen(7))
+local cb, heard
+r = W:run("nc", "10.0.2.5", "7", { stdin = "hi\n", events = {},
+    onPull = function()
+        cb = cb or B.tcpAccept(7)
+        if cb and not heard and cb.peerFin then         -- (nc has sent its line and closed its half)
+            heard = B.tcpRead(cb)
+            B.tcpSend(cb, "pong\r\n")
+            B.tcpClose(cb)
+        end
+    end })
+check("nc host port (TCP): the line goes, the answer is printed (no \\r), both sides close",
+    heard == "hi\n" and r.out == "pong\n" and r.status == 0 and cb.state == "CLOSED", show(r.out) .. show(r.errText))
+B.tcpUnlisten(7)
+local cl
+r = W:run("nc", "-l", "-v", "8", { events = {},
+    onPull = function()
+        if not cl then
+            cl = B.tcpConnect("10.0.1.2", 8)
+            B.tcpSend(cl, "from b\n")
+            B.tcpClose(cl)
+        end
+    end })
+check("nc -l -v port: one connection, who it's from, what it sent, then the end",
+    r.out == "from b\n" and r.status == 0 and r.err[1] == "connection from 10.0.2.5:" .. cl.lport
+        and r.err[2] == "closed" and ME.listeners[8] == nil, show(r.out) .. show(r.errText))
+r = W:run("nc", "10.0.2.5", "99", { events = {} })
+check("nc to a port nobody listens on: connection refused, status 1",
+    r.status == 1 and r.err[1] == "nc: 10.0.2.5 99: connection refused", show(r.errText))
+W.yieldEvents = false
+parallel = parallelWas
 _G.ccnet = nil
 
 --------------------------------------------------------------------------

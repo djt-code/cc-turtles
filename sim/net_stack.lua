@@ -63,7 +63,10 @@ local function plug(S, iface, cidr, seg)
     segments[seg] = segments[seg] or {}
     table.insert(segments[seg], { S, modem })
 end
--- deliver everything on the wires; then `seconds` pass, ticking
+-- deliver everything on the wires; then `seconds` pass, ticking.  DROP,
+-- if set, is asked about each frame as it arrives (and the receiving
+-- stack): true loses it.
+local DROP
 local function run(seconds)
     local guard = 0
     local function drain()
@@ -71,7 +74,7 @@ local function run(seconds)
             guard = guard + 1
             assert(guard < 100000, "frames going round for ever")
             local f = table.remove(inflight, 1)
-            f[1].receive(f[2], f[3], f[4])
+            if not (DROP and DROP(f[4], f[1])) then f[1].receive(f[2], f[3], f[4]) end
         end
     end
     drain()
@@ -271,3 +274,140 @@ check("settings: interfaces (VLANs too), routes (dev too), forwarding, hosts",
         and cfg.ifaces["back.30"] == "10.0.30.1/24"
         and #cfg.routes == 2 and cfg.routes[2].net == "default" and cfg.routes[2].iface == "modem_0"
         and cfg.hosts.router == "10.0.1.1" and cfg.hosts.b == "10.0.2.5")
+
+-- 13. TCP, A (10.0.1.2) to B (10.0.2.5) through R1
+-- the TCP segment in frame f if it's arriving at A or B (each frame also
+-- reaches the other modems on its wire, and crosses R1)
+local function tcpOf(f, to)
+    if (to ~= A and to ~= B) or f.type ~= "ip" or type(f.data) ~= "table" or f.data.proto ~= "tcp" then return nil end
+    for _, ifc in pairs(to.ifaces) do if ifc.mac == f.dst then return f.data.data end end
+end
+local seen = {}
+DROP = function(f, to) local t = tcpOf(f, to) if t then seen[#seen + 1] = t end end
+assert(B.tcpListen(23))
+local ca = A.tcpConnect("10.0.2.5", 23)
+run()
+local syn = seen[1]
+local cb = B.tcpAccept(23)
+check("TCP: SYN (no ACK flag), SYN-ACK, ACK; both sides established, B's accept has it",
+    syn and syn.syn and syn.ack == nil and type(syn.seq) == "number" and syn.wnd == 4096
+    and ca.state == "ESTABLISHED" and cb and cb.state == "ESTABLISHED" and #events(2, "net_accept") == 1)
+check("a segment looks like a TCP header: ports, seq, ack, flags, window, data a string",
+    seen[2].syn and seen[2].ack == (syn.seq + 1) % 2^32 and seen[3].ack ~= nil and seen[3].data == ""
+    and seen[3].sport == syn.sport and seen[3].dport == 23)
+seen = {}
+A.tcpSend(ca, "hello")
+B.tcpSend(cb, ("x"):rep(1000))
+run()
+local s1 = B.tcpRead(cb)
+local s2 = A.tcpRead(ca)
+local sizes = {}
+for _, t in ipairs(seen) do if #t.data > 0 then sizes[#sizes + 1] = #t.data end end
+check("bytes both ways; 1000 bytes go as segments of at most 536", s1 == "hello" and s2 == ("x"):rep(1000)
+    and table.concat(sizes, ",") == "5,536,464", table.concat(sizes, ","))
+
+local lost = 0
+DROP = function(f, to) local t = tcpOf(f, to) if t and #t.data > 0 and lost == 0 then lost = 1; return true end end
+A.tcpSend(ca, "abc")
+run()
+check("a lost segment: nothing yet", B.tcpRead(cb) == "")
+run(1)
+check("sent again after the RTO, and arrives once", B.tcpRead(cb) == "abc" and A.tcpRead(ca) == "")
+lost = 0
+DROP = function(f, to) local t = tcpOf(f, to) if t and to == A and #t.data == 0 and lost == 0 then lost = 1; return true end end
+A.tcpSend(ca, "def")
+run(); run(1); run(1)
+check("a lost ACK: the repeat isn't taken twice", B.tcpRead(cb) == "def")
+lost = 0
+DROP = function(f, to) local t = tcpOf(f, to) if t and #t.data > 0 and lost == 0 then lost = 1; return true end end
+A.tcpSend(ca, ("1"):rep(536) .. "2")
+run()
+check("out of order (the first of two lost): the second isn't taken", B.tcpRead(cb) == "")
+run(1)
+check("going back N brings both, in order", B.tcpRead(cb) == ("1"):rep(536) .. "2")
+DROP = nil
+
+-- the receive window: B doesn't read
+A.tcpSend(ca, ("w"):rep(5000))
+run(); run(3)
+check("B's window (4096) fills; the rest waits at A", #cb.inbox == 4096 and #ca.out == 5000 - 4096,
+    #cb.inbox .. " " .. #ca.out)
+local got = B.tcpRead(cb)
+run(); run(1)
+got = got .. B.tcpRead(cb)
+check("reading opens the window: the rest comes", got == ("w"):rep(5000) and #ca.out == 0, #got)
+
+-- keepalive
+run(35)
+check("idle 35 s: keepalive probes answered, still open", ca.state == "ESTABLISHED" and cb.state == "ESTABLISHED")
+
+-- closing: A first
+A.tcpSend(ca, "bye")
+A.tcpClose(ca)
+run()
+local rest, ended = B.tcpRead(cb)
+check("A closes: B reads what's left, then the end; B in CLOSE_WAIT, A in FIN_WAIT_2",
+    rest == "bye" and ended and cb.state == "CLOSE_WAIT" and ca.state == "FIN_WAIT_2", cb.state .. " " .. ca.state)
+check("A can't send any more", A.tcpSend(ca, "x") == false)
+B.tcpSend(cb, "last words")
+B.tcpClose(cb)
+run()
+check("B (in CLOSE_WAIT) may still send; then it closes: B closed, A in TIME_WAIT",
+    A.tcpRead(ca) == "last words" and cb.state == "CLOSED" and cb.err == nil and ca.state == "TIME_WAIT",
+    cb.state .. " " .. ca.state)
+run(5)
+check("TIME_WAIT ends", ca.state == "CLOSED" and ca.err == nil and next(A.tcbs) == nil and next(B.tcbs) == nil)
+
+-- refused, reset, lost, timed out
+local cr = A.tcpConnect("10.0.2.5", 99)
+run()
+check("a port nobody listens on: RST, connection refused", cr.state == "CLOSED" and cr.err == "connection refused")
+ca = A.tcpConnect("10.0.2.5", 23)
+run()
+cb = B.tcpAccept(23)
+B.tcbs = {}                                     -- B forgets it (rebooted)
+A.tcpSend(ca, "anyone?")
+run()
+check("B forgot the connection: its RST resets A's", ca.state == "CLOSED" and ca.err == "connection reset")
+ca = A.tcpConnect("10.0.2.5", 23)
+run()
+cb = B.tcpAccept(23)
+DROP = function(f, to) return to == B or to == A end
+A.tcpSend(ca, "into the void")
+run(200)
+check("the other side gone (nothing gets through): given up, connection lost",
+    ca.state == "CLOSED" and ca.err == "connection lost")
+DROP = nil
+B.tcbs = {}
+local ct = A.tcpConnect("10.0.1.99", 23)
+run(200)
+check("connecting to nobody: SYN sent again, then connection timed out",
+    ct.state == "CLOSED" and ct.err == "connection timed out")
+
+-- sequence numbers wrap at 2^32
+local rnd = math.random
+math.random = function(a, b) return b end        -- ISS = 2^32 - 1
+ca = A.tcpConnect("10.0.2.5", 23)
+math.random = rnd
+run()
+cb = B.tcpAccept(23)
+A.tcpSend(ca, "wrap"); B.tcpSend(cb, "around")
+run()
+check("ISS 2^32-1: the numbers wrap and nothing notices",
+    ca.iss == 2^32 - 1 and B.tcpRead(cb) == "wrap" and A.tcpRead(ca) == "around" and ca.sndNxt == 4, ca.sndNxt)
+A.tcpAbort(ca)
+run()
+check("abort: an RST, the other side reset", cb.state == "CLOSED" and cb.err == "connection reset")
+B.tcpUnlisten(23)
+
+-- loopback: delivered at once, inside the call that sends
+assert(A.tcpListen(9))
+local la = A.tcpConnect("10.0.1.2", 9)
+local lb = A.tcpAccept(9)
+A.tcpSend(la, "to myself")
+A.tcpSend(lb, "and back")
+check("TCP to this computer's own address: open at once, each byte once",
+    la.state == "ESTABLISHED" and A.tcpRead(lb) == "to myself" and A.tcpRead(la) == "and back")
+A.tcpClose(la); A.tcpClose(lb)
+check("and closed (one side waiting out TIME_WAIT)", lb.state == "CLOSED" and la.state == "TIME_WAIT", la.state .. " " .. lb.state)
+A.tcpUnlisten(9)

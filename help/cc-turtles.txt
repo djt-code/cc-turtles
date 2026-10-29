@@ -21,7 +21,7 @@ Anywhere (bin/):
   ip: set up and look at the network (lib/net.lua)
   ls: list directory contents (POSIX ls, with the GNU options in everyday use)
   more: show files a screenful at a time (POSIX more, a subset)
-  nc: send and receive UDP datagrams (netcat, UDP only)
+  nc: netcat: TCP connections and UDP datagrams over the network stack
   od: dump files in octal and other formats (POSIX od)
   ping: send ICMP echo requests and time the replies
   printf: write formatted output (POSIX printf)
