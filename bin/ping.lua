@@ -1,0 +1,62 @@
+-- ping.lua -- send ICMP echo requests and time the replies
+--
+--   ping [-c count] [-i seconds] [-t ttl] [-W seconds] host
+--
+-- host is an address (10.0.2.5) or a name `ip host` knows.  Sends `count`
+-- (4) echo requests, `-i` (1) seconds apart, each waiting up to `-W` (2)
+-- seconds for its reply, and says what came back: a reply (its TTL, and
+-- the round trip in milliseconds), "destination unreachable" from a
+-- router or this computer (no route: net; no ARP answer: host), or time
+-- exceeded (the TTL ran out on the way: a routing loop, or -t too small).
+-- Exit status 0 if any reply came, 1 if none, 2 for trouble (the network
+-- isn't up, an unknown host).
+
+package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+local cu = require("cu").init("ping", "ping [-c count] [-i seconds] [-t ttl] [-W seconds] host")
+local net = require("net")
+local opts, operands = cu.getopt({ ... }, "c:i:t:W:")
+if #operands ~= 1 then cu.usageError() end
+local count = tonumber(opts.c or 4)
+local interval, wait, ttl = tonumber(opts.i or 1), tonumber(opts.W or 2), opts.t and tonumber(opts.t)
+if not (count and interval and wait) or (opts.t and not ttl) then cu.usageError("bad number") end
+
+local S, why = net.stack()
+if not S then cu.fail(why, 2); return cu.exit() end
+local host = operands[1]
+local dst = net.resolve(host)
+if not dst then cu.fail("unknown host " .. host, 2); return cu.exit() end
+
+local id = math.random(1, 65535)
+local sent, got, total = 0, 0, 0
+io.write(string.format("PING %s (%s)\n", host, net.ipString(dst)))
+for seq = 1, count do
+    local t0 = os.epoch("utc")
+    local ok, err = S.echo(dst, id, seq, ttl)
+    if not ok then cu.fail(err, 2); break end
+    sent = sent + 1
+    -- (a reply: kind, from, id, seq, ttl; an error: kind, from, code, the packet it's about)
+    local kind, from, a, b, c = net.await("net_icmp", function(k, _, x, y)
+        if k == "reply" then return x == id and y == seq end
+        return type(y) == "table" and y.id == id and y.seq == seq
+    end, wait)
+    local ms = os.epoch("utc") - t0
+    if kind == "reply" then
+        got, total = got + 1, total + ms
+        io.write(string.format("reply from %s: seq=%d ttl=%d time=%d ms\n", from, seq, c, ms))
+    elseif kind == "unreachable" then
+        io.write(string.format("from %s: seq=%d destination %s unreachable\n", from, seq, a))
+    elseif kind == "timeexceeded" then
+        io.write(string.format("from %s: seq=%d time to live exceeded\n", from, seq))
+    else
+        io.write(string.format("no reply: seq=%d\n", seq))
+    end
+    if seq < count then
+        local left = interval - ms / 1000
+        if left > 0 then sleep(left) end
+    end
+end
+io.write(string.format("%d sent, %d received, %d%% lost%s\n", sent, got,
+    sent > 0 and math.floor((sent - got) * 100 / sent + 0.5) or 0,
+    got > 0 and string.format(", average %d ms", math.floor(total / got + 0.5)) or ""))
+if cu.status == 0 and got == 0 then return cu.exit(1) end
+return cu.exit()

@@ -29,6 +29,8 @@ The repo is in four folders:
 | `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables, globs and `$(...)`. See [Craftix](#craftix). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
+| Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, and UDP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc -u` sends and receives datagrams. See [Network](#network). |
+| `pc/router.lua` | Runs on a computer with an interface on each of several networks (modems, or VLANs on one): forwards between them, and shows a live status screen. |
 | `pc/fileserver.lua` | Runs on a plain computer: every floppy in its disk drives (beside it or over wired modems) as one folder, `/jbod`, that grows as drives and disks are added; files too big for one floppy are split across several. The layer is `lib/jbod.lua`. |
 | `pc/diskclone.lua` | Runs on a plain computer: copies a directory onto every floppy a dispenser feeds into its disk drive, labels each one and ejects it. |
 
@@ -106,6 +108,8 @@ just those, with what they need and their help:
 | `craftix` | [Craftix](#craftix), started at every boot |
 | `diskclone` | for a computer with a disk drive |
 | `fileserver` | its disk drives as one folder, `/jbod` |
+| `net` | the network: `ip`, `ping`, `traceroute`, `nc` |
+| `router` | the network, and `router` to route between networks |
 
 `git` and `deploy/` always come. Options: `--autostart <app>` (a turtle
 runs it at every boot, see [Autostart](#autostart)), `--craftix` (Craftix
@@ -1003,6 +1007,96 @@ it has nothing left to compost it sleeps until you give it more.
   full or missing, and keeps waiting.
 - To start it at boot: `echo "shell.run('autocompost')" >> /startup.lua`
   (`shell.run('/cc-turtles/turtle/autocompost')` if `turtle/` isn't on the path).
+
+## Network
+
+```
+ip                                 what's set up, and whether it's up
+ip addr add <iface> <addr/len>     ip route add <net/len|default> via <gw>
+ip up | ip down | ip boot          ip link | ip neigh | ip forward on|off | ip host <name> <addr>
+ping [-c n] [-t ttl] host          traceroute host
+nc -u host port                    nc -u -l port
+router                             (on a router: forwarding on, and a status screen)
+```
+
+A small network stack over ComputerCraft modems, built in layers as the
+real thing is, so networks can be joined by routers instead of every
+computer hearing everything (as with rednet):
+
+- **Link (layer 2):** an interface is a modem by its peripheral name
+  (`back`, `top`, `modem_0`), wired or wireless. It sends and listens on
+  channel 4040, which works like an Ethernet segment: every computer on
+  that wire (or in wireless range) hears a frame, and only the one it's
+  addressed to takes it. A MAC address is `<computer id>:<interface>`.
+- **VLANs:** `back.20` is VLAN 20 on the back modem: channel 4040 + 20, a
+  network of its own on the same wire, that the untagged one (and every
+  other VLAN) doesn't hear. One modem can carry several networks: a router
+  with `back.10` and `back.20` routes between two VLANs on one cable (a
+  trunk). VLANs 1-4094.
+- **ARP:** to send to an address on its own network, a computer asks "who
+  has 10.0.1.5?" (a broadcast) and the owner answers with its MAC. Answers
+  are kept 5 minutes. No answer after 3 tries a second apart: "host
+  unreachable".
+- **IP (layer 3):** addresses as `10.0.1.5/24`. Each interface's own
+  network is routed directly; other networks by static routes (`ip route
+  add 10.0.3.0/24 via 10.0.1.1`, or `default via ...`), the longest prefix
+  winning. A packet carries a TTL (64), one less at each router. A router
+  (`ip forward on`, or `router`) passes on packets for other addresses;
+  a host takes only its own, `127.x.x.x`, and broadcasts
+  (`255.255.255.255`, or its network's last address), which never cross a
+  router.
+- **ICMP:** echo and reply (`ping`), destination unreachable (no route:
+  *net*, from the router that has none; no ARP answer: *host*; no program
+  on that UDP port: *port*), and time exceeded when a TTL runs out (a
+  routing loop; `traceroute` uses it to list the routers on the way).
+- **UDP (layer 4):** datagrams between ports. A datagram can carry anything
+  a modem can: a string, a number, a table. In Lua:
+
+  ```lua
+  local net = require("net")            -- lib/ on package.path
+  local sock = net.udp(7)                -- port 7 (nil: any free port)
+  local data, from, port = sock:receive(5)   -- nil after 5 s
+  sock:send(from, port, data)            -- echo it back
+  ```
+
+**How it runs:** a plain computer can't run programs in the background, so
+`ip up` hooks the network into `os.pullEventRaw`, which every program's
+`os.pullEvent`, `sleep`, `read` and `parallel` go through. The network is
+handled (ARP answered, pings replied to, packets forwarded, datagrams put
+in sockets) whenever anything on the computer waits for an event, which is
+nearly always, and `ip up` returns at once: the shell, Craftix, a farm or
+the router's screen carry on as usual. A program that computes for a long
+time without waiting holds the network up meanwhile. `ip boot` starts it
+at every boot (a line at the top of `/startup.lua`).
+
+**Setting up two networks and a router**, for example:
+
+```
+-- the router, with a wired modem on each network (back and right):
+ip addr add back 10.0.1.1/24
+ip addr add right 10.0.2.1/24
+router boot
+router
+
+-- a computer on the first network:
+ip addr add back 10.0.1.5/24
+ip route add default via 10.0.1.1
+ip boot
+ip up
+
+-- and one on the second:
+ip addr add top 10.0.2.7/24
+ip route add default via 10.0.2.1
+ip boot
+ip up
+ping 10.0.2.7          (from 10.0.1.5: through the router, TTL 63)
+traceroute 10.0.2.7
+```
+
+What's set is kept in settings (`net.if.<iface>`, `net.routes`,
+`net.forward`, `net.hosts`), and changes apply at once while it's up.
+`ip host router 10.0.1.1` lets `ping router` work. There's no DHCP or DNS:
+addresses are set by hand.
 
 ## fileserver
 

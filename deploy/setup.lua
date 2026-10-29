@@ -9,6 +9,8 @@
 --   craftix                            the POSIX-style shell, started at boot
 --   diskclone                          for a computer with a disk drive
 --   fileserver                         its disk drives as one folder, /jbod
+--   net                                the network: ip, ping, traceroute, nc
+--   router                             the network, and routing between networks
 -- git and deploy/ always come; so do the help files of what you pick.
 --
 -- Options: --autostart <app> (a turtle runs it at every boot: resumes its
@@ -50,6 +52,9 @@ local APPS = {
     craftix = { "bin/craftix.lua" },
     diskclone = { "pc/diskclone.lua" },
     fileserver = { "pc/fileserver.lua", "lib/jbod.lua" },
+    net = { "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua", "lib/cu.lua" },
+    router = { "pc/router.lua", "bin/ip.lua", "bin/ping.lua", "bin/traceroute.lua", "bin/nc.lua", "lib/net.lua",
+               "lib/cu.lua" },
 }
 local ALWAYS = { "bin/git.lua", "lib/pager.lua", "deploy/", "help/cc-turtles.txt" }
 local AUTOSTART = { mine = true, farm = true, mow = true, autocompost = true }

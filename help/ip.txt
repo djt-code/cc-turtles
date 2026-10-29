@@ -1,0 +1,27 @@
+ip: set up and look at the network (lib/net.lua)
+
+  ip
+      the interfaces, routes and whether it's up
+  ip up | ip down
+      start or stop the network on this computer
+  ip boot
+      start it at every boot (a line in startup)
+  ip link
+      the modems there are, and which are set up
+  ip addr
+      the interfaces' addresses and counts
+  ip addr add <iface> <addr/len>
+      give an interface an address
+  ip addr del <iface>
+  ip route
+      the routing table
+  ip route add <net/len|default> via <gw> [dev <iface>]
+  ip route del <net/len|default>
+  ip neigh
+      the ARP cache: addresses and their MACs
+  ip forward [on|off]
+      route between interfaces (a router)
+  ip host [<name> <addr>]
+      names for addresses (ping router)
+
+An interface is a modem by its peripheral name ("back", "modem_0"), or a VLAN on one: "back.20" is VLAN 20 on the back modem, its own network on the same wire.  What's set is kept in settings (net.if.<iface>, net.routes, net.forward, net.hosts) and applies at once if the network is up.  The network runs alongside everything else once `ip up` has started it: see lib/net.lua.

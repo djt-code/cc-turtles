@@ -1,0 +1,5 @@
+ping: send ICMP echo requests and time the replies
+
+  ping [-c count] [-i seconds] [-t ttl] [-W seconds] host
+
+host is an address (10.0.2.5) or a name `ip host` knows.  Sends `count` (4) echo requests, `-i` (1) seconds apart, each waiting up to `-W` (2) seconds for its reply, and says what came back: a reply (its TTL, and the round trip in milliseconds), "destination unreachable" from a router or this computer (no route: net; no ARP answer: host), or time exceeded (the TTL ran out on the way: a routing loop, or -t too small). Exit status 0 if any reply came, 1 if none, 2 for trouble (the network isn't up, an unknown host).

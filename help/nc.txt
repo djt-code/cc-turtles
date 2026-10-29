@@ -1,0 +1,8 @@
+nc: send and receive UDP datagrams (netcat, UDP only)
+
+  nc -u [-v] [-p port] [-w seconds] host port
+      send each line typed (or piped in)
+  nc -u -l [-v] port
+      print what comes to port
+
+Sending: each line of standard input goes to host:port as a datagram (from -p port, else any free one); what comes back to that port is printed meanwhile, and for -w (1) seconds after the input ends (Ctrl+T at the keyboard).  Listening (-l): every datagram that comes to port is printed, until Ctrl+T.  -v puts "from address:port" first.  A datagram that's a string prints as it is; anything else (a table) serialised. -u is required (there's no TCP).  The network must be up (`ip up`).
