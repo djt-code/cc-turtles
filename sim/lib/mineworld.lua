@@ -52,8 +52,14 @@ local DROP = {
     ["minecraft:iron_ore"] = "minecraft:raw_iron", ["minecraft:diamond_ore"] = "minecraft:diamond",
     ["minecraft:coal_ore"] = "minecraft:coal", ["minecraft:deepslate_gold_ore"] = "minecraft:raw_gold",
     ["minecraft:emerald_ore"] = "minecraft:emerald", ["modded:tin_vein"] = "modded:raw_tin",
+    ["minecraft:wall_torch"] = "minecraft:torch",
 }
 local FALLS = { ["minecraft:gravel"] = true, ["minecraft:sand"] = true }
+-- A torch block: standing (minecraft:torch) or, hung on a wall, as the
+-- game names it then, minecraft:wall_torch.
+local TORCH_BLOCK = { ["minecraft:torch"] = true, ["minecraft:wall_torch"] = true }
+local function isTorch(b) return type(b) == "table" and TORCH_BLOCK[b.name] == true end
+Mine.isTorch = isTorch
 local WATER_NAME = "minecraft:water"
 local SIZE = 27                -- a chest's slots
 Mine.SIZE = SIZE
@@ -180,7 +186,7 @@ Mine.flow = flow
 -- The open block (not the turtle's) at (a,b,c) gets the water due it.
 local function fillAt(a, b, c, t)
     local cur = get(a, b, c)
-    local torch = cur and cur.name == "minecraft:torch"
+    local torch = isTorch(cur)
     if c < 1 or (a == P.x and b == P.y and c == P.z) or not (cur == nil or torch) then return end
     local new = waterFor(a, b, c)
     if not new then return end
@@ -251,12 +257,12 @@ local function dig(x, y, z)
     local b = get(x, y, z)
     if not b or passable(b) or b.inv or b.name == "minecraft:bedrock" then return false end
     set(x, y, z, b.waterlogged and { name = WATER_NAME, level = 0 } or nil)
-    if b.name == "minecraft:torch" then TORCHES_DUG = (TORCHES_DUG or 0) + 1 end
+    if isTorch(b) then TORCHES_DUG = (TORCHES_DUG or 0) + 1 end
     -- a torch hanging on this block, or standing on it, drops off (onto
     -- the ground: the turtle doesn't get it)
     for _, d in ipairs(M.SIDES6) do
         local t = get(x + d[1], y + d[2], z + d[3])
-        if t and t.name == "minecraft:torch" and t.on == k(x, y, z) then
+        if isTorch(t) and t.on == k(x, y, z) then
             set(x + d[1], y + d[2], z + d[3], nil)
             TORCHES_DROPPED = (TORCHES_DROPPED or 0) + 1
         end
@@ -270,7 +276,7 @@ local function dig(x, y, z)
     return true
 end
 
-local function solid(b) return b and not passable(b) and b.name ~= "minecraft:torch" end
+local function solid(b) return b and not passable(b) and not isTorch(b) end
 -- A torch needs something under it or, in front, the block beyond to
 -- hang on.  Ore drops, fuel and gems aren't blocks.
 local function place(x, y, z, dir)
@@ -278,10 +284,11 @@ local function place(x, y, z, dir)
     if not it then return false end
     if Mine.ENTITIES[k(x, y, z)] then return true end   -- as in game: right-clicks the minecart
     if not passable(get(x, y, z)) then return false end
-    local on                               -- what a torch hangs on or stands on
+    local on, hangsOn                      -- what a torch hangs on or stands on; hung on a wall
     if it.name == "minecraft:torch" then
         local bx, bz = x + M.DX[P.d], z + M.DZ[P.d]
         local hangs = dir == "front" and solid(get(bx, y, bz))
+        hangsOn = hangs
         if hangs then on = k(bx, y, bz)
         elseif solid(get(x, y - 1, z)) then on = k(x, y - 1, z)
         else return false end
@@ -289,6 +296,7 @@ local function place(x, y, z, dir)
     if it.name:find("raw_") or M.FUEL_VALUE[it.name] or it.name == "minecraft:diamond"
         or it.name == "minecraft:emerald" then return false end
     if it.name == "minecraft:chest" then set(x, y, z, Mine.chest())
+    elseif it.name == "minecraft:torch" and hangsOn then set(x, y, z, { name = "minecraft:wall_torch", on = on })
     else set(x, y, z, { name = it.name, on = on }) end
     M.useSel(Mine)
     PLACED = (PLACED or 0) + 1
@@ -617,7 +625,7 @@ end
 function Mine.checkLight(x0, x1, fy, z1, z2)
     local light, queue, head = {}, {}, 1
     for key, b in pairs(W) do
-        if b and b.name == "minecraft:torch" then
+        if isTorch(b) then
             light[key] = 14
             local x, y, z = key:match("(-?%d+),(-?%d+),(-?%d+)")
             queue[#queue + 1] = { tonumber(x), tonumber(y), tonumber(z) }
@@ -747,7 +755,7 @@ end
 function Mine.torchesIn(x0, x1, y, z1, z2)
     local n = 0
     for x = x0, x1 do for z = z1, z2 do
-        if (get(x, y, z) or {}).name == "minecraft:torch" then n = n + 1 end
+        if isTorch(get(x, y, z)) then n = n + 1 end
     end end
     return n
 end

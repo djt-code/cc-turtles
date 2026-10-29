@@ -103,7 +103,7 @@ checkLight(0, 2, -1, 1, 50)
 local niches = {}
 for z = 1, 50 do
     local b = get(-1, 0, z)
-    if b and b.name == "minecraft:torch" then niches[#niches + 1] = z end
+    if Mine.isTorch(b) then niches[#niches + 1] = z end
 end
 check("torches in wall niches every 19, none on a home", table.concat(niches, ",") == "10,29,49",
     "at z=" .. table.concat(niches, ","))
@@ -273,8 +273,8 @@ run("10", "2", "30")
 checkLight(0, 9, -1, 1, 30)
 local left, right = 0, 0
 for z = 1, 30 do
-    if (get(-1, 0, z) or {}).name == "minecraft:torch" then left = left + 1 end
-    if (get(10, 0, z) or {}).name == "minecraft:torch" then right = right + 1 end
+    if Mine.isTorch(get(-1, 0, z)) then left = left + 1 end
+    if Mine.isTorch(get(10, 0, z)) then right = right + 1 end
 end
 check("torches on both walls", left > 0 and left == right, left .. " left, " .. right .. " right")
 check("back at the start", atStart())
@@ -287,7 +287,7 @@ FUEL, DRY = 1000, 0
 run("3", "3", "20", "--no-lights")
 local placed = 0
 for x = -2, 4 do for z = 1, 20 do
-    if (get(x, 0, z) or {}).name == "minecraft:torch" then placed = placed + 1 end
+    if Mine.isTorch(get(x, 0, z)) then placed = placed + 1 end
 end end
 local _, top = contents(chestAt(0, 1, 0))
 check("no torches placed, all 16 still in the chest", placed == 0 and (top["minecraft:torch"] or 0) == 16,
@@ -400,7 +400,7 @@ for _, case in ipairs({ { "a fetch through a lit niche", true, THROUGH, "TORCHES
     local gone = 0
     for _, o in ipairs(case[3]) do if not isOreBlock(get(o[1], o[2], o[3])) then gone = gone + 1 end end
     check(case[1] .. ": the torch was knocked off, and put back", _G[case[4]] == 1
-        and (get(-1, 0, 48) or {}).name == "minecraft:torch" and logHas("1 put back"),
+        and Mine.isTorch(get(-1, 0, 48)) and logHas("1 put back"),
         "dug " .. TORCHES_DUG .. ", dropped " .. TORCHES_DROPPED .. ", z=48: " .. tostring((get(-1, 0, 48) or {}).name))
     check(case[1] .. ": the ore mined", gone == #case[3], gone .. " of " .. #case[3])
     checkLight(0, 2, -1, 1, 60); checkFloor(0, 2, -1, 1, 60)
@@ -481,7 +481,7 @@ local function wetWalls(withScanner)
     local wetIn = 0
     for x = 0, 2 do for y = 0, 2 do for z = 1, 36 do if isWater(get(x, y, z)) then wetIn = wetIn + 1 end end end end
     local torches = 0
-    for x = -1, 3 do for z = 1, 36 do if (get(x, 0, z) or {}).name == "minecraft:torch" then torches = torches + 1 end end end
+    for x = -1, 3 do for z = 1, 36 do if Mine.isTorch(get(x, 0, z)) then torches = torches + 1 end end end
     check("no water got into the tunnel past the block being dug", INGRESS <= 3,
         INGRESS .. " times water flowed into an open tunnel block")
     check("no torch washed away", WASHED == 0 and torches >= 2, WASHED .. " washed away, " .. torches .. " up")
@@ -667,7 +667,7 @@ dugTunnel()
 Mine.files["mine.job"] = "3 3 40 16 2 active"
 for _, it in ipairs(stock(2, 64, 16)) do table.insert(chestAt(0, 1, 0), it) end
 table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 })
-set(-1, 0, 10, { name = "minecraft:torch", on = "-2,0,10" }); set(-1, 0, 29, nil)
+set(-1, 0, 10, { name = "minecraft:wall_torch", on = "-2,0,10" }); set(-1, 0, 29, nil)
 set(2, 3, 22, { name = "minecraft:water", level = 0 })
 WATERY = true
 flow(2, 3, 22)
@@ -683,12 +683,38 @@ local wetAfter = 0
 for x = 0, 2 do for y = 0, 2 do for z = 1, 40 do if isWater(get(x, y, z)) then wetAfter = wetAfter + 1 end end end end
 check("said it's going over the tunnel on the way out", logHas("going over the tunnel for water getting in and lights out"))
 check("both torches back, once the water was sealed off",
-    (get(-1, 0, 29) or {}).name == "minecraft:torch" and (get(-1, 0, 10) or {}).name == "minecraft:torch")
+    Mine.isTorch(get(-1, 0, 29)) and Mine.isTorch(get(-1, 0, 10)))
 checkLight(0, 2, -1, 1, 40)
 check("followed the water to the hole in the ceiling and sealed it",
     wetBefore > 5 and wetAfter == 0 and not isWater(get(2, 3, 22)), wetBefore .. " tunnel blocks wet before, " .. wetAfter .. " after")
 check("finished", logHas("^Done"))
 check("back at the start", atStart())
+
+-- 13l. the same walk out through a dry tunnel whose torches are all up
+--      (hung in their niches: wall torches, as the game names them): it
+--      leaves them be, digging none; and cobblestone in home 1's
+--      valuables chest goes down into its bulk chest as it passes (stopped,
+--      as if by Ctrl+T, at its first dig: past home 2, before the walk back,
+--      which would move it too)
+dugTunnel()
+Mine.files["mine.job"] = "3 3 48 16 2 active"                -- (dug to 40: rock from 41)
+for _, it in ipairs(stock(2, 64, 16)) do table.insert(chestAt(0, 1, 0), it) end
+table.insert(chestAt(0, -1, 0), { name = "minecraft:cobblestone", count = 64 })
+for _, z in ipairs({ 10, 29 }) do set(-1, 0, z, { name = "minecraft:wall_torch", on = "-2,0," .. z }) end
+table.insert(chestAt(-1, 0, 16), { name = "minecraft:cobblestone", count = 20 })
+startAt()
+Mine.files[".turtlepos"] = "0 0 0 0 flat"
+FUEL, TORCHES_DUG, STOP_AT_DIG = 3000, 0, 1
+run("--resume")
+STOP_AT_DIG = nil
+check("stopped past home 2, at the first block of new tunnel", P.z > 32, "at z=" .. P.z)
+check("left the torches that were up alone: none dug", (TORCHES_DUG or 0) == 0
+    and Mine.isTorch(get(-1, 0, 10)) and Mine.isTorch(get(-1, 0, 29)), tostring(TORCHES_DUG) .. " dug")
+local _, h1val = contents(chestAt(-1, 0, 16))
+local _, h1bulk = contents(chestAt(0, -1, 16))
+check("home 1's cobblestone moved down into its bulk chest on the way out",
+    not h1val["minecraft:cobblestone"] and (h1bulk["minecraft:cobblestone"] or 0) >= 20,
+    (h1val["minecraft:cobblestone"] or 0) .. " in the valuables chest, " .. (h1bulk["minecraft:cobblestone"] or 0) .. " below")
 
 -- 13g. dug already, with waterlogged glow lichen in the right wall at
 --      floor level near z=24, its water spread along the floor: `mine
@@ -795,7 +821,7 @@ check("found the water from the ceiling, followed it up and sealed the hole",
     wetBefore > 3 and wetAfter == 0 and not isWater(get(1, 3, 8)),
     wetBefore .. " floor blocks wet before, " .. wetAfter .. " tunnel blocks after")
 local torches = 0
-for x = -1, 3 do for z = 1, 40 do if (get(x, 0, z) or {}).name == "minecraft:torch" then torches = torches + 1 end end end
+for x = -1, 3 do for z = 1, 40 do if Mine.isTorch(get(x, 0, z)) then torches = torches + 1 end end end
 check("no torch washed away after the resume, and they're all up", WASHED == 0 and torches >= 2,
     WASHED .. " washed away, " .. torches .. " up")
 check("tunnel clear", leftIn(0, 2, 0, 2, 1, 40) == 0, leftIn(0, 2, 0, 2, 1, 40) .. " blocks left")

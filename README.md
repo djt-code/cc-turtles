@@ -690,8 +690,10 @@ recognise. Needs a pickaxe, equipped or in the inventory.
   carries the new supplies out to the last home and carries on from there.
   On the way out it goes over each segment for repairs, as it does when
   resuming from an earlier home: it walks the floor along the lit wall,
-  putting back any torch that's missing, and any water it meets (flowing or
-  a source) it follows to where it gets into the tunnel and seals there.
+  putting back any torch that's missing and leaving the ones that are there
+  alone, and any water it meets (flowing or a source) it follows to where it
+  gets into the tunnel and seals there. At each home it passes, bulk in the
+  valuables chest goes down into the bulk chest, as on the way back.
   A torch spot that's under flowing water is lit once the water is sealed
   off.
   Run from the last home (where `mine reset` leaves it), it just carries on

@@ -83,8 +83,11 @@
 --    chests and fuel from the start's top chest with it).  On that walk
 --    out it goes over each segment as when resuming from an earlier home:
 --    along the floor by the lit wall, putting back any torch that's
---    missing, and following any water it meets to where it gets in and
---    sealing that (then lighting what the water kept dark).
+--    missing (one that's there, a wall torch as the game calls it once
+--    hung, is left alone), and following any water it meets to where it
+--    gets in and sealing that (then lighting what the water kept dark);
+--    at each home it moves any bulk in the valuables chest down into the
+--    bulk chest.
 --  * Fuel: the tank always keeps enough to get back to the start; the
 --    turtle refuels from each home's chest, and coal it mines lands there.
 --    It only burns coal, charcoal and the like, never wood or chests.
@@ -317,6 +320,10 @@ end
 -- wood is never burnt).  They travel forward to the newest home.
 CHEST_ITEMS = { ["minecraft:chest"] = true, ["minecraft:barrel"] = true }
 TORCHES = { ["minecraft:torch"] = true, ["minecraft:soul_torch"] = true }
+-- A torch as a block: hung on a wall (as in its niche) the game calls it a
+-- wall torch.  One there already is left alone.
+TORCH_BLOCKS = { ["minecraft:torch"] = true, ["minecraft:wall_torch"] = true,
+                 ["minecraft:soul_torch"] = true, ["minecraft:soul_wall_torch"] = true }
 CRAFTING_TABLE, STICK = "minecraft:crafting_table", "minecraft:stick"
 COAL = { ["minecraft:coal"] = true, ["minecraft:charcoal"] = true }   -- what torches are lit with
 function isLog(name)
@@ -1701,7 +1708,7 @@ function lightHere()
         room()
         local ok, data = look(d)
         if not ok then break end
-        if TORCHES[data.name] or protected(data.name) then return end
+        if TORCH_BLOCKS[data.name] or protected(data.name) then return end
         if FLUID[data.name] then
             dry(d)
             ok, data = look(d)
@@ -1754,7 +1761,7 @@ function relight()
         broken[t] = nil
         alongAxis("y", t.at.y); alongAxis("x", t.at.x); alongAxis("z", t.at.z)
         local ok, data = look(t.d)
-        if T.at(t.at) and not (ok and TORCHES[data.name]) then
+        if T.at(t.at) and not (ok and TORCH_BLOCKS[data.name]) then
             if ok and not FLUID[data.name] and not protected(data.name) then digDir(t.d) end
             if placeTorch(t.d) then
                 stats.relit = stats.relit + 1
@@ -2707,6 +2714,7 @@ T.withTool(pickaxe, function()
                 local from = homeAt(k)
                 home = homeAt(k + 1)               -- (repair ends at home)
                 repair(from.z + 1, home.z)
+                bulkOutOfValuables(home)           -- (at each home anyway: bulk down where it belongs)
             end
             T.face(last.face)
             if not (containerOn("front") and containerOn(last.bulk)) then
