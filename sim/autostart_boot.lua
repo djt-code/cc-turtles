@@ -9,38 +9,21 @@
 -- again, and a finished one only on repeat.  A key in the 5 seconds
 -- cancels; a step that fails stops the rest.
 local PROJ = ...
-package.path = PROJ .. "/turtle/?.lua;" .. package.path
+package.path = PROJ .. "/turtle/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+local M = require("mock")
 local realPrint = print
+local check = M.check
 
-local function check(label, cond, got)
-    realPrint(string.format("   %s %s%s", cond and "ok   " or "ERROR:", label, got and ("  (" .. tostring(got) .. ")") or ""))
-end
-
-local files, SET, runs, out, EVENTS, failOn
-fs = {
-    combine = function(a, b) return (a == "" and b) or (a .. "/" .. b) end,
-    getDir = function(p) return p:match("^(.*)/[^/]*$") or "" end,
-    exists = function(p) return files[p] ~= nil end,
-    move = function(a, b) files[b], files[a] = files[a], nil end,
-    open = function(p, mode)
-        if mode == "w" then
-            local buf = {}
-            return { write = function(s) buf[#buf + 1] = s end, close = function() files[p] = table.concat(buf) end }
-        end
-        local data = files[p]
-        if not data then return nil end
-        return { readAll = function() return data end, close = function() end }
-    end,
-}
+local S = { files = {} }               -- the computer's files, for M.fsApi
+local SET, runs, out, EVENTS, failOn
+fs = M.fsApi(S)
 settings = { get = function(name, default) if SET[name] == nil then return default end return SET[name] end }
-shell = {
-    getRunningProgram = function() return "cc-turtles/turtle/autostart.lua" end,
-    run = function(...)
-        local line = table.concat({ ... }, " ")
-        runs[#runs + 1] = line
-        return line ~= failOn
-    end,
-}
+shell = M.shellApi("cc-turtles/turtle/autostart.lua")
+shell.run = function(...)
+    local line = table.concat({ ... }, " ")
+    runs[#runs + 1] = line
+    return line ~= failOn
+end
 os.startTimer = function() return 7 end
 os.pullEvent = function() return table.unpack(table.remove(EVENTS, 1) or { "timer", 7 }) end
 printError = function(s) out[#out + 1] = s end
@@ -48,8 +31,8 @@ printError = function(s) out[#out + 1] = s end
 local DIR = "cc-turtles/turtle/"
 local function boot(name, set, have, opts)
     opts = opts or {}
-    files, SET, runs, out, EVENTS, failOn = {}, set, {}, {}, opts.events or {}, opts.fail
-    for k, v in pairs(have) do files[DIR .. k] = v end
+    S.files, SET, runs, out, EVENTS, failOn = {}, set, {}, {}, opts.events or {}, opts.fail
+    for k, v in pairs(have) do S.files[DIR .. k] = v end
     print = function(...) out[#out + 1] = table.concat({ ... }, " ") end
     package.loaded.turtlelib = nil
     local ok, err = pcall(assert(loadfile(PROJ .. "/turtle/autostart.lua")), table.unpack(opts.args or {}))
@@ -78,7 +61,7 @@ check("a finished tunnel: nothing, and it says why", r == "" and o:find("finishe
 r, o = boot("mine stopped", { ["cc-turtles.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 stopped", [".turtlepos"] = AT_START })
 check("a tunnel that stopped itself (out of chests): left to you", r == "" and o:find("stopped itself", 1, true) ~= nil, o)
 r = (function()
-    files, SET, runs, out, EVENTS, failOn = { ["cc-turtles/mine.job"] = "3 3 0 16 2 active", ["cc-turtles/.turtlepos"] = AT_START },
+    S.files, SET, runs, out, EVENTS, failOn = { ["cc-turtles/mine.job"] = "3 3 0 16 2 active", ["cc-turtles/.turtlepos"] = AT_START },
         { ["cc-turtles.autostart"] = "mine" }, {}, {}, {}, nil
     package.loaded.turtlelib = nil
     print = function() end
@@ -86,7 +69,7 @@ r = (function()
     print = realPrint
     return table.concat(runs, "; ")
 end)()
-check("a job's files from before turtle/ still count", r == "mine --resume" and files[DIR .. "mine.job"] ~= nil, r)
+check("a job's files from before turtle/ still count", r == "mine --resume" and S.files[DIR .. "mine.job"] ~= nil, r)
 
 r, o = boot("farm, nothing", { ["cc-turtles.autostart"] = "farm" }, {})
 check("farm with no map and no size: nothing, and how to set one", r == "" and o:find("farm.width", 1, true) ~= nil, o)

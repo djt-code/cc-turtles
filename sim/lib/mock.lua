@@ -385,7 +385,8 @@ function M.fsApi(S)
     S.dirs = S.dirs or {}
     return {
         combine = combine,
-        getDir = function() return "" end,
+        -- the folder part ("" at the root, and CC's ".." for the root itself)
+        getDir = function(p) p = combine(p); return p == "" and ".." or p:match("^(.*)/[^/]*$") or "" end,
         exists = function(p) p = combine(p); return S.files[p] ~= nil or S.dirs[p] ~= nil end,
         isDir = function(p) return S.dirs[combine(p)] ~= nil end,
         makeDir = function(p) S.dirs[combine(p)] = true end,

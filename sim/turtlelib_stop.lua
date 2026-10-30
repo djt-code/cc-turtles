@@ -8,25 +8,13 @@
 -- the program stops once the turn is saved.  Without it, the saved
 -- heading is off by one.
 local PROJ = ...
-package.path = PROJ .. "/turtle/?.lua;" .. package.path
+package.path = PROJ .. "/turtle/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
+local M = require("mock")
 
 local realPrint = print
-local files = {}
-fs = {
-    combine = function(a, b) return (a == "" and b) or (a .. "/" .. b) end,
-    getDir = function() return "" end,
-    exists = function(p) return files[p] ~= nil end,
-    delete = function(p) files[p] = nil end,
-    open = function(p, mode)
-        if mode == "w" then
-            local buf = {}
-            return { write = function(s) buf[#buf + 1] = s end, close = function() files[p] = table.concat(buf) end }
-        end
-        local data = files[p]; if not data then return nil end
-        return { readAll = function() return data end, close = function() end }
-    end,
-}
-shell = { getRunningProgram = function() return "x.lua" end }
+local S = { files = {} }               -- the computer's files, for M.fsApi
+fs = M.fsApi(S)
+shell = M.shellApi("x.lua")
 
 -- A turtle whose turns wait for their response, as in CC; the user
 -- presses Ctrl+T while the second turn is under way.
@@ -46,7 +34,7 @@ turtle = {
 }
 
 local function trial(label, safe)
-    files, facing, turns = {}, 0, 0
+    S.files, facing, turns = {}, 0, 0
     EVENTS = { "turtle_response", "terminate", "turtle_response", "turtle_response", "turtle_response" }
     package.loaded.turtlelib = nil
     local T = require("turtlelib")
@@ -66,7 +54,7 @@ local function trial(label, safe)
             args = { os.pullEventRaw() }
         end
     end
-    local saved = tonumber((files[".turtlepos"] or ""):match("^%-?%d+ %-?%d+ %-?%d+ (%d)"))
+    local saved = tonumber((S.files[".turtlepos"] or ""):match("^%-?%d+ %-?%d+ %-?%d+ (%d)"))
     realPrint(string.format("%s: %s after %d turns, really facing %d, saved %s",
         label, ok and "finished" or tostring(err), turns, facing, tostring(saved)))
     return ok, err, saved
