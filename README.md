@@ -126,8 +126,9 @@ ROM's: a few files, not the whole repo.
 - **Files deleted upstream** are still in the ROM until the server's copy
   catches up.
 
-The server's admin updates the ROM itself with git: the mod's README says
-how.
+The server's ops update the ROM itself while the server runs, with
+`/ccnix rom update` (a git pull of the server's checkout, then a reload):
+the mod's README says more.
 
 `setup` on such a server clones nothing:
 - it sets what the apps named want;

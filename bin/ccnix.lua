@@ -12,7 +12,8 @@
 -- The ccnix mod puts this repo in every computer's ROM, at /rom/ccnix;
 -- deploy/boot.lua says how the two layers go together.  When the ROM is
 -- newer than the repo's branch, an update keeps nothing: the ROM is it.
--- The server's admin updates the ROM itself (see the mod's README).  On a
+-- The server's ops update the ROM itself: /ccnix rom update (the mod's
+-- README).  On a
 -- server without the mod, ccnix is a whole checkout at /ccnix
 -- (deploy/setup clones it there), and update is a git pull of that.
 -- `help ccnix` goes on with every command ccnix adds.
