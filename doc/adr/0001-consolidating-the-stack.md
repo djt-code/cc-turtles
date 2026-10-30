@@ -1,8 +1,13 @@
 # ADR-0001: Consolidating the stack after the October 2026 additions
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-29)
 **Date:** 2026-10-29
 **Deciders:** Dan Theisen
+
+**Decided 2026-10-29:** D4a, D4b and D4d yes; item 4 (`.gitattributes`) yes; the
+git example URL replaced by a placeholder; item 34's two old-git paths in
+`setup` stay (not decided); item 20 skipped (untested). D4d still to be
+verified on one real device: the steps are at the end.
 
 ## Context
 
@@ -128,7 +133,7 @@ optional.
 | a. `cc-turtles.autostart` | Accept the name | **`ccnix.autostart` + 4-line shim in boot.lua next to craftix.login's** | Read in 5 files, documented in 9; `sim/autostart_boot` covers the reader. Mod README:20 follows. Both shims deleted together later |
 | b. `help/cc-turtles.txt` index | — | **Fold into `help/ccnix.txt`** (mkhelp appends the index after the program's text; `setup`'s ALWAYS list follows) | `help ccnix` is then the distro's page. Alternative: `help/index.txt` (CC's ROM has none) |
 | c. `/startup/00-cc-turtles.lua` | — | **`00-ccnix.lua`**, with D1 | install removes the old name |
-| d. `/cc-turtles` install folder | Deferred on purpose (README:11-12) | Move to `/ccnix`: `setup` does `fs.move` once + rewrites startup lines (its ROM-mode migration is already that logic); `bin/ccnix.lua`'s `CHECKOUT` constant and the second root name go; sims' `progDir` (2 constants, ~25 literals) follow | **Open.** The code already anticipates a whole checkout at `/ccnix` (`boot.lua:49-51`, `ccnix.lua:71-72`). `setup` has no sim: verify on one device first |
+| d. `/cc-turtles` install folder | Deferred on purpose (README:11-12) | Move to `/ccnix`: `setup` does `fs.move` once + rewrites startup lines (its ROM-mode migration is already that logic); `bin/ccnix.lua`'s `CHECKOUT` constant and the second root name go; sims' `progDir` (2 constants, ~25 literals) follow | **Accepted.** The code already anticipates a whole checkout at `/ccnix` (`boot.lua:49-51`, `ccnix.lua:71-72`). `setup` has no sim: verify on one device first |
 | e. jbod marker text, git.lua example URL, `sim/git_space` repo name | — | **Rename** (text never read / examples) | Free |
 | f. `craftix.login`, `zz-craftix.lua`, `/cc-turtles/.gitlite` guards, job-file move | **Keep** until the devices are moved | — | Live compatibility; delete together |
 
@@ -187,67 +192,88 @@ for the mod. One logical change per commit; both repos pushed; pointers bumped
 
 ### Phase 0: the safety net
 
-1. [ ] `sim/pager.lua`: don't print the table's address (the one unrepeatable line).
-2. [ ] `sim/mow_*.lua`: a pass, settings saved after the home check, `reset`. mow has no scenario.
-3. [ ] `sim/boot_install.lua` (shellworld): `boot.lua` under a fake `/rom/ccnix` with `.manifest` and without; `install`'s lines run; `--end`. Prerequisite for D1.
-4. [ ] Optional: `.gitattributes` `* text=auto eol=lf`, renormalise (the index is LF already).
+1. [x] `sim/pager.lua`: don't print the table's address (the one unrepeatable line).
+2. [x] `sim/mow_*.lua`: a pass, settings saved after the home check, `reset`. mow has no scenario.
+3. [x] `sim/boot_install.lua` (shellworld): `boot.lua` under a fake `/rom/ccnix` with `.manifest` and without; `install`'s lines run; `--end`. Prerequisite for D1.
+4. [x] Optional: `.gitattributes` `* text=auto eol=lf`, renormalise (the index is LF already).
 
 ### Phase 1: defects (one commit each)
 
-5. [ ] `turtle/mow.lua`: the `ccnix.lib` prelude line (D6).
-6. [ ] `lib/proc.lua` `P.signal`; `bin/kill.lua` and ccsh's `kill` use it. Fixes `kill -INT 5` → "no such job" in ccsh. `sim/proc`, `sim/ccsh` §13.
-7. [ ] `pc/fileserver.lua`: a failed `add` sets status 1 (today it prints and returns success).
-8. [ ] `lib/pager.lua`: the fits-on-screen branch draws the wrapped rows with `P.drawLine` (today it measures wrapped, prints unwrapped); `printLine` goes (−10). `sim/pager.lua` §1 adjusted to read term rows.
-9. [ ] `turtle/mow.lua`: `T.saveSettings` after `T.requireHome` (a "no" at the prompt has already overwritten the settings).
-10. [ ] `sim/mkhelp.py`: the index's "Settings:" line (missing `init.boot`, `net.*`, `telnetd.*`, `service.*`), with D4b.
-11. [ ] `deploy/setup.lua:183`: the migration regex keeps single-quoted `shell.run('/cc-turtles/…')` lines too.
-12. [ ] README facts: directed broadcasts do cross a router (README:1140); `ip boot` sets a setting (1197); `lib/` is seven modules (19); "four folders" (14); what `setup` always fetches (128); the `## Programs in bin/` prelude snippet (1451). `doc/network.txt:3` lists TCP.
+5. [x] `turtle/mow.lua`: the `ccnix.lib` prelude line (D6).
+6. [x] `lib/proc.lua` `P.signal`; `bin/kill.lua` and ccsh's `kill` use it. Fixes `kill -INT 5` → "no such job" in ccsh. `sim/proc`, `sim/ccsh` §13.
+7. [x] `pc/fileserver.lua`: a failed `add` sets status 1 (today it prints and returns success).
+8. [x] `lib/pager.lua`: the fits-on-screen branch draws the wrapped rows with `P.drawLine` (today it measures wrapped, prints unwrapped); `printLine` goes (−10). `sim/pager.lua` §1 adjusted to read term rows.
+9. [x] `turtle/mow.lua`: `T.saveSettings` after `T.requireHome` (a "no" at the prompt has already overwritten the settings).
+10. [x] `sim/mkhelp.py`: the index's "Settings:" line (missing `init.boot`, `net.*`, `telnetd.*`, `service.*`), with D4b.
+11. [x] `deploy/setup.lua:183`: the migration regex keeps single-quoted `shell.run('/cc-turtles/…')` lines too.
+12. [x] README facts: directed broadcasts do cross a router (README:1140); `ip boot` sets a setting (1197); `lib/` is seven modules (19); "four folders" (14); what `setup` always fetches (128); the `## Programs in bin/` prelude snippet (1451). `doc/network.txt:3` lists TCP.
 
 ### Phase 2: mechanical consolidations (each covered by an existing sim unless noted)
 
 Network (`sim/net_stack`, `sim/net_tools`):
-13. [ ] `bin/ip.lua:101-126`: drop `ip boot`'s startup-file surgery; it sets `net.boot` and boot/install do the rest (−25).
-14. [ ] `lib/net.lua:561`: rename the TCP `output` (shadows the IP one at 285) to `push`.
-15. [ ] `lib/net.lua`: one `poll(take, timeout)` for `Socket:receive`, `waitConn`, `Listener:accept`; one `freePort()` for UDP and TCP (−18).
-16. [ ] `N.awaitEcho(id, seq, timeout)`; `ping` and `traceroute` drop their identical matcher (−8).
-17. [ ] Drop unexported-in-practice `N.netOf`/`N.broadcastOf`, `fromConfig`'s unused `env`, and either show or drop the `rx/tx/arpAsked` counters; `pc/router.lua:27-28` → `ip forward on` (−10).
+13. [x] `bin/ip.lua:101-126`: drop `ip boot`'s startup-file surgery; it sets `net.boot` and boot/install do the rest (−25).
+14. [x] `lib/net.lua:561`: rename the TCP `output` (shadows the IP one at 285) to `push`.
+15. [x] `lib/net.lua`: one `poll(take, timeout)` for `Socket:receive`, `waitConn`, `Listener:accept`; one `freePort()` for UDP and TCP (−18).
+16. [x] `N.awaitEcho(id, seq, timeout)`; `ping` and `traceroute` drop their identical matcher (−8).
+17. [x] Drop unexported-in-practice `N.netOf`/`N.broadcastOf`, `fromConfig`'s unused `env`, and either show or drop the `rx/tx/arpAsked` counters; `pc/router.lua:27-28` → `ip forward on` (−10).
 
 Process and shell (`sim/proc`, `sim/ccsh`):
-18. [ ] `lib/proc.lua`: `serviceDef`/`serviceNames`/`serviceStatus` as module functions; `bin/service.lua` uses them (−14; `service` itself untested).
-19. [ ] `bin/ccsh.lua`: delete the `os.getenv`-without-`environ` fallback (−5; unreachable).
+18. [x] `lib/proc.lua`: `serviceDef`/`serviceNames`/`serviceStatus` as module functions; `bin/service.lua` uses them (−14; `service` itself untested).
+19. [x] `bin/ccsh.lua`: delete the `os.getenv`-without-`environ` fallback (−5; unreachable).
 20. [ ] Skip: telnetd's password reader via `T.decoder` (−12) unless telnetd is touched for another reason; untested in sims.
 
 Turtle (`sim/mine_tunnel`, `sim/claude_drive`, `sim/turtlelib_refuel`, `sim/farm_fuel`):
-21. [ ] `firstEmpty()` → `T.emptySlot()` (−5).
-22. [ ] `T.attackDir`, `T.suckDir` beside `T.digDir`; mine aliases them in its prelude line (0 net).
-23. [ ] mine's five chest/torch tallies → `craftPlan(atHand())` (−12).
-24. [ ] `T.popValue(args, flag)`; mine's `--spacing`/`--home` and claude's `--model`/`--effort`/`--steps` use it (−8).
-25. [ ] `T.fuel` derived from `T.FUEL_VALUE` (−4; they can drift today).
-26. [ ] claude's `blit()` → `pager and pager.blitOf(c) or "0"`; drop `P.colourLine` and its sim check (−8).
+21. [x] `firstEmpty()` → `T.emptySlot()` (−5).
+22. [x] `T.attackDir`, `T.suckDir` beside `T.digDir`; mine aliases them in its prelude line (0 net).
+23. [x] mine's five chest/torch tallies → `craftPlan(atHand())` (−12).
+24. [x] `T.popValue(args, flag)`; mine's `--spacing`/`--home` and claude's `--model`/`--effort`/`--steps` use it (−8).
+25. [x] `T.fuel` derived from `T.FUEL_VALUE` (−4; they can drift today).
+26. [x] claude's `blit()` → `pager and pager.blitOf(c) or "0"`; drop `P.colourLine` and its sim check (−8).
 
 Coreutils and libs (`sim/ccsh` §12, `sim/coreutils_small`, `sim/fileserver_jbod`, `sim/coreutils_ls`):
-27. [ ] `bin/env.lua`: `cu.getopt("iu:", 125)` (−16).
-28. [ ] `bin/seq.lua`: insert `--` before a leading negative, then `cu.getopt("ws:f:")` (−15).
-29. [ ] `lib/jbod.lua`: marker text "ccnix jbod member"; `full()` moved up and used at 5 sites; local `isMember` → `marked` (0 net).
-30. [ ] `bin/ls.lua:10`: rewrap the 127-column header line; regenerate help.
+27. [x] `bin/env.lua`: `cu.getopt("iu:", 125)` (−16).
+28. [x] `bin/seq.lua`: insert `--` before a leading negative, then `cu.getopt("ws:f:")` (−15).
+29. [x] `lib/jbod.lua`: marker text "ccnix jbod member"; `full()` moved up and used at 5 sites; local `isMember` → `marked` (0 net).
+30. [x] `bin/ls.lua:10`: rewrap the 127-column header line; regenerate help.
 
 Sims and docs:
-31. [ ] `sim/lib/mock.lua` `fsApi.getDir` real; `autostart_boot`, `turtlelib_datapath`, `turtlelib_stop` use `M.fsApi`/`M.shellApi` (−30).
-32. [ ] `sim/README.md`: own-mocks list, "turtle programs" intro, watchable list.
-33. [ ] `deploy/boot.lua`: drop the unread `_G.ccnix` fields (`rom, overlay, roots, commit, updates`) (−3).
-34. [ ] `deploy/setup.lua`: hoist the telnetd block (−10); delete the half-clone cleanup and `/git.lua` removal (−28) once no device is in that state.
+31. [x] `sim/lib/mock.lua` `fsApi.getDir` real; `autostart_boot`, `turtlelib_datapath`, `turtlelib_stop` use `M.fsApi`/`M.shellApi` (−30).
+32. [x] `sim/README.md`: own-mocks list, "turtle programs" intro, watchable list.
+33. [x] `deploy/boot.lua`: drop the unread `_G.ccnix` fields (`rom, overlay, roots, commit, updates`) (−3).
+34. [x] `deploy/setup.lua`: hoist the telnetd block (−10) (done); delete the half-clone cleanup and `/git.lua` removal (−28) once no device is in that state.
 
 ### Phase 3: the decisions (after acceptance)
 
-35. [ ] D1: `boot.lua` checkout mode and `--end`; `install` writes two lines and strips `<repo>/` lines; `--no-reboot` runs boot; craftix shim stays in boot only (−100 net). Verified by item 3.
-36. [ ] D4a: `ccnix.autostart` + shim; readers, headers, README, mod README:20; regenerate help.
-37. [ ] D4b: index into `help/ccnix.txt`; `setup`'s ALWAYS; README:171.
-38. [ ] D4c: `00-ccnix.lua` (with 35).
-39. [ ] D4d if accepted: `setup` clones to `/ccnix`, moves `/cc-turtles` once; `CHECKOUT` goes; sims' `progDir`.
+35. [x] D1: `boot.lua` checkout mode and `--end`; `install` writes two lines and strips `<repo>/` lines; `--no-reboot` runs boot; craftix shim stays in boot only (−100 net). Verified by item 3.
+36. [x] D4a: `ccnix.autostart` + shim; readers, headers, README, mod README:20; regenerate help.
+37. [x] D4b: index into `help/ccnix.txt`; `setup`'s ALWAYS; README:171.
+38. [x] D4c: `00-ccnix.lua` (with 35).
+39. [x] D4d if accepted: `setup` clones to `/ccnix`, moves `/cc-turtles` once; `CHECKOUT` goes; sims' `progDir`.
 
 ### Phase 4: docs and the sibling
 
-40. [ ] README: Install section tells the startup story once and leads with the ROM path (−30); "Upgrading from before the folders" goes; "Simulators" defers to `sim/README.md` (−19).
-41. [ ] `lib/net.lua`: ARP fields in the wire-format section; mod `Ipv4.java` Javadoc trimmed to a pointer plus Java facts; `RomTest.java:37` uses `Rom.DIRS`; a test that every `.index` path starts with a `Rom.DIRS` entry.
-42. [ ] Bump `ccnix-mod`'s `ccnix/`, then ccnix's `mod/`; push all three repos.
-43. [ ] Mark this ADR Accepted with what was decided for D4d; write the architecture-decision skill into `ccnix-claude` from what this pass taught.
+40. [x] README: Install section tells the startup story once and leads with the ROM path (−30); "Upgrading from before the folders" goes; "Simulators" defers to `sim/README.md` (−19).
+41. [x] `lib/net.lua`: ARP fields in the wire-format section; mod `Ipv4.java` Javadoc trimmed to a pointer plus Java facts; `RomTest.java:37` uses `Rom.DIRS`; a test that every `.index` path starts with a `Rom.DIRS` entry.
+42. [x] Bump `ccnix-mod`'s `ccnix/`, then ccnix's `mod/`; push all three repos.
+43. [x] Mark this ADR Accepted with what was decided for D4d; write the architecture-decision skill into `ccnix-claude` from what this pass taught.
+
+## Verifying D4d on a device
+
+A computer or turtle installed at `/cc-turtles`, on a server without the mod:
+
+1. `wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua`
+   (the same apps as before, or none). Expect "Moved /cc-turtles to /ccnix,
+   where ccnix lives now.", "Updating /ccnix", install's "Put
+   /ccnix/deploy/boot.lua first in /startup.lua, and with --end last." (or
+   the `/startup/00-ccnix.lua` and `zz-ccnix.lua` form), then the reboot.
+2. After the reboot: `ls /` shows `ccnix` and no `cc-turtles`; `/startup.lua`
+   is the two `shell.run("/ccnix/deploy/boot.lua" ...)` lines and nothing
+   naming `/cc-turtles/` (folder: `00-ccnix.lua`, `zz-ccnix.lua`, none of the
+   old names).
+3. `which cat` → `/ccnix/bin/cat.lua`; `ls -a` shows dot files; `help ccnix`
+   ends with the command index; `ccnix` prints "/ccnix: a whole checkout at
+   …"; `set` lists `ccnix.autostart`, not `cc-turtles.autostart`.
+4. A turtle mid-job: `ls -a /ccnix/turtle` has `.turtlepos` and the job
+   files; the autostart resumes 5 s after boot; `mine --resume` / `farm
+   reset` find them.
+5. `ccnix update` runs `git pull /ccnix` and says to reboot.
