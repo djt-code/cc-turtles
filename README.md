@@ -11,12 +11,14 @@ installs it.
 The repo was called cc-turtles until 2026-10-29. A computer installed with
 `setup` keeps it in `/cc-turtles`, as setup still puts it.
 
-The repo is in four folders:
+The programs are in four folders (and `deploy/` installs them, `help/`
+is their help, `sim/` tests them):
 
 - `turtle/`: the turtle programs and `turtlelib`, the library they share;
 - `pc/`: programs for a plain computer;
 - `bin/`: the shell's utilities, `git` and ccsh, for any computer;
-- `lib/`: the modules the `bin/` programs require (`cu`, `regex`, `pager`).
+- `lib/`: the modules the programs require (`cu`, `regex`, `pager`, `net`,
+  `proc`, `telnet`, `jbod`).
 
 `deploy/install` puts `bin/` and `turtle/` (or `pc/`) on the path; see
 [Install](#install). On a server with the ccnix mod, they're in every
@@ -125,7 +127,7 @@ just those, with what they need and their help:
 | `telnet` | the [telnet](#telnet) client, and the network |
 | `telnetd` | the [telnet](#telnet) server as a service, with `init` and the network (then `set telnetd.password ...`) |
 
-`git` and `deploy/` always come. Options: `--autostart <app>` (a turtle
+`git`, `deploy/`, the pager and the help index always come. Options: `--autostart <app>` (a turtle
 runs it at every boot, see [Autostart](#autostart); on a computer,
 `router`: its status screen), `--ccsh` (ccsh at boot without naming
 it), `--no-reboot`, `--all`, `--skip <dir>`. For example, `setup router
@@ -1138,8 +1140,9 @@ computer hearing everything (as with rednet):
   winning. A packet carries a TTL (64), one less at each router. A router
   (`ip forward on`, or `router`) passes on packets for other addresses;
   a host takes only its own, `127.x.x.x`, and broadcasts
-  (`255.255.255.255`, or its network's last address), which never cross a
-  router.
+  (`255.255.255.255`, or its network's last address). `255.255.255.255`
+  never crosses a router; a broadcast addressed to another network's last
+  address is routed there and broadcast on arrival.
 - **ICMP:** echo and reply (`ping`), destination unreachable (no route:
   *net*, from the router that has none; no ARP answer: *host*; no program
   on that UDP port: *port*), and time exceeded when a TTL runs out (a
@@ -1452,10 +1455,12 @@ programs of any size this way; small ones can stay as they are.
 
 CC's `require` looks in the running program's own folder, so a program in
 `bin/` that uses a module in `lib/` adds that folder to its search path
-first, in one line before the first `require`:
+first, in one line before the first `require`: ccnix's `lib/` when the
+ROM's boot has set `ccnix.lib` (the updates in `/ccnix` first, then the
+ROM's), else the one beside `bin/`:
 
 ```lua
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path
 local cu = require("cu").init("cat", "cat [-u] [file...]")
 ```
 

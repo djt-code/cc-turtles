@@ -1,6 +1,6 @@
 network: setting up a network lab (3 computers, 2 networks, a router)
 
-The network stack (`help ip`) joins computers over modems, in layers: frames on a modem channel, ARP, IP with routing, ICMP and UDP. This sets up two networks with a router between them.
+The network stack (`help ip`) joins computers over modems, in layers: frames on a modem channel, ARP, IP with routing, ICMP, UDP and TCP. This sets up two networks with a router between them.
 
 Build it:
   R  the router, A and B the hosts
