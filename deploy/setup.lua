@@ -156,6 +156,20 @@ local function die(msg)
     error("", 0)
 end
 
+-- telnetd: a service init starts at every boot
+local function telnetdService()
+    for _, a in ipairs(apps) do
+        if a == "telnetd" then
+            settings.set("service.telnetd.cmd", "telnetd")
+            settings.set("service.telnetd.enabled", true)
+            settings.save()
+            if not settings.get("telnetd.password") then
+                print("telnetd needs a password: set telnetd.password <password> (then reboot, or service start telnetd)")
+            end
+        end
+    end
+end
+
 -- ccnix in ROM: the settings, an old install moved over, the updates
 if fs.exists("/rom/ccnix/.manifest") then
     local function find(path)
@@ -210,16 +224,7 @@ if fs.exists("/rom/ccnix/.manifest") then
         if #fs.list("/cc-turtles") == 0 then fs.delete("/cc-turtles") end
         print("Moved off /cc-turtles (an install from before ccnix): its startup lines and files are gone.")
     end
-    for _, a in ipairs(apps) do
-        if a == "telnetd" then
-            settings.set("service.telnetd.cmd", "telnetd")
-            settings.set("service.telnetd.enabled", true)
-            settings.save()
-            if not settings.get("telnetd.password") then
-                print("telnetd needs a password: set telnetd.password <password> (then reboot, or service start telnetd)")
-            end
-        end
-    end
+    telnetdService()
     if http then shell.run(find("bin/ccnix.lua"), "update")
     else print("HTTP is off here: no updates over the ROM's.") end
     shell.run(find("deploy/install.lua"), table.unpack(installArgs))
@@ -281,16 +286,5 @@ if fs.exists("/git.lua") and not fs.isDir("/git.lua") then
     end
 end
 
--- telnetd: a service init starts at every boot
-for _, a in ipairs(apps) do
-    if a == "telnetd" then
-        settings.set("service.telnetd.cmd", "telnetd")
-        settings.set("service.telnetd.enabled", true)
-        settings.save()
-        if not settings.get("telnetd.password") then
-            print("telnetd needs a password: set telnetd.password <password> (then reboot, or service start telnetd)")
-        end
-    end
-end
-
+telnetdService()
 shell.run(fs.combine(DIR, "deploy/install"), table.unpack(installArgs))
