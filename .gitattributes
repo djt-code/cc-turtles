@@ -1,0 +1,3 @@
+# Everything is text, stored with LF; Windows checkouts get LF too, so the
+# working tree matches the index and sed/heredocs never mix endings.
+* text=auto eol=lf
