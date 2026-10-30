@@ -206,7 +206,7 @@ check("diff: 2000 lines, 3 edits", r.out == lines({ "500c500", "< line 500", "--
     "1000d999", "< line 1000", "1500c1499", "< line 1500", "---", "> changed too" }), show(r.out))
 r = W:run("diff", "big1", "other")
 check("diff: 2000 lines, all different: one change", r.out:sub(1, 16) == "1,2000c1,2000\n< ", show(r.out:sub(1, 30)))
-check("diff: both quick", os.clock() - t0 < 2, string.format("%.2fs", os.clock() - t0))
+check("diff: both quick (under 2 s)", os.clock() - t0 < 2)
 
 -- a clock that runs 1s per call: the long loops must yield (queue an
 -- event and pull it back) and still give the same output
