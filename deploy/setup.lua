@@ -180,7 +180,7 @@ if fs.exists("/rom/ccnix/.manifest") then
                 for line in (text .. "\n"):gmatch("(.-)\n") do
                     if line:find("/cc-turtles", 1, true) then
                         changed = true
-                        local prog, rest = line:match('^shell%.run%("/cc%-turtles/%w+/([%w%-]+)(.-)"%)$')
+                        local prog, rest = line:match('^shell%.run%(["\']/cc%-turtles/%w+/([%w%-]+)(.-)["\']%)$')
                         if prog and prog ~= "ip" then out[#out + 1] = 'shell.run("' .. prog .. rest .. '")' end
                     else
                         out[#out + 1] = line
