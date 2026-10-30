@@ -53,6 +53,10 @@ local DROP = {
     ["minecraft:coal_ore"] = "minecraft:coal", ["minecraft:deepslate_gold_ore"] = "minecraft:raw_gold",
     ["minecraft:emerald_ore"] = "minecraft:emerald", ["modded:tin_vein"] = "modded:raw_tin",
     ["minecraft:wall_torch"] = "minecraft:torch",
+    -- what mow.lua cuts: a seed from every tile (in game one in eight), a stick from a dead bush
+    ["minecraft:short_grass"] = "minecraft:wheat_seeds", ["minecraft:tall_grass"] = "minecraft:wheat_seeds",
+    ["minecraft:fern"] = "minecraft:wheat_seeds", ["minecraft:large_fern"] = "minecraft:wheat_seeds",
+    ["minecraft:dead_bush"] = "minecraft:stick",
 }
 local FALLS = { ["minecraft:gravel"] = true, ["minecraft:sand"] = true }
 -- A torch block: standing (minecraft:torch) or, hung on a wall, as the
