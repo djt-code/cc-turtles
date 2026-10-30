@@ -38,10 +38,7 @@ for ttl = 1, maxHops do
         local ok, err = S.echo(dst, id, seq, ttl)
         if not ok then cu.fail(err, 2); return cu.exit() end
         -- (a reply: kind, from, id, seq, ttl; an error: kind, from, code, the packet it's about)
-        local kind, from, a = net.await("net_icmp", function(k, _, x, y)
-            if k == "reply" then return x == id and y == seq end
-            return type(y) == "table" and y.id == id and y.seq == seq
-        end, wait)
+        local kind, from, a = net.awaitEcho(id, seq, wait)
         local ms = os.epoch("utc") - t0
         if kind then
             if from ~= hop then line[#line + 1] = " " .. from; hop = from end

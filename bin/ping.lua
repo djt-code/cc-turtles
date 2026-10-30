@@ -35,10 +35,7 @@ for seq = 1, count do
     if not ok then cu.fail(err, 2); break end
     sent = sent + 1
     -- (a reply: kind, from, id, seq, ttl; an error: kind, from, code, the packet it's about)
-    local kind, from, a, b, c = net.await("net_icmp", function(k, _, x, y)
-        if k == "reply" then return x == id and y == seq end
-        return type(y) == "table" and y.id == id and y.seq == seq
-    end, wait)
+    local kind, from, a, b, c = net.awaitEcho(id, seq, wait)
     local ms = os.epoch("utc") - t0
     if kind == "reply" then
         got, total = got + 1, total + ms

@@ -925,6 +925,16 @@ function N.await(name, want, timeout)
     end
 end
 
+-- The ICMP answer to echo request id/seq (S.echo), waiting up to timeout
+-- seconds: the net_icmp event's values (a reply: "reply", from, id, seq,
+-- ttl; an error: its kind, from, code, the packet it's about), or nil.
+function N.awaitEcho(id, seq, timeout)
+    return N.await("net_icmp", function(k, _, x, y)
+        if k == "reply" then return x == id and y == seq end
+        return type(y) == "table" and y.id == id and y.seq == seq
+    end, timeout)
+end
+
 -- take() until it gives something (or timeout seconds pass: nil), waiting
 -- between tries for an event `name` about `v` (one can be about something
 -- already taken: try again).
