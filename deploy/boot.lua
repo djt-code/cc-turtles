@@ -65,11 +65,8 @@ local lib = {}
 for _, d in ipairs({ "lib", "turtle" }) do               -- (turtlelib is in turtle/)
     for _, r in ipairs(roots) do lib[#lib + 1] = r .. "/" .. d .. "/?.lua;" end
 end
-_G.ccnix = {
-    rom = ROM, overlay = OVER, roots = roots, find = find, lib = table.concat(lib),
-    commit = manifest.commit, updates = current and state.commit or nil,
-    stale = state ~= nil and not current,
-}
+_G.ccnix = { find = find, lib = table.concat(lib) }
+local stale = state ~= nil and not current
 
 if settings.get("craftix.login") ~= nil then            -- (the setting from when ccsh was Craftix)
     if settings.get("ccsh.login") == nil then settings.set("ccsh.login", settings.get("craftix.login")) end
@@ -90,7 +87,7 @@ shell.setPath(path)
 help.setPath(helpPath)
 local ls = find("bin/ls.lua")
 if ls then shell.setAlias("ls", ls) end
-if ccnix.stale then
+if stale then
     print("ccnix: this computer's updates were made for another ROM; `ccnix update` brings them back")
 end
 
