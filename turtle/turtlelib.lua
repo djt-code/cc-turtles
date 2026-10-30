@@ -878,6 +878,18 @@ function T.popFlag(args, flag)
     return found
 end
 
+-- Remove the first `flag` and the word after it; that word, or nil when
+-- the flag isn't there (a flag with nothing after it stays).
+function T.popValue(args, flag)
+    for i = 1, #args - 1 do
+        if args[i] == flag then
+            local v = args[i + 1]
+            table.remove(args, i); table.remove(args, i)
+            return v
+        end
+    end
+end
+
 --------------------------------------------------------------------------
 -- Plans
 --------------------------------------------------------------------------

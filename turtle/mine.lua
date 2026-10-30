@@ -186,16 +186,8 @@ resume = T.popFlag(args, "--resume")
 fresh = T.popFlag(args, "--new")
 lights = not T.popFlag(args, "--no-lights")
     and T.setting("mine.lights", true, "Light mined tunnels with torches in wall niches")
-spacingArg, homeArg = nil
-for i = #args - 1, 1, -1 do
-    if args[i] == "--spacing" then
-        spacingArg = tonumber(args[i + 1])
-        table.remove(args, i + 1); table.remove(args, i)
-    elseif args[i] == "--home" then
-        homeArg = tonumber(args[i + 1])
-        table.remove(args, i + 1); table.remove(args, i)
-    end
-end
+spacingArg, homeArg = T.popValue(args, "--spacing"), T.popValue(args, "--home")
+spacingArg, homeArg = spacingArg and tonumber(spacingArg), homeArg and tonumber(homeArg)
 doReset = args[1] == "reset"
 toStart = T.popFlag(args, "--to-start")
 doHaul = args[1] == "haul"

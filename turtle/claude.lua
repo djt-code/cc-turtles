@@ -88,18 +88,9 @@ local HTTP_TIMEOUT = 60         -- seconds with nothing coming in, at most 60 in
 local args = { ... }
 local MODEL, EFFORT, MAX_STEPS = "claude-opus-5-5", "medium", 60
 local CONFIRM = T.popFlag(args, "--confirm")
-local function popValue(flag)
-    for i = 1, #args - 1 do
-        if args[i] == flag then
-            local v = args[i + 1]
-            table.remove(args, i); table.remove(args, i)
-            return v
-        end
-    end
-end
-MODEL = popValue("--model") or MODEL
-EFFORT = popValue("--effort") or EFFORT
-local stepsArg = popValue("--steps")
+MODEL = T.popValue(args, "--model") or MODEL
+EFFORT = T.popValue(args, "--effort") or EFFORT
+local stepsArg = T.popValue(args, "--steps")
 MAX_STEPS = stepsArg and tonumber(stepsArg) or MAX_STEPS
 local goal = table.concat(args, " ")
 
