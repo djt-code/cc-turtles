@@ -71,7 +71,7 @@ elseif cmd == "mount" then
 elseif cmd == "add" and args[2] then
     local ok, why = pool().add(args[2])
     if ok then print(args[2] .. (why and (": " .. why) or " is in the pool now."))
-    else printError("fileserver: " .. why) end
+    else printError("fileserver: " .. why); _G.POSIX_STATUS = 1; error("", 0) end
 elseif cmd == "startup" then
     local line = ccnix and 'shell.run("fileserver mount")'
         or string.format('shell.run("%s mount")', "/" .. shell.getRunningProgram():gsub("%.lua$", ""))
@@ -93,5 +93,7 @@ elseif cmd == "startup" then
         print("Added to " .. target .. ": /" .. MOUNT .. " is mounted at every boot.")
     end
 else
-    print("Usage: fileserver [mount | add <drive> | startup]")
+    printError("Usage: fileserver [mount | add <drive> | startup]")
+    _G.POSIX_STATUS = 2
+    error("", 0)
 end
