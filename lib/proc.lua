@@ -31,6 +31,15 @@ local USER = { char = true, key = true, key_up = true, paste = true, terminate =
 P.USER = USER
 P.SIGNALS = { HUP = 1, INT = 2, KILL = 9, TERM = 15 }
 
+-- A signal as its name: "TERM", "SIGTERM", "term", "15" and 15 are all
+-- "TERM"; 0 and "0" are 0; nil for one that isn't known.
+function P.signal(s)
+    s = tostring(s):upper():gsub("^SIG", "")
+    if s == "0" then return 0 end
+    if P.SIGNALS[s] then return s end
+    for name, n in pairs(P.SIGNALS) do if tostring(n) == s then return name end end
+end
+
 local function copy(t)
     local c = {}
     for k, v in pairs(t) do c[k] = v end
@@ -251,19 +260,17 @@ function P.new(o)
     end
 
     -- Send a signal: TERM, INT and HUP are Ctrl+T (a terminate event);
-    -- KILL drops it at once; 0 only asks whether it's there.
+    -- KILL drops it at once; 0 only asks whether it's there.  sig is a
+    -- name or a number, as P.signal takes them; TERM when nil.
     function K.kill(pid, sig)
-        sig = sig or "TERM"
-        if type(sig) == "number" then
-            for name, n in pairs(P.SIGNALS) do if n == sig then sig = name end end
-        end
+        local name = P.signal(sig or "TERM")
         if pid == 1 then return false, "init can't be signalled" end
         local p = K.procs[pid]
         if not p then return false, "no such process" end
-        if sig == 0 or sig == "0" then return true end
-        if sig == "KILL" then
+        if name == 0 then return true end
+        if name == "KILL" then
             if p == K.current then p.killed = true else reap(p, false, "killed") end
-        elseif sig == "TERM" or sig == "INT" or sig == "HUP" then
+        elseif name == "TERM" or name == "INT" or name == "HUP" then
             K.inject(pid, "terminate")
         else
             return false, "unknown signal " .. tostring(sig)

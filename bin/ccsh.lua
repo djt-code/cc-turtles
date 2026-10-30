@@ -1338,18 +1338,21 @@ function builtins.wait(a, b)
     return st
 end
 function builtins.kill(a, b)
-    local k, hard = 2, false
-    if a[2] == "-9" or a[2] == "-KILL" then hard, k = true, 3
-    elseif a[2] == "-s" then hard, k = a[3] == "KILL" or a[3] == "9", 4
-    elseif a[2] == "-15" or a[2] == "-TERM" then k = 3 end
-    if not a[k] then b.err("kill: usage: kill [-9] %job|pid..."); return 2 end
+    -- a job gets Ctrl+T, or with KILL (9) is dropped at once; a process
+    -- (init's) gets the signal itself, and init says if it's unknown
+    local k, sig = 2, "TERM"
+    if a[2] == "-s" then sig, k = a[3], 4
+    elseif a[2] and a[2]:match("^%-.") and a[2] ~= "--" then sig, k = a[2]:sub(2), 3 end
+    if a[k] == "--" then k = k + 1 end
+    if not sig or not a[k] then b.err("kill: usage: kill [-s signal | -signal] %job|pid..."); return 2 end
+    local hard = (sig:upper():gsub("^SIG", "")) == "KILL" or sig == "9"
     local st = 0
     for j = k, #a do
         local job = findJob(a[j], true)
         local proc = rawget(_G, "proc")
         if not job and proc and a[j]:match("^%d+$") then
             -- not a job of ours: a process (init's)
-            local ok, err = proc.kill(tonumber(a[j]), hard and "KILL" or "TERM")
+            local ok, err = proc.kill(tonumber(a[j]), sig)
             if not ok then b.err("kill: " .. a[j] .. ": " .. err); st = 1 end
         elseif not job then
             b.err("kill: " .. a[j] .. ": no such job")

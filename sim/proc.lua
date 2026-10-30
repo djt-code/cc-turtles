@@ -158,6 +158,10 @@ local ok, why = K.kill(1)
 local ok2, why2 = K.kill(99)
 check("init can't be signalled; no such process", not ok and why == "init can't be signalled"
     and not ok2 and why2 == "no such process")
+check("P.signal: a name, SIG-name, number or numeric string; 0 is 0; unknown is nil",
+    P.signal("term") == "TERM" and P.signal("SIGTERM") == "TERM" and P.signal(15) == "TERM"
+    and P.signal("15") == "TERM" and P.signal("9") == "KILL" and P.signal(0) == 0 and P.signal("0") == 0
+    and P.signal("FOO") == nil and P.signal(99) == nil)
 drain()
 fakeOs.queueEvent("char", "q")
 drain()

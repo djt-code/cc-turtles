@@ -13,29 +13,24 @@
 
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("kill", "kill [-s signal | -signal] pid... | kill -l")
+local P = require("proc")              -- the module, for the signal names; the running init is _G.proc
 local args = { ... }
-local NAMES = { HUP = 1, INT = 2, KILL = 9, TERM = 15 }
 
 if args[1] == "-l" then
-    io.write("HUP INT KILL TERM\n")
+    local names = {}
+    for name in pairs(P.SIGNALS) do names[#names + 1] = name end
+    table.sort(names)
+    io.write(table.concat(names, " ") .. "\n")
     return cu.exit()
-end
-
--- "TERM", "SIGTERM", "15" -> "TERM" (0 -> 0); nil if unknown
-local function signal(s)
-    s = s:upper():gsub("^SIG", "")
-    if s == "0" then return 0 end
-    if NAMES[s] then return s end
-    for name, n in pairs(NAMES) do if tostring(n) == s then return name end end
 end
 
 local sig, i = "TERM", 1
 if args[1] == "-s" then
-    sig = args[2] and signal(args[2])
+    sig = args[2] and P.signal(args[2])
     if not sig then cu.usageError("unknown signal " .. tostring(args[2])) end
     i = 3
 elseif args[1] and args[1]:match("^%-.") and args[1] ~= "--" then
-    sig = signal(args[1]:sub(2))
+    sig = P.signal(args[1]:sub(2))
     if not sig then cu.usageError("unknown signal " .. args[1]:sub(2)) end
     i = 2
 end
