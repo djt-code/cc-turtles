@@ -464,14 +464,19 @@ function N.new(opts)
     ----------------------------------------------------------------------
     -- UDP sockets and ping
     ----------------------------------------------------------------------
+    -- An ephemeral port no socket, connection or listener has; nil if none.
+    local function freePort()
+        for _ = 1, 16384 do
+            nextPort = nextPort >= 65535 and EPHEMERAL or nextPort + 1
+            if not S.sockets[nextPort] and not S.tcpPorts[nextPort] and not S.listeners[nextPort] then return nextPort end
+        end
+    end
+
     function S.udpOpen(port)
         if port then
             if S.sockets[port] then return nil, "port " .. port .. " is in use" end
         else
-            for _ = 1, 16384 do
-                nextPort = nextPort >= 65535 and EPHEMERAL or nextPort + 1
-                if not S.sockets[nextPort] and not S.tcpPorts[nextPort] then port = nextPort; break end
-            end
+            port = freePort()
             if not port then return nil, "no free port" end
         end
         S.sockets[port] = { queue = {} }
@@ -730,14 +735,7 @@ function N.new(opts)
     function S.tcpConnect(dst, dport)
         dst = N.parseIP(dst)
         if not dst then return nil, "bad address" end
-        local lport
-        for _ = 1, 16384 do
-            nextPort = nextPort >= 65535 and EPHEMERAL or nextPort + 1
-            if not S.sockets[nextPort] and not S.tcpPorts[nextPort] and not S.listeners[nextPort] then
-                lport = nextPort
-                break
-            end
-        end
+        local lport = freePort()
         if not lport then return nil, "no free port" end
         local c = newTcb(lport, dst, dport, "SYN_SENT")
         S.tcpPorts[lport] = c
@@ -927,6 +925,20 @@ function N.await(name, want, timeout)
     end
 end
 
+-- take() until it gives something (or timeout seconds pass: nil), waiting
+-- between tries for an event `name` about `v` (one can be about something
+-- already taken: try again).
+local function poll(take, name, v, timeout)
+    local deadline = timeout and os.clock() + timeout
+    while true do
+        local got = take()
+        if got then return got end
+        local left = deadline and deadline - os.clock()
+        if left and left <= 0 then return nil end
+        N.await(name, function(x) return x == v end, left)
+    end
+end
+
 -- A UDP socket on `port` (nil: any free one).
 local Socket = {}
 Socket.__index = Socket
@@ -944,15 +956,9 @@ function Socket:send(host, port, data)
 end
 -- The next datagram's data, sender's address and port; nil on timeout.
 function Socket:receive(timeout)
-    local deadline = timeout and os.clock() + timeout
-    while true do
-        local d = self.S.udpTake(self.port)
-        if d then return d.data, d.src, d.sport end
-        -- (an event can be for a datagram already taken: wait on)
-        local left = deadline and deadline - os.clock()
-        if left and left <= 0 then return nil end
-        if not N.await("net_udp", function(port) return port == self.port end, left) then return nil end
-    end
+    local d = poll(function() return self.S.udpTake(self.port) end, "net_udp", self.port, timeout)
+    if not d then return nil end
+    return d.data, d.src, d.sport
 end
 function Socket:close() self.S.udpClose(self.port) end
 
@@ -962,13 +968,7 @@ local Conn = {}
 Conn.__index = Conn
 
 local function waitConn(conn, done, timeout)
-    local deadline = timeout and os.clock() + timeout
-    while not done() do
-        local left = deadline and deadline - os.clock()
-        if left and left <= 0 then return false end
-        N.await("net_tcp", function(id) return id == conn.c.id end, left)
-    end
-    return true
+    return poll(done, "net_tcp", conn.c.id, timeout) or false
 end
 
 -- Connect to host:port; the connection, or nil and why.  Waits up to
@@ -1029,14 +1029,8 @@ function N.listen(port)
 end
 -- The next connection made (nil after timeout seconds).
 function Listener:accept(timeout)
-    local deadline = timeout and os.clock() + timeout
-    while true do
-        local c = self.S.tcpAccept(self.port)
-        if c then return setmetatable({ S = self.S, c = c }, Conn) end
-        local left = deadline and deadline - os.clock()
-        if left and left <= 0 then return nil end
-        N.await("net_accept", function(p) return p == self.port end, left)
-    end
+    local c = poll(function() return self.S.tcpAccept(self.port) end, "net_accept", self.port, timeout)
+    return c and setmetatable({ S = self.S, c = c }, Conn)
 end
 -- A connection if one is waiting, without waiting.
 function Listener:poll()
