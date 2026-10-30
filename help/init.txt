@@ -7,6 +7,6 @@ init: processes and services: the first process
 
 CraftOS has no processes or background programs (only multishell's tabs, on advanced computers).  init is the nearest thing to Unix's: it runs every program as a process with a process ID, its own terminal and its own environment (see lib/proc.lua), and keeps services running in the background.  `ps` lists the processes, `kill` signals them and `service` starts, stops and sets up services.
 
-At boot (init.boot on: `deploy/install --init`) startup runs init last. It starts the services that are enabled, then the console: the autostart (cc-turtles.autostart: the miner, farmer, router...) if one is set, then ccsh if ccsh.login is on, then the CraftOS shell; each when the one before it ends.  Leaving that last shell shuts the computer down, as leaving CraftOS's own does.  Run by hand, init skips the autostart.
+At boot (init.boot on: `deploy/install --init`) startup runs init last. It starts the services that are enabled, then the console: the autostart (ccnix.autostart: the miner, farmer, router...) if one is set, then ccsh if ccsh.login is on, then the CraftOS shell; each when the one before it ends.  Leaving that last shell shuts the computer down, as leaving CraftOS's own does.  Run by hand, init skips the autostart.
 
 The keyboard and mouse go to the console; every other event to every process.  A program that computes for a long time without waiting holds everything up, as it does in CraftOS.

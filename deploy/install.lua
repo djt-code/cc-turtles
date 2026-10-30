@@ -14,7 +14,7 @@
 -- same from a checkout: bin/ (and turtle/ or pc/) on the path, help/ on
 -- the help path, `ls` ours, the network up while net.boot is on; and,
 -- with `--end`, what doesn't return: init (init.boot), or the autostart
--- (cc-turtles.autostart), then ccsh (ccsh.login).  The first line goes
+-- (ccnix.autostart), then ccsh (ccsh.login).  The first line goes
 -- first so a startup program that never returns (autocompost, say)
 -- doesn't keep it from running; `--end` goes last so the rest of startup
 -- runs first (a job that never returns means no ccsh until you stop it
@@ -26,10 +26,10 @@
 -- The options set the settings boot reads: --ccsh ccsh.login (`set
 -- ccsh.login false` stops it; exit leaves it for the stock prompt), --net
 -- net.boot (`ip up` at boot), --router that and net.forward, --init
--- init.boot (`help init`), --autostart <app> cc-turtles.autostart (on a
+-- init.boot (`help init`), --autostart <app> ccnix.autostart (on a
 -- turtle mine, farm, mow or autocompost, which turtle/autostart resumes
 -- after a reboot; on a computer router, pc/router's status screen; it's
--- --router too; `set cc-turtles.autostart ""` turns it off).
+-- --router too; `set ccnix.autostart ""` turns it off).
 -- --no-reboot runs boot in this shell instead of rebooting.
 --
 -- This file lives in deploy/, which isn't on the path itself; deploy/setup
@@ -139,7 +139,7 @@ if initBoot then
     print("init starts at boot: `help init`; ps, kill and service work then.")
 end
 if autostart then
-    settings.set("cc-turtles.autostart", autostart)
+    settings.set("ccnix.autostart", autostart)
     settings.save()
     print("At boot this " .. (turtle and "turtle" or "computer") .. " runs " .. autostart
         .. (turtle and ": `help autostart` says how." or " (its status screen; q leaves it, routing goes on)."))

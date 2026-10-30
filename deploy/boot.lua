@@ -27,7 +27,7 @@
 --
 -- What doesn't return goes at the end of startup: init (which runs the
 -- rest as processes) with init.boot set, or else the autostart
--- (cc-turtles.autostart), then ccsh (ccsh.login).  From the ROM, with any
+-- (ccnix.autostart), then ccsh (ccsh.login).  From the ROM, with any
 -- of those set, this runs the rest of startup itself (the other autoruns,
 -- the motd, the computer's startup files), then them, then a CraftOS
 -- shell; when that shell exits the computer shuts down, as it would have
@@ -88,6 +88,11 @@ if settings.get("craftix.login") ~= nil then            -- (the setting from whe
     settings.unset("craftix.login")
     settings.save()
 end
+if settings.get("cc-turtles.autostart") ~= nil then     -- (from when the repo was cc-turtles)
+    if settings.get("ccnix.autostart") == nil then settings.set("ccnix.autostart", settings.get("cc-turtles.autostart")) end
+    settings.unset("cc-turtles.autostart")
+    settings.save()
+end
 
 if not ending then
     local function addTo(path, dir)
@@ -113,7 +118,7 @@ if not ending then
 end
 
 -- The end of startup, if anything there doesn't return
-local auto = settings.get("cc-turtles.autostart", "")
+local auto = settings.get("ccnix.autostart", "")
 local autostart = auto ~= "" and (turtle and find("turtle/autostart.lua")
     or (not turtle and auto == "router" and find("pc/router.lua"))) or nil
 local init = settings.get("init.boot") and find("bin/init.lua") or nil

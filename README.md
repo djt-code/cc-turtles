@@ -197,7 +197,7 @@ install, and no disk used. At each boot `deploy/boot.lua` (run from
 `/rom/autorun`) puts `bin/` and `turtle/` or `pc/` on the path, `help/`
 on the help path, makes `ls` ours, and brings the network up while
 `net.boot` is on. With `init.boot`, `ccsh.login` or
-`cc-turtles.autostart` set, it runs those at the end of startup, after the
+`ccnix.autostart` set, it runs those at the end of startup, after the
 computer's own startup files. Programs find their libraries through
 `_G.ccnix`.
 
@@ -237,7 +237,7 @@ how.
 | `farm.width`, `farm.length` | none | the box `farm` learns when there's no saved farm |
 | `farm.repeat` | 20 | minutes between passes (0: one) |
 | `mow.width`, `mow.length`, `mow.repeat`, `mow.torches` | 16, 16, 0, true | the lawn, minutes between passes (0: one), torches |
-| `cc-turtles.autostart` | "" | what a turtle runs at boot |
+| `ccnix.autostart` | "" | what a turtle runs at boot |
 | `ccsh.login` | false | ccsh at boot |
 | `init.boot` | false | [init](#processes-and-services) at boot: processes, services |
 
@@ -248,8 +248,8 @@ A size given on the command line is saved: after `farm learn 9 12` or
 
 A turtle restarts whenever its chunk loads again (a player comes back, the
 server restarts), and a job then stops where it was. With
-`cc-turtles.autostart` set (`setup ... --autostart mine`, `install
---autostart mine`, or `set cc-turtles.autostart mine`), startup runs
+`ccnix.autostart` set (`setup ... --autostart mine`, `install
+--autostart mine`, or `set ccnix.autostart mine`), startup runs
 `turtle/autostart`, which waits 5 seconds (any key cancels, for the
 prompt) and then:
 
@@ -269,7 +269,8 @@ router`, `install --autostart router`): the network comes up with
 forwarding on, then the router's status screen (`q` leaves it; routing
 goes on).
 
-`set cc-turtles.autostart ""` turns it off.
+`set ccnix.autostart ""` turns it off. (The setting was
+`cc-turtles.autostart` until 2026-10-29; boot renames it.)
 
 ## git
 
@@ -1095,7 +1096,7 @@ it has nothing left to compost it sleeps until you give it more.
 - If the composter stays full for 10 seconds it asks whether the hopper below is
   full or missing, and keeps waiting.
 - To start it at boot: `deploy/install --autostart autocompost` (or `set
-  cc-turtles.autostart autocompost`; see [Autostart](#autostart)).
+  ccnix.autostart autocompost`; see [Autostart](#autostart)).
 
 ## Network
 
@@ -1278,7 +1279,7 @@ runs everything:
   mouse go to the console's process; every other event (timers, modems,
   redstone) to every process. A command runs in a CraftOS shell of its
   own, with the usual path, aliases and directory.
-- **The console:** the autostart first, if `cc-turtles.autostart` names one
+- **The console:** the autostart first, if `ccnix.autostart` names one
   (the miner, the farmer, the router's screen), then ccsh if
   `ccsh.login` is on, then the CraftOS shell, each when the one before
   ends. Leaving that last shell shuts the computer down, as leaving

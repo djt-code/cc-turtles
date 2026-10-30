@@ -12,7 +12,7 @@
 --
 -- At boot (init.boot on: `deploy/install --init`) startup runs init last.
 -- It starts the services that are enabled, then the console: the
--- autostart (cc-turtles.autostart: the miner, farmer, router...) if one
+-- autostart (ccnix.autostart: the miner, farmer, router...) if one
 -- is set, then ccsh if ccsh.login is on, then the CraftOS shell;
 -- each when the one before it ends.  Leaving that last shell shuts the
 -- computer down, as leaving CraftOS's own does.  Run by hand, init skips
@@ -54,7 +54,7 @@ _G.proc = K.api
 
 -- the console: each of these in turn
 local chain = {}
-local auto = settings.get("cc-turtles.autostart", "")
+local auto = settings.get("ccnix.autostart", "")
 if args[1] == "--boot" and auto ~= "" then
     if turtle and program("turtle/autostart") then chain[#chain + 1] = program("turtle/autostart")
     elseif auto == "router" and program("pc/router") then chain[#chain + 1] = program("pc/router") end

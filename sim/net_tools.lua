@@ -222,7 +222,7 @@ STORE["net.boot"], STORE["net.forward"] = nil, nil
 r = W:session({}, function() return W:osRun("cc-turtles/deploy/install.lua", { "--autostart", "router", "--no-reboot" }) end)
 local startup = W:read("startup.lua") or ""
 check("install --autostart router on a computer: net.boot and forwarding on, the router at boot; startup runs boot.lua first and `--end` last",
-    STORE["net.boot"] == true and STORE["net.forward"] == true and STORE["cc-turtles.autostart"] == "router"
+    STORE["net.boot"] == true and STORE["net.forward"] == true and STORE["ccnix.autostart"] == "router"
         and startup == 'shell.run("/cc-turtles/deploy/boot.lua")\nshell.run("/cc-turtles/deploy/boot.lua", "--end")\n',
     show(startup) .. show(r.out) .. show(r.errText))
 check("and, not rebooting, the network came up in this shell (forwarding)", _G.ccnet ~= nil and _G.ccnet.forward == true,

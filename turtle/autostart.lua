@@ -3,8 +3,8 @@
 -- Usage:  autostart          what startup runs (deploy/install puts it there)
 --         autostart --now    the same, without the 5 second wait
 --
--- Runs the program named by the setting cc-turtles.autostart (mine, farm,
--- mow or autocompost; `set cc-turtles.autostart farm`, or
+-- Runs the program named by the setting ccnix.autostart (mine, farm,
+-- mow or autocompost; `set ccnix.autostart farm`, or
 -- `deploy/install --autostart farm`).  A turtle reboots whenever its chunk
 -- loads again, so this is what keeps a job going.  It waits 5 seconds
 -- first: any key cancels, for the prompt.
@@ -27,7 +27,7 @@ package.path = (ccnix and ccnix.lib or "") .. package.path    -- (ccnix's turtle
 local T = require("turtlelib")
 
 local CHOICES = { mine = true, farm = true, mow = true, autocompost = true }
-local prog = settings.get("cc-turtles.autostart", "")
+local prog = settings.get("ccnix.autostart", "")
 if prog == "" then return end
 if not CHOICES[prog] then
     printError("autostart: can't start '" .. prog .. "' (mine, farm, mow or autocompost)")

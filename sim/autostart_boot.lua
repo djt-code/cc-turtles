@@ -1,7 +1,7 @@
 -- sim/autostart_boot.lua
 --
 -- turtle/autostart.lua at boot: what it runs for each program the setting
--- cc-turtles.autostart can name, from the job's files and the saved
+-- ccnix.autostart can name, from the job's files and the saved
 -- position: a tunnel dug when it went down is resumed (from the last home,
 -- going back there first if need be), a finished or self-stopped one is
 -- left alone, no tunnel starts one; a saved farm is farmed (home first),
@@ -47,22 +47,22 @@ local r, o
 r = boot("nothing set", {}, {})
 check("no autostart set: nothing runs", r == "", r)
 
-r = boot("mine, no tunnel", { ["cc-turtles.autostart"] = "mine" }, {})
+r = boot("mine, no tunnel", { ["ccnix.autostart"] = "mine" }, {})
 check("mine with no tunnel yet: a new one from the settings", r == "mine", r)
-r, o = boot("mine dug, at start", { ["cc-turtles.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 active", [".turtlepos"] = AT_START })
+r, o = boot("mine dug, at start", { ["ccnix.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 active", [".turtlepos"] = AT_START })
 check("a tunnel it went down in, at the start: mine --resume", r == "mine --resume", r)
 check("it says what it will do and waits", o:find("in 5 s", 1, true) ~= nil, o)
-r = boot("mine dug, at home 2", { ["cc-turtles.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 active", [".turtlepos"] = "0 0 32 2 flat" })
+r = boot("mine dug, at home 2", { ["ccnix.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 active", [".turtlepos"] = "0 0 32 2 flat" })
 check("at a home: straight to mine --resume", r == "mine --resume", r)
-r = boot("mine dug, mid-tunnel", { ["cc-turtles.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 active", [".turtlepos"] = "1 2 37 1 flat" })
+r = boot("mine dug, mid-tunnel", { ["ccnix.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 active", [".turtlepos"] = "1 2 37 1 flat" })
 check("elsewhere: mine reset, then mine --resume", r == "mine reset; mine --resume", r)
-r, o = boot("mine finished", { ["cc-turtles.autostart"] = "mine" }, { ["mine.job"] = "3 3 32 16 2 done", [".turtlepos"] = AT_START })
+r, o = boot("mine finished", { ["ccnix.autostart"] = "mine" }, { ["mine.job"] = "3 3 32 16 2 done", [".turtlepos"] = AT_START })
 check("a finished tunnel: nothing, and it says why", r == "" and o:find("finished", 1, true) ~= nil, o)
-r, o = boot("mine stopped", { ["cc-turtles.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 stopped", [".turtlepos"] = AT_START })
+r, o = boot("mine stopped", { ["ccnix.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 stopped", [".turtlepos"] = AT_START })
 check("a tunnel that stopped itself (out of chests): left to you", r == "" and o:find("stopped itself", 1, true) ~= nil, o)
 r = (function()
     S.files, SET, runs, out, EVENTS, failOn = { ["cc-turtles/mine.job"] = "3 3 0 16 2 active", ["cc-turtles/.turtlepos"] = AT_START },
-        { ["cc-turtles.autostart"] = "mine" }, {}, {}, {}, nil
+        { ["ccnix.autostart"] = "mine" }, {}, {}, {}, nil
     package.loaded.turtlelib = nil
     print = function() end
     pcall(assert(loadfile(PROJ .. "/turtle/autostart.lua")))
@@ -71,30 +71,30 @@ r = (function()
 end)()
 check("a job's files from before turtle/ still count", r == "mine --resume" and S.files[DIR .. "mine.job"] ~= nil, r)
 
-r, o = boot("farm, nothing", { ["cc-turtles.autostart"] = "farm" }, {})
+r, o = boot("farm, nothing", { ["ccnix.autostart"] = "farm" }, {})
 check("farm with no map and no size: nothing, and how to set one", r == "" and o:find("farm.width", 1, true) ~= nil, o)
-r = boot("farm, size set", { ["cc-turtles.autostart"] = "farm", ["farm.width"] = 9, ["farm.length"] = 9 }, {})
+r = boot("farm, size set", { ["ccnix.autostart"] = "farm", ["farm.width"] = 9, ["farm.length"] = 9 }, {})
 check("no map but a size in the settings: farm (learns it)", r == "farm", r)
-r = boot("farm, map, home", { ["cc-turtles.autostart"] = "farm" }, { ["farm.map"] = "x", [".turtlepos"] = AT_START })
+r = boot("farm, map, home", { ["ccnix.autostart"] = "farm" }, { ["farm.map"] = "x", [".turtlepos"] = AT_START })
 check("a saved farm, at home: farm", r == "farm", r)
-r = boot("farm, map, away", { ["cc-turtles.autostart"] = "farm" }, { ["farm.map"] = "x", [".turtlepos"] = "4 0 7 3 flat" })
+r = boot("farm, map, away", { ["ccnix.autostart"] = "farm" }, { ["farm.map"] = "x", [".turtlepos"] = "4 0 7 3 flat" })
 check("a saved farm, away from home: farm reset, then farm", r == "farm reset; farm", r)
 
-r = boot("mow, done", { ["cc-turtles.autostart"] = "mow", ["mow.repeat"] = 0 }, { [".turtlepos"] = AT_START })
+r = boot("mow, done", { ["ccnix.autostart"] = "mow", ["mow.repeat"] = 0 }, { [".turtlepos"] = AT_START })
 check("mow, a pass finished and no repeat: nothing", r == "", r)
-r = boot("mow, repeat", { ["cc-turtles.autostart"] = "mow", ["mow.repeat"] = 30 }, { [".turtlepos"] = AT_START })
+r = boot("mow, repeat", { ["ccnix.autostart"] = "mow", ["mow.repeat"] = 30 }, { [".turtlepos"] = AT_START })
 check("mow on repeat: mow", r == "mow", r)
-r = boot("mow, cut short", { ["cc-turtles.autostart"] = "mow" }, { [".turtlepos"] = "3 1 5 0 terrain" })
+r = boot("mow, cut short", { ["ccnix.autostart"] = "mow" }, { [".turtlepos"] = "3 1 5 0 terrain" })
 check("mow cut short: mow reset, then mow", r == "mow reset; mow", r)
 
-r = boot("autocompost", { ["cc-turtles.autostart"] = "autocompost" }, {})
+r = boot("autocompost", { ["ccnix.autostart"] = "autocompost" }, {})
 check("autocompost: autocompost", r == "autocompost", r)
-r, o = boot("claude", { ["cc-turtles.autostart"] = "claude" }, {})
+r, o = boot("claude", { ["ccnix.autostart"] = "claude" }, {})
 check("a program it can't start on its own: refused", r == "" and o:find("can't start", 1, true) ~= nil, o)
 
-r, o = boot("key", { ["cc-turtles.autostart"] = "farm" }, { ["farm.map"] = "x" }, { events = { { "key", 28 } } })
+r, o = boot("key", { ["ccnix.autostart"] = "farm" }, { ["farm.map"] = "x" }, { events = { { "key", 28 } } })
 check("a key in the 5 seconds cancels", r == "" and o:find("cancelled", 1, true) ~= nil, o)
-r = boot("now", { ["cc-turtles.autostart"] = "farm" }, { ["farm.map"] = "x" }, { args = { "--now" }, events = { { "key", 28 } } })
+r = boot("now", { ["ccnix.autostart"] = "farm" }, { ["farm.map"] = "x" }, { args = { "--now" }, events = { { "key", 28 } } })
 check("--now doesn't wait", r == "farm", r)
-r, o = boot("reset fails", { ["cc-turtles.autostart"] = "farm" }, { ["farm.map"] = "x", [".turtlepos"] = "4 0 7 3 flat" }, { fail = "farm reset" })
+r, o = boot("reset fails", { ["ccnix.autostart"] = "farm" }, { ["farm.map"] = "x", [".turtlepos"] = "4 0 7 3 flat" }, { fail = "farm reset" })
 check("a step that fails stops the rest", r == "farm reset" and o:find("didn't finish", 1, true) ~= nil, o)

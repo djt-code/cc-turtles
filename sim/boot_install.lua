@@ -181,7 +181,7 @@ W = world(true)
 W:dir("startup")
 W:file("startup/00-a.lua", "")
 W:file("startup/zz-b.lua", "")
-STORE["init.boot"], STORE["ccsh.login"], STORE["cc-turtles.autostart"] = true, true, "router"
+STORE["init.boot"], STORE["ccsh.login"], STORE["ccnix.autostart"] = true, true, "router"
 STORE["shell.allow_startup"] = true
 r = boot(W)
 check("init.boot (with ccsh.login and an autostart set too): a /startup folder's files in order, then init --boot alone; the autostart and ccsh are its",
@@ -189,18 +189,18 @@ check("init.boot (with ccsh.login and an autostart set too): a /startup folder's
     ran() .. " " .. show(r.errText))
 
 W = world(true)
-STORE["ccsh.login"], STORE["cc-turtles.autostart"] = true, "router"
+STORE["ccsh.login"], STORE["ccnix.autostart"] = true, "router"
 r = boot(W)
-check("no init: cc-turtles.autostart router on a computer runs pc/router, then ccsh, then the stock shell",
+check("no init: ccnix.autostart router on a computer runs pc/router, then ccsh, then the stock shell",
     ran() == END .. "rom/ccnix/pc/router.lua, rom/ccnix/bin/ccsh.lua, rom/programs/shell.lua", ran())
-STORE["cc-turtles.autostart"] = "mine"
+STORE["ccnix.autostart"] = "mine"
 r = boot(W)
 check("an autostart that isn't router does nothing on a computer (with no ccsh.login, nothing at all)",
     ran() == END .. "rom/ccnix/bin/ccsh.lua, rom/programs/shell.lua", ran())
 
 turtle = {}
 W = world(true)
-STORE["cc-turtles.autostart"] = "mine"
+STORE["ccnix.autostart"] = "mine"
 r = boot(W)
 check("a turtle: turtle/ on the path in place of pc/, and turtle/autostart runs what the setting names, then the stock shell",
     W.path == BASE .. ":/rom/ccnix/bin:/rom/ccnix/turtle"
@@ -212,6 +212,12 @@ STORE["craftix.login"] = true
 r = boot(W)
 check("craftix.login (ccsh's old name) becomes ccsh.login, and ccsh runs",
     STORE["ccsh.login"] == true and STORE["craftix.login"] == nil and ran() == END .. "rom/ccnix/bin/ccsh.lua, rom/programs/shell.lua",
+    ran())
+W = world(true)
+STORE["cc-turtles.autostart"] = "router"
+r = boot(W)
+check("cc-turtles.autostart (the setting's name when the repo was cc-turtles) becomes ccnix.autostart, and the router runs",
+    STORE["ccnix.autostart"] == "router" and STORE["cc-turtles.autostart"] == nil and ran() == END .. "rom/ccnix/pc/router.lua, rom/programs/shell.lua",
     ran())
 
 --------------------------------------------------------------------------
@@ -278,7 +284,7 @@ local names = W.fs.list("/startup")
 check("install with a /startup folder: 00-ccnix.lua (boot) and zz-ccnix.lua (--end) around the computer's own file, an earlier install's four gone; the settings set",
     r.ok and table.concat(names, " ") == "00-ccnix.lua 50-mine.lua zz-ccnix.lua"
         and W:read("startup/00-ccnix.lua") == FIRST .. "\n" and W:read("startup/zz-ccnix.lua") == LAST .. "\n"
-        and STORE["init.boot"] == true and STORE["cc-turtles.autostart"] == "router" and STORE["net.forward"] == true,
+        and STORE["init.boot"] == true and STORE["ccnix.autostart"] == "router" and STORE["net.forward"] == true,
     table.concat(names, " ") .. show(r.errText))
 local function folder()
     reset(W)
