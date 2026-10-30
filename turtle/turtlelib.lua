@@ -43,12 +43,14 @@ T.cfg = {
 -- Block names the move functions are allowed to dig through.
 T.diggable = {}
 
--- Fuel items.
-T.fuel = {
-    ["minecraft:coal"] = true, ["minecraft:charcoal"] = true,
-    ["minecraft:coal_block"] = true, ["minecraft:lava_bucket"] = true,
-    ["minecraft:blaze_rod"] = true, ["minecraft:dried_kelp_block"] = true,
+-- Fuel items, each with what one refuels (what CC:Tweaked gives: a
+-- furnace's burn time / 20); T.fuel is their set.
+T.FUEL_VALUE = {
+    ["minecraft:coal"] = 80, ["minecraft:charcoal"] = 80, ["minecraft:coal_block"] = 800,
+    ["minecraft:lava_bucket"] = 1000, ["minecraft:blaze_rod"] = 120, ["minecraft:dried_kelp_block"] = 200,
 }
+T.fuel = {}
+for name in pairs(T.FUEL_VALUE) do T.fuel[name] = true end
 
 -- Items dumpDown never throws away by default: fuel and torches.
 T.keep = { ["minecraft:torch"] = true }
@@ -278,12 +280,8 @@ function T.ensureFuel()
     end
 end
 
--- Fuel in tank plus the fuel value of the T.fuel items in the inventory
--- (what CC:Tweaked gives: a furnace's burn time / 20).  Burns nothing.
-T.FUEL_VALUE = {
-    ["minecraft:coal"] = 80, ["minecraft:charcoal"] = 80, ["minecraft:coal_block"] = 800,
-    ["minecraft:lava_bucket"] = 1000, ["minecraft:blaze_rod"] = 120, ["minecraft:dried_kelp_block"] = 200,
-}
+-- Fuel in tank plus the fuel value of the T.fuel items in the inventory.
+-- Burns nothing.
 function T.totalFuelAvailable()
     if turtle.getFuelLevel() == "unlimited" then return math.huge end
     local total = turtle.getFuelLevel()
