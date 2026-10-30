@@ -1197,8 +1197,8 @@ handled (ARP answered, pings replied to, packets forwarded, datagrams put
 in sockets) whenever anything on the computer waits for an event, which is
 nearly always, and `ip up` returns at once: the shell, ccsh, a farm or
 the router's screen carry on as usual. A program that computes for a long
-time without waiting holds the network up meanwhile. `ip boot` starts it
-at every boot (a line at the top of `/startup.lua`).
+time without waiting holds the network up meanwhile. `ip boot` sets the
+setting `net.boot`, which startup goes by to bring it up at every boot.
 
 **Setting up two networks and a router**, for example:
 

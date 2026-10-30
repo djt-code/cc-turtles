@@ -2,8 +2,9 @@
 --
 --   ip                               the interfaces, routes and whether it's up
 --   ip up | ip down                  start or stop the network on this computer
---   ip boot [off]                    start it at every boot (the setting net.boot;
---                                    setup's net and router apps turn it on)
+--   ip boot [off]                    start it at every boot: the setting net.boot,
+--                                    which startup goes by (setup's net and router
+--                                    apps turn it on)
 --   ip link                          the modems there are, and which are set up
 --   ip addr                          the interfaces' addresses and counts
 --   ip addr add <iface> <addr/len>   give an interface an address
@@ -93,37 +94,11 @@ elseif cmd == "up" then
 elseif cmd == "down" then
     out(net.down() and "down" or "it wasn't up")
 elseif cmd == "boot" then
-    -- the setting net.boot, which deploy/install's startup line goes by;
-    -- a startup from before that line gets one of its own
+    -- the setting net.boot: startup brings the network up while it's on
+    -- (deploy/boot under the ROM, deploy/install's startup line otherwise)
     local on = sub ~= "off"
     settings.set("net.boot", on)
     save()
-    local line = string.format('shell.run("/%s up")', (shell.getRunningProgram():gsub("%.lua$", "")))
-    if ccnix then out(on and "the network starts at boot" or "the network doesn't start at boot"); return end   -- (ccnix's boot goes by net.boot)
-    local target = fs.isDir("/startup") and "/startup/05-net.lua" or "/startup.lua"
-    local text, installed = "", false
-    for _, p in ipairs({ "/startup.lua", "/startup/00-cc-turtles.lua" }) do
-        if fs.exists(p) and not fs.isDir(p) then
-            local f = fs.open(p, "r")
-            local t = f.readAll() or ""
-            f.close()
-            if t:find("net.boot", 1, true) then installed = true end
-            if p == target then text = t end
-        end
-    end
-    if target ~= "/startup.lua" and fs.exists(target) then
-        local f = fs.open(target, "r"); text = f.readAll() or ""; f.close()
-    end
-    if on and not installed and not text:find(line, 1, true) then
-        local f = fs.open(target, "w")
-        f.write(line .. "\n" .. text)              -- first: it returns at once
-        f.close()
-    elseif not on and text:find(line .. "\n", 1, true) then
-        local s, e = text:find(line .. "\n", 1, true)
-        local f = fs.open(target, "w")
-        f.write(text:sub(1, s - 1) .. text:sub(e + 1))
-        f.close()
-    end
     out(on and "the network starts at boot" or "the network doesn't start at boot")
 elseif cmd == "link" then
     local cfg = net.config()
