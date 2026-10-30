@@ -107,20 +107,11 @@ function P.drawLine(l, left, w)
     end
 end
 
--- Print line `l` as print does, in its colours on a colour screen.
-local function printLine(l)
+-- Print line `l` (a row at most `w` wide) as print does; a coloured one
+-- in its colours on a colour screen.
+local function printLine(l, w)
     if type(l) ~= "table" or not l[2] or not colourScreen() then return print(textOf(l)) end
-    local text, fg = l[1], l[2]
-    local i = 1
-    while i <= #text do
-        local c = fg:sub(i, i)
-        local j = i
-        while j < #text and fg:sub(j + 1, j + 1) == c do j = j + 1 end
-        term.setTextColour(math.floor(2 ^ ((HEX:find(c ~= "" and c or "0", 1, true) or 1) - 1)))
-        write(text:sub(i, j))
-        i = j + 1
-    end
-    term.setTextColour(colours.white)
+    P.drawLine(l, 1, w)
     print()
 end
 
@@ -134,7 +125,7 @@ function P.page(src, opts)
     if not opts.always and #lines <= h - 1 and (widest <= w or opts.wrap) then
         local rows = opts.wrap and P.wrap(lines, w) or lines
         if #rows <= h - 1 then
-            for _, l in ipairs(lines) do printLine(l) end
+            for _, l in ipairs(rows) do printLine(l, w) end
             return
         end
     end
