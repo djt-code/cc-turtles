@@ -20,28 +20,12 @@ if not (os.environ and os.setenv) then
     return cu.exit()
 end
 
-local i, clear, drop = 1, false, {}
-while args[i] do
-    local a = args[i]
-    if a == "-i" or a == "-" then
-        clear = true
-    elseif a == "-u" then
-        i = i + 1
-        if not args[i] then cu.usageError("option requires an argument -- u", 125) end
-        drop[#drop + 1] = args[i]
-    elseif a == "--" then
-        i = i + 1
-        break
-    elseif a:sub(1, 1) == "-" then
-        cu.usageError("illegal option -- " .. a:sub(2, 2), 125)
-    else
-        break
-    end
-    i = i + 1
-end
-local set = {}
-while args[i] and args[i]:match("^[^=]+=") do
-    set[#set + 1] = { args[i]:match("^([^=]+)=(.*)$") }
+local opts, operands, order = cu.getopt(args, "iu:", 125)
+local drop = {}
+for _, o in ipairs(order) do if o[1] == "u" then drop[#drop + 1] = o[2] end end
+local set, i = {}, 1
+while operands[i] and operands[i]:match("^[^=]+=") do
+    set[#set + 1] = { operands[i]:match("^([^=]+)=(.*)$") }
     i = i + 1
 end
 
@@ -52,11 +36,11 @@ local function restore()
     for k in pairs(os.environ()) do os.setenv(k, nil) end
     for k, v in pairs(saved) do os.setenv(k, v) end
 end
-if clear then for k in pairs(saved) do os.setenv(k, nil) end end
+if opts.i then for k in pairs(saved) do os.setenv(k, nil) end end
 for _, n in ipairs(drop) do os.setenv(n, nil) end
 for _, p in ipairs(set) do os.setenv(p[1], p[2]) end
 
-local cmd = args[i]
+local cmd = operands[i]
 if not cmd then
     local env, names = os.environ(), {}
     for k in pairs(env) do names[#names + 1] = k end
@@ -71,7 +55,7 @@ if not shell.resolveProgram(cmd) then
     return cu.exit()
 end
 _G.POSIX_STATUS = nil
-local ok = shell.execute(cmd, table.unpack(args, i + 1))
+local ok = shell.execute(cmd, table.unpack(operands, i + 1))
 local status = _G.POSIX_STATUS or 0
 if not ok and status == 0 then status = 1 end
 restore()
