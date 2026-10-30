@@ -38,6 +38,8 @@ One cable, with VLANs: chain A, R and B on one cable, and give each network its 
 
 The real network: the ccnix mod (in the repo's mod/) adds a Network Gateway block, the server's way onto a CC network. Cable it to R's modem, give R an address on its network (`ip addr add back 10.0.0.2/24`, the gateway being 10.0.0.1) and `ip route add default via 10.0.0.1`. R's networks then reach the real network through the server, and real machines reach them, given the routes on the server's side (the mod's README).
 
+Names: `ip host b 10.0.2.20` on A lets `ping b` work.  With a way out through the gateway, `ip dns 1.1.1.1 9.9.9.9` (a primary and a secondary; one will do) on each computer lets real names work too: `ping example.com`, `nc example.com http`, `host example.com`.  The hosts are looked at first, then DNS; if the primary doesn't answer, the secondary is asked.
+
 Telnet: on B, `wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua telnetd`, then `set telnetd.password pick-one` and reboot. On A, `telnet 10.0.2.20` and the password: B's shell, on A's screen. Ctrl+] then q comes back. `set telnetd.attach console` on B shows its console instead (the miner's screen, say).
 
 When it doesn't work:
@@ -45,3 +47,4 @@ When it doesn't work:
   ip neigh    the addresses ARP has found
   router      on R: packets in, out, forwarded and dropped, and messages such as "no ARP answer"
   ping says   "net unreachable": a router has no route; "host unreachable": nobody answered ARP (wrong address, or not up); "time to live exceeded": routers pass it round in a loop
+  host says   "no DNS servers": `ip dns` sets them; "Temporary failure": no server answered (each one's reason in brackets: can the computer ping it?)

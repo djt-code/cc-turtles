@@ -2,18 +2,20 @@
 --
 --   ping [-c count] [-i seconds] [-t ttl] [-W seconds] host
 --
--- host is an address (10.0.2.5) or a name `ip host` knows.  Sends `count`
+-- host is an address (10.0.2.5) or a name: lib/netdb looks it up (`ip
+-- host`'s names, then DNS: `ip dns`).  Sends `count`
 -- (4) echo requests, `-i` (1) seconds apart, each waiting up to `-W` (2)
 -- seconds for its reply, and says what came back: a reply (its TTL, and
 -- the round trip in milliseconds), "destination unreachable" from a
 -- router or this computer (no route: net; no ARP answer: host), or time
 -- exceeded (the TTL ran out on the way: a routing loop, or -t too small).
 -- Exit status 0 if any reply came, 1 if none, 2 for trouble (the network
--- isn't up, an unknown host).
+-- isn't up, a name that can't be looked up).
 
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("ping", "ping [-c count] [-i seconds] [-t ttl] [-W seconds] host")
 local net = require("net")
+local netdb = require("netdb")
 local opts, operands = cu.getopt({ ... }, "c:i:t:W:")
 if #operands ~= 1 then cu.usageError() end
 local count = tonumber(opts.c or 4)
@@ -23,8 +25,9 @@ if not (count and interval and wait) or (opts.t and not ttl) then cu.usageError(
 local S, why = net.stack()
 if not S then cu.fail(why, 2); return cu.exit() end
 local host = operands[1]
-local dst = net.resolve(host)
-if not dst then cu.fail("unknown host " .. host, 2); return cu.exit() end
+local ai, why2 = netdb.getaddrinfo(host, nil, { socktype = netdb.SOCK_RAW })
+if not ai then cu.fail(host .. ": " .. why2, 2); return cu.exit() end
+local dst = net.parseIP(ai[1].addr)
 
 local id = math.random(1, 65535)
 local sent, got, total = 0, 0, 0

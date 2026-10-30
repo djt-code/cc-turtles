@@ -1,8 +1,9 @@
 -- telnet.lua -- a telnet client: another computer's shell or screen, here
 --
---   telnet host [port]          (port 23)
+--   telnet host [port]          (port 23, telnet)
 --
--- Connects over the network stack (`ip up`) and shows the other side's
+-- host is an address or a name (lib/netdb: `ip host`, then DNS); port a
+-- number or a service's name.  Connects over the network stack (`ip up`) and shows the other side's
 -- screen: telnetd on another computer (a shell, or its console), or any
 -- Telnet server that draws with ANSI escapes.  What you type goes there,
 -- arrows and all; the mouse and pasting too, if the server asks.  Ctrl+T
@@ -14,14 +15,17 @@
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("telnet", "telnet host [port]")
 local net = require("net")
+local netdb = require("netdb")
 local T = require("telnet")
 local args = { ... }
 if not args[1] or #args > 2 then cu.usageError() end
-local host, port = args[1], tonumber(args[2] or 23)
-if not port then cu.usageError("bad port " .. args[2]) end
+local host = args[1]
+local ai, why = netdb.getaddrinfo(host, args[2] or "telnet", { socktype = netdb.SOCK_STREAM })
+if not ai then cu.fail(host .. (args[2] and (" " .. args[2]) or "") .. ": " .. why); return cu.exit() end
+local addr, port = ai[1].addr, ai[1].port
 
-print("Connecting to " .. host .. " " .. port .. "...")
-local conn, err = net.connect(host, port, 15)
+print("Connecting to " .. host .. (addr ~= host and (" (" .. addr .. ")") or "") .. " " .. port .. "...")
+local conn, err = net.connect(addr, port, 15)
 if not conn then cu.fail(host .. " " .. port .. ": " .. err); return cu.exit() end
 
 local native = term.current()

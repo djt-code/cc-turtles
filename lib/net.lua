@@ -36,6 +36,9 @@
 --  * TCP (layer 4): connections carrying bytes, in order, sent again
 --    until acknowledged.  The least of RFC 9293 that still works with a
 --    real TCP stack: see "TCP" below for what's left out.
+--  * Names: lib/netdb.lua looks them up (net.hosts, then DNS) as C's
+--    netdb.h does, getaddrinfo and friends; net.resolve, and so connect
+--    and a socket's send, take a name wherever they take an address.
 --
 --   local conn = net.connect("10.0.2.5", 23)   -- or net.listen(23):accept()
 --   conn:send("hello\r\n"); local s = conn:read(5); conn:close()
@@ -821,10 +824,11 @@ end
 --------------------------------------------------------------------------
 -- net.if.<iface> = "10.0.1.5/24"; net.routes = "10.0.2.0/24 via 10.0.1.1,
 -- default via 10.0.1.1"; net.forward = true on a router; net.hosts =
--- "router=10.0.1.1, b=10.0.2.5".
+-- "router=10.0.1.1, b=10.0.2.5"; net.dns = "1.1.1.1, 9.9.9.9" (the DNS
+-- servers lib/netdb asks, primary first).
 function N.config(st)
     st = st or settings
-    local cfg = { ifaces = {}, routes = {}, forward = st.get("net.forward") == true, hosts = {} }
+    local cfg = { ifaces = {}, routes = {}, forward = st.get("net.forward") == true, hosts = {}, dns = {} }
     for _, name in ipairs(st.getNames()) do
         local iface = name:match("^net%.if%.(.+)$")
         if iface and st.get(name) and st.get(name) ~= "" then cfg.ifaces[iface] = st.get(name) end
@@ -837,6 +841,7 @@ function N.config(st)
         local name, ip = item:match("^%s*([^=%s]+)%s*=%s*(%S+)%s*$")
         if name then cfg.hosts[name] = ip end
     end
+    for ip in tostring(st.get("net.dns") or ""):gmatch("[^,%s]+") do cfg.dns[#cfg.dns + 1] = ip end
     return cfg
 end
 
@@ -863,7 +868,6 @@ function N.fromConfig(cfg)
         local ok, err = S.addRoute(r.net, r.gw, r.iface)
         if not ok then problems[#problems + 1] = r.net .. " via " .. r.gw .. ": " .. err end
     end
-    S.hosts = cfg.hosts
     return S, problems
 end
 
@@ -898,12 +902,15 @@ function N.stack()
     return nil, "the network isn't up: run `ip up`"
 end
 
--- An address from a name in net.hosts, or the address itself.
+-- The address (a number) "a.b.c.d" is, or a name's: lib/netdb's lookup
+-- (net.hosts, then DNS).  nil and why if there's none.
 function N.resolve(name)
     if N.parseIP(name) then return N.parseIP(name) end
-    local S = _G.ccnet
-    local h = S and S.hosts and S.hosts[name]
-    return h and N.parseIP(h) or nil
+    local ok, netdb = pcall(require, "netdb")
+    if not ok or type(netdb) ~= "table" then return nil, "unknown host " .. tostring(name) end
+    local h, why = netdb.gethostbyname(tostring(name))
+    if not h then return nil, tostring(name) .. ": " .. why end
+    return N.parseIP(h.addr_list[1])
 end
 
 -- Wait up to `timeout` seconds (nil: for ever) for an event `name` that
@@ -956,8 +963,8 @@ function N.udp(port)
     return setmetatable({ port = p, S = S }, Socket)
 end
 function Socket:send(host, port, data)
-    local dst = N.resolve(host)
-    if not dst then return false, "unknown host " .. tostring(host) end
+    local dst, why = N.resolve(host)
+    if not dst then return false, why end
     return self.S.udpSend(self.port, dst, port, data)
 end
 -- The next datagram's data, sender's address and port; nil on timeout.
@@ -982,8 +989,8 @@ end
 function N.connect(host, port, timeout)
     local S, why = N.stack()
     if not S then return nil, why end
-    local dst = N.resolve(host)
-    if not dst then return nil, "unknown host " .. tostring(host) end
+    local dst, why2 = N.resolve(host)
+    if not dst then return nil, why2 end
     local c, err = S.tcpConnect(dst, port)
     if not c then return nil, err end
     local conn = setmetatable({ S = S, c = c }, Conn)

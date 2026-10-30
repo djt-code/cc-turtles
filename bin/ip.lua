@@ -15,17 +15,21 @@
 --   ip neigh                         the ARP cache: addresses and their MACs
 --   ip forward [on|off]              route between interfaces (a router)
 --   ip host [<name> <addr>]          names for addresses (ping router)
+--   ip dns [<primary> [<secondary>] | off]
+--                                    the DNS servers names are looked up at
+--                                    after the hosts (lib/netdb); none: the
+--                                    hosts alone
 --
 -- An interface is a modem by its peripheral name ("back", "modem_0"), or a
 -- VLAN on one: "back.20" is VLAN 20 on the back modem, its own network on
 -- the same wire.  What's set is kept in settings (net.if.<iface>,
--- net.routes, net.forward, net.hosts) and applies at once if the network
+-- net.routes, net.forward, net.hosts, net.dns) and applies at once if the network
 -- is up.  The network runs alongside everything else once `ip up` has
 -- started it: see lib/net.lua.  `help network` walks through setting up
 -- two networks and a router.
 
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
-local cu = require("cu").init("ip", "ip [up|down|boot|link|addr|route|neigh|forward|host] ...")
+local cu = require("cu").init("ip", "ip [up|down|boot|link|addr|route|neigh|forward|host|dns] ...")
 local net = require("net")
 local args = { ... }
 
@@ -84,6 +88,8 @@ if cmd == nil then
     out(S and ("up" .. (S.forward and ", forwarding" or "")) or "down (ip up starts it)")
     showAddr(S)
     showRoutes(S)
+    local dns = net.config().dns
+    if #dns > 0 then out("dns " .. table.concat(dns, ", ")) end
 elseif cmd == "up" then
     local S2, problems = net.up()
     for _, p in ipairs(problems) do cu.err(p) end
@@ -189,12 +195,26 @@ elseif cmd == "host" then
         table.sort(t)
         settings.set("net.hosts", table.concat(t, ", "))
         save()
-        if S then S.hosts = hosts end
     end
     local names = {}
     for k in pairs(hosts) do names[#names + 1] = k end
     table.sort(names)
     for _, k in ipairs(names) do out(string.format("%-16s %s", k, hosts[k])) end
+elseif cmd == "dns" then
+    if sub == "off" then
+        settings.unset("net.dns")
+        save()
+    elseif sub then
+        if #args > 3 then cu.usageError("a primary and a secondary at most") end
+        for i = 2, #args do
+            if not net.parseIP(args[i]) then cu.usageError("bad address " .. args[i]) end
+        end
+        settings.set("net.dns", table.concat(args, ", ", 2))
+        save()
+    end
+    local dns = net.config().dns
+    if #dns == 0 then out("no DNS servers: names are the hosts' alone (ip host)") end
+    for i, ip in ipairs(dns) do out(string.format("%-10s %s", i == 1 and "primary" or "secondary", ip)) end
 else
     cu.usageError()
 end

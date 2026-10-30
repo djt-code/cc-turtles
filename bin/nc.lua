@@ -1,9 +1,13 @@
 -- nc.lua -- netcat: TCP connections and UDP datagrams over the network stack
 --
---   nc [-v] [-w seconds] host port          connect (TCP); typed lines go, what comes is printed
---   nc -l [-v] [-p port | port]             wait for one connection, then the same
---   nc -u [-v] [-p port] [-w seconds] host port      send each line as a UDP datagram
---   nc -u -l [-v] port                               print the datagrams that come to port
+--   nc [-nv] [-w seconds] host port         connect (TCP); typed lines go, what comes is printed
+--   nc -l [-nv] [-p port | port]            wait for one connection, then the same
+--   nc -u [-nv] [-p port] [-w seconds] host port     send each line as a UDP datagram
+--   nc -u -l [-nv] port                              print the datagrams that come to port
+--
+-- host is an address or a name, port a number or a service's name (http,
+-- echo...): lib/netdb looks them up (`ip host`, then DNS).  -n: numbers
+-- only, no lookups.
 --
 -- TCP (the default): each line of standard input goes down the connection
 -- with "\n" after it, and whatever comes back is printed as it arrives.
@@ -24,9 +28,20 @@
 
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("nc",
-    "nc [-v] [-w seconds] host port | nc -l [-v] [-p port | port] | nc -u [-v] [-p port] [-w seconds] host port | nc -u -l [-v] port")
+    "nc [-nv] [-w seconds] host port | nc -l [-nv] [-p port | port] | nc -u [-nv] [-p port] [-w seconds] host port | nc -u -l [-nv] port")
 local net = require("net")
-local opts, operands = cu.getopt({ ... }, "ulvp:w:")
+local netdb = require("netdb")
+local opts, operands = cu.getopt({ ... }, "ulnvp:w:")
+local socktype = opts.u and netdb.SOCK_DGRAM or netdb.SOCK_STREAM
+local numeric = opts.n and netdb.AI_NUMERICHOST + netdb.AI_NUMERICSERV or 0
+
+-- host and port (port alone: this computer's, to listen on), looked up:
+-- the address and port number, or nil after saying why.
+local function lookup(host, port)
+    local ai, why = netdb.getaddrinfo(host, port, { socktype = socktype, flags = numeric + (host and 0 or netdb.AI_PASSIVE) })
+    if ai then return ai[1].addr, ai[1].port end
+    cu.fail((host and (host .. " ") or "") .. tostring(port) .. ": " .. why, 2)
+end
 
 local S, why = net.stack()
 if not S then cu.fail(why, 2); return cu.exit() end
@@ -56,8 +71,9 @@ if opts.u then
     end
 
     if opts.l then
-        local port = tonumber(operands[1] or opts.p)
-        if not port or #operands > 1 then cu.usageError() end
+        if not (operands[1] or opts.p) or #operands > 1 then cu.usageError() end
+        local _, port = lookup(nil, operands[1] or opts.p)
+        if not port then return cu.exit() end
         local sock, err = net.udp(port)
         if not sock then cu.fail(err, 2); return cu.exit() end
         guarded(printing, sock)
@@ -66,10 +82,11 @@ if opts.u then
     end
 
     if #operands ~= 2 then cu.usageError() end
-    local host, port = operands[1], tonumber(operands[2])
-    if not port then cu.usageError("bad port " .. operands[2]) end
-    if not net.resolve(host) then cu.fail("unknown host " .. host, 2); return cu.exit() end
-    local sock, err = net.udp(opts.p and tonumber(opts.p))
+    local host, port = lookup(operands[1], operands[2])
+    if not host then return cu.exit() end
+    local from = opts.p and select(2, lookup(nil, opts.p))
+    if opts.p and not from then return cu.exit() end
+    local sock, err = net.udp(from)
     if not sock then cu.fail(err, 2); return cu.exit() end
     guarded(parallel.waitForAny,
         function()
@@ -89,8 +106,9 @@ end
 --------------------------------------------------------------------------
 local conn
 if opts.l then
-    local port = tonumber(operands[1] or opts.p)
-    if not port or #operands > 1 then cu.usageError() end
+    if not (operands[1] or opts.p) or #operands > 1 then cu.usageError() end
+    local _, port = lookup(nil, operands[1] or opts.p)
+    if not port then return cu.exit() end
     local l, err = net.listen(port)
     if not l then cu.fail(err, 2); return cu.exit() end
     guarded(function() conn = l:accept() end)
@@ -102,12 +120,12 @@ if opts.l then
     end
 else
     if #operands ~= 2 then cu.usageError() end
-    local host, port = operands[1], tonumber(operands[2])
-    if not port then cu.usageError("bad port " .. operands[2]) end
+    local host, port = lookup(operands[1], operands[2])
+    if not host then return cu.exit() end
     local err
     conn, err = net.connect(host, port)
-    if not conn then cu.fail(host .. " " .. port .. ": " .. err); return cu.exit() end
-    if opts.v then printError("connected to " .. host .. " " .. port) end
+    if not conn then cu.fail(operands[1] .. " " .. port .. ": " .. err); return cu.exit() end
+    if opts.v then printError("connected to " .. operands[1] .. (host ~= operands[1] and (" (" .. host .. ")") or "") .. " " .. port) end
 end
 
 local screen = cu.isTerminal()

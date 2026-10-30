@@ -111,8 +111,7 @@ plug(R, "right", "10.0.2.1/24", "lan2")
 plug(B, "back", "10.0.2.5/24", "lan2")
 assert(ME.addRoute("default", "10.0.1.1"))
 assert(B.addRoute("default", "10.0.2.1"))
-ME.hosts = { b = "10.0.2.5" }
-_G.ccnet = ME
+_G.ccnet = ME                       -- (b is `ip host`'s, above)
 
 r = W:run("ping", "-c", "2", "b")
 check("ping by name, through the router: 2 replies, TTL 63, the summary",
@@ -125,13 +124,15 @@ r = W:run("ping", "-c", "1", "172.16.0.9")
 check("ping where the router has no route: net unreachable from it", r.status == 1
     and r.out:find("from 10%.0%.1%.1: seq=1 destination net unreachable"), show(r.out))
 r = W:run("ping", "nowhere")
-check("ping an unknown name: status 2", r.status == 2 and r.errText:find("unknown host"), show(r.errText))
+check("ping an unknown name: status 2", r.status == 2 and r.errText:find("nowhere: Name or service not known"),
+    show(r.errText))
 
 r = W:run("traceroute", "-q", "1", "b")
 local lines = {}
 for l in r.out:gmatch("[^\n]+") do lines[#lines + 1] = l end
-check("traceroute: the router, then the host",
-    r.status == 0 and #lines == 3 and lines[2]:find("^ 1%s+10%.0%.1%.1") and lines[3]:find("^ 2%s+10%.0%.2%.5"), show(r.out))
+check("traceroute: the router, then the host (by its name from ip host)",
+    r.status == 0 and #lines == 3 and lines[2]:find("^ 1%s+10%.0%.1%.1  ") and lines[3]:find("^ 2%s+b %(10%.0%.2%.5%)"),
+    show(r.out))
 r = W:run("traceroute", "-q", "1", "172.16.0.9")
 check("traceroute to a network nobody routes: !N at the router", r.status == 1 and r.out:find("10%.0%.1%.1.*!N"),
     show(r.out))

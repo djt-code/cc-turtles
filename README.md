@@ -40,7 +40,7 @@ computer's ROM instead: see [ccnix](#ccnix-in-every-computers-rom).
 | `bin/ccsh.lua` | ccsh, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables and an environment for programs, globs, `$(...)`, background jobs with `fg`/`bg`/Ctrl+Z, and `/.profile`. See [ccsh](#ccsh). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
-| Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, UDP and TCP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc` makes TCP connections (and `nc -u` sends datagrams). See [Network](#network). |
+| Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `bin/host.lua`, `lib/net.lua`, `lib/netdb.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, UDP and TCP, and names (the host database, then DNS: getaddrinfo and friends). `ip` sets it up, `ping` and `traceroute` diagnose it, `nc` makes TCP connections (and `nc -u` sends datagrams), `host` asks DNS. See [Network](#network). |
 | Telnet (`bin/telnet.lua`, `bin/telnetd.lua`, `lib/telnet.lua`) | Another computer's shell, or its console (the miner's screen), over the network, in real Telnet with ANSI, so any telnet client works too. See [Telnet](#telnet). |
 | Processes (`bin/init.lua`, `bin/ps.lua`, `bin/kill.lua`, `bin/service.lua`, `lib/proc.lua`) | `init` runs every program as a process (an ID, its own terminal and environment) and keeps services running in the background, on any computer or turtle. `ps` lists the processes, `kill` signals them, `service` starts, stops and sets up services. See [Processes and services](#processes-and-services). |
 | `pc/router.lua` | Runs on a computer with an interface on each of several networks (modems, or VLANs on one): forwards between them, and shows a live status screen. |
@@ -158,7 +158,7 @@ just those, with what they need and their help:
 | `ccsh` | [ccsh](#ccsh), started at every boot |
 | `diskclone` | for a computer with a disk drive |
 | `fileserver` | its disk drives as one folder, `/jbod` |
-| `net` | the network: `ip`, `ping`, `traceroute`, `nc`, up at every boot |
+| `net` | the network: `ip`, `ping`, `traceroute`, `nc`, `host`, up at every boot |
 | `router` | the network, and `router` to route between networks: forwarding on, up at every boot |
 | `init` | [processes and services](#processes-and-services): `init` at boot, `ps`, `kill`, `service` |
 | `telnet` | the [telnet](#telnet) client, and the network |
@@ -1106,7 +1106,8 @@ it has nothing left to compost it sleeps until you give it more.
 ip                                 what's set up, and whether it's up
 ip addr add <iface> <addr/len>     ip route add <net/len|default> via <gw>
 ip up | ip down | ip boot          ip link | ip neigh | ip forward on|off | ip host <name> <addr>
-ping [-c n] [-t ttl] host          traceroute host
+ip dns <primary> [<secondary>]     host name | host address    (DNS)
+ping [-c n] [-t ttl] host          traceroute [-n] host
 nc host port | nc -l port          (TCP)    nc -u host port | nc -u -l port   (UDP)
 router                             (on a router: forwarding on, and a status screen)
 ```
@@ -1166,6 +1167,30 @@ computer hearing everything (as with rednet):
   local s, why = conn:read(5)            -- what came; nil and "closed" at the end
   conn:close()
   ```
+- **Names (`lib/netdb.lua`):** C's `netdb.h` in Lua: `getaddrinfo`,
+  `getnameinfo`, `gethostbyname`, `gethostbyaddr`, `getservbyname`,
+  `getservbyport`, `gai_strerror`, and `res_query` for DNS alone. A name
+  is looked up as `hosts: files dns` would: the host database first
+  (`net.hosts`, set with `ip host`, and `localhost`), then DNS, through
+  the servers `ip dns` sets (`net.dns`: a primary and, optionally, a
+  secondary). A question goes to the primary. If it doesn't answer in 2 s,
+  sends back an ICMP error or answers SERVFAIL or REFUSED, the secondary
+  is asked, and for the next minute the secondary goes first. A "no such
+  name" answer is final. Answers are kept for their TTL (5 minutes at
+  most). With no servers set, the host database is all there is. The DNS
+  is the least of RFC 1035: A, CNAME and PTR records over UDP, recursion
+  asked of a real resolver (reached through the mod's gateway). `ping`,
+  `traceroute`, `nc` and `telnet` take names (nc and telnet take service
+  names for ports too, `nc host http`), and so does `net.connect`;
+  `traceroute` shows each hop's name (`-n`: addresses only); `host` asks
+  DNS by hand. In Lua:
+
+  ```lua
+  local netdb = require("netdb")
+  local ai, why = netdb.getaddrinfo("example.com", "http", { socktype = netdb.SOCK_STREAM })
+  local conn = ai and net.connect(ai[1].addr, ai[1].port)
+  local name = netdb.getnameinfo("1.1.1.1")   -- "one.one.one.one"
+  ```
 
 **Bridging to a real network:** packets are Lua tables, but each field is
 the real header's (IP addresses as numbers, TCP's seq, ack, flags, window
@@ -1220,9 +1245,10 @@ traceroute 10.0.2.7
 ```
 
 What's set is kept in settings (`net.if.<iface>`, `net.routes`,
-`net.forward`, `net.hosts`), and changes apply at once while it's up.
-`ip host router 10.0.1.1` lets `ping router` work. There's no DHCP or DNS:
-addresses are set by hand. `help network` on a computer walks through a lab
+`net.forward`, `net.hosts`, `net.dns`), and changes apply at once while
+it's up. `ip host router 10.0.1.1` lets `ping router` work; with a way out
+(the gateway), `ip dns 1.1.1.1 9.9.9.9` lets real names work too. There's
+no DHCP: addresses are set by hand. `help network` on a computer walks through a lab
 of three computers, two networks and a router (with the one-cable VLAN
 variant and what to look at when it doesn't work); it's `doc/network.txt`.
 
