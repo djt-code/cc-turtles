@@ -134,7 +134,6 @@ local function netOf(ip, len)
     return math.floor(ip / size) * size
 end
 local function broadcastOf(ip, len) return netOf(ip, len) + 2 ^ (32 - len) - 1 end
-N.netOf, N.broadcastOf = netOf, broadcastOf
 
 function N.cidrString(ip, len) return N.ipString(ip) .. "/" .. len end
 
@@ -148,7 +147,7 @@ function N.new(opts)
     local S = {
         id = opts.id, forward = opts.forward or false,
         ifaces = {}, links = {}, routes = {}, arp = {}, pending = {}, sockets = {}, tcpPorts = {},
-        counters = { rx = 0, tx = 0, forwarded = 0, dropped = 0, arpAsked = 0 },
+        counters = { forwarded = 0, dropped = 0 },
         log = {},
     }
     local clock = opts.clock or os.clock
@@ -254,7 +253,6 @@ function N.new(opts)
     ----------------------------------------------------------------------
     local function sendFrame(ifc, dst, kind, data)
         ifc.tx = ifc.tx + 1
-        S.counters.tx = S.counters.tx + 1
         transmit(ifc, { ccnet = 1, dst = dst, src = ifc.mac, type = kind, data = data })
     end
 
@@ -262,7 +260,6 @@ function N.new(opts)
         local ifc = S.ifaces[p.iface]
         if not ifc then return end
         p.tries, p.next = p.tries + 1, clock() + ARP_RETRY
-        S.counters.arpAsked = S.counters.arpAsked + 1
         sendFrame(ifc, N.BROADCAST, "arp", { op = "request", sha = ifc.mac, spa = ifc.ip, tpa = p.ip })
         S.wantTick()
     end
@@ -423,7 +420,6 @@ function N.new(opts)
         if not ifc or f.src == ifc.mac then return end
         if f.dst ~= ifc.mac and f.dst ~= N.BROADCAST then return end
         ifc.rx = ifc.rx + 1
-        S.counters.rx = S.counters.rx + 1
         if f.type == "arp" then arpIn(ifc, f.data)
         elseif f.type == "ip" then ipIn(ifc, f.data) end
     end
@@ -842,23 +838,20 @@ function N.config(st)
 end
 
 -- A stack set up as cfg says, on this computer's modems.
-function N.fromConfig(cfg, env)
-    env = env or {}
-    local per = env.peripheral or peripheral
+function N.fromConfig(cfg)
     local S = N.new({
-        id = env.id or os.getComputerID(), forward = cfg.forward, clock = env.clock,
-        queue = env.queue, log = env.log,
-        transmit = function(ifc, frame) per.call(ifc.modem, "transmit", ifc.channel, ifc.channel, frame) end,
+        id = os.getComputerID(), forward = cfg.forward,
+        transmit = function(ifc, frame) peripheral.call(ifc.modem, "transmit", ifc.channel, ifc.channel, frame) end,
     })
     local problems = {}
     for iface, cidr in pairs(cfg.ifaces) do
         local modem, channel = N.link(iface)
         if not modem then
             problems[#problems + 1] = iface .. ": bad VLAN (1-4094)"
-        elseif per.getType(modem) ~= "modem" then
+        elseif peripheral.getType(modem) ~= "modem" then
             problems[#problems + 1] = iface .. ": no modem called " .. modem
         else
-            per.call(modem, "open", channel)
+            peripheral.call(modem, "open", channel)
             local ok, err = S.addInterface(iface, cidr)
             if not ok then problems[#problems + 1] = iface .. ": " .. err end
         end

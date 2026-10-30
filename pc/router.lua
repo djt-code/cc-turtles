@@ -24,8 +24,7 @@ package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunni
 local net = require("net")
 local args = { ... }
 
-settings.set("net.forward", true)
-settings.save()
+shell.run("ip", "forward", "on")
 
 if args[1] == "boot" then
     shell.run("ip", "boot")
