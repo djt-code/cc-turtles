@@ -35,6 +35,7 @@
 --    torch is light 14, so radius 13 is the limit and 12 leaves a margin.
 --    (Pre-1.18 servers spawn at light <= 7: use radius 6.)
 
+package.path = (ccnix and ccnix.lib or "") .. package.path    -- (ccnix's turtlelib, the updates' first)
 local T = require("turtlelib")
 
 local args = { ... }
