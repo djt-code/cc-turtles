@@ -10,9 +10,10 @@
 -- stock shell, then shutdown), on a computer and a turtle; the
 -- craftix.login shim; an install from before ccnix (/cc-turtles) left
 -- alone; install in ROM mode setting the settings only.  Then, with no
--- ROM, deploy/install's startup lines run one by one, and the files of a
--- /startup folder in turn: the same path, help path, alias and order for
--- a checkout.
+-- ROM, deploy/install's two lines (boot.lua first, `--end` last) in
+-- /startup.lua, or in a /startup folder's 00-ccnix.lua and zz-ccnix.lua,
+-- run as CraftOS would: the same path, help path, alias and order for a
+-- checkout, an earlier install's lines and files gone.
 --
 -- The programs that wouldn't return (ccsh, init, the autostarts) and ip
 -- are noted in RAN and not run; everything else runs for real.
@@ -232,52 +233,67 @@ check("install from the ROM: sets ccsh.login and net.boot, writes no startup fil
         and r.out:find("the settings take effect at the next boot", 1, true), show(r.out) .. show(r.errText))
 
 --------------------------------------------------------------------------
--- (d) no ROM: install's startup lines, run as CraftOS would
+-- (d) no ROM: install's two lines, run as CraftOS would
 --------------------------------------------------------------------------
-W = world(false)
-W:file("cc-turtles/deploy/install.lua", repoFile("deploy/install.lua"))
-for _, p in ipairs({ "ls", "cu", "ip", "ccsh" }) do W:install(p) end
+local FIRST, LAST = 'shell.run("/cc-turtles/deploy/boot.lua")', 'shell.run("/cc-turtles/deploy/boot.lua", "--end")'
+local function checkout()
+    local W = world(false)
+    W:file("cc-turtles/deploy/install.lua", repoFile("deploy/install.lua"))
+    W:file("cc-turtles/deploy/boot.lua", repoFile("deploy/boot.lua"))
+    for _, p in ipairs({ "ls", "cu", "ip", "ccsh", "init", "router" }) do W:install(p) end
+    return W
+end
+W = checkout()
+-- an earlier install's lines, with one of the computer's own between
+W:file("startup.lua", "if not (':' .. shell.path() .. ':'):find(':/cc-turtles/bin:', 1, true) then shell.setPath(shell.path() .. ':/cc-turtles/bin') end\n"
+    .. "print('mine')\n" .. 'if settings.get("ccsh.login") then shell.run("/cc-turtles/bin/ccsh") end\n')
 r = W:session({}, function() return W:osRun("cc-turtles/deploy/install.lua", { "--ccsh", "--net", "--no-reboot" }) end)
-check("install --ccsh --net --no-reboot on a checkout: the lines in /startup.lua, the settings set, and this shell gets the path (ip up ran)",
-    r.ok and STORE["ccsh.login"] == true and STORE["net.boot"] == true and W:read("startup.lua") ~= nil
-        and state(W) == want("/cc-turtles") and ran() == "cc-turtles/deploy/install.lua --ccsh --net --no-reboot, cc-turtles/bin/ip.lua up",
-    show(r.out) .. show(r.errText) .. " " .. ran())
+check("install --ccsh --net --no-reboot on a checkout: boot.lua first and `--end` last in /startup.lua, an earlier install's lines gone and the computer's own kept; the settings set; boot ran in this shell (the path, ip up)",
+    r.ok and W:read("startup.lua") == FIRST .. "\nprint('mine')\n" .. LAST .. "\n"
+        and STORE["ccsh.login"] == true and STORE["net.boot"] == true and state(W) == want("/cc-turtles")
+        and ran() == "cc-turtles/deploy/install.lua --ccsh --net --no-reboot, cc-turtles/deploy/boot.lua, cc-turtles/bin/ip.lua up",
+    show(W:read("startup.lua")) .. show(r.out) .. show(r.errText) .. " " .. ran())
+local startup = W:read("startup.lua")
+r = W:session({}, function() return W:osRun("cc-turtles/deploy/install.lua", { "--no-reboot" }) end)
+check("install again: the same two lines, and it says so", W:read("startup.lua") == startup and r.out:find("already", 1, true) ~= nil,
+    show(W:read("startup.lua")) .. show(r.out))
 reset(W)
-local failed = {}
-r = W:session({}, function()
-    local env = W:env("startup.lua", {})
-    for line in (W:read("startup.lua") or ""):gmatch("[^\n]+") do
-        local fn, e = load(line, "=startup", "t", env)
-        local ok, err = false, e
-        if fn then ok, err = pcall(fn) end
-        if not ok then failed[#failed + 1] = line .. ": " .. tostring(err) end
-    end
-    return true
-end)
-check("its lines, run one by one at boot: each runs", #failed == 0, table.concat(failed, "|"))
-check("and leave what boot leaves in ROM mode, for the checkout: path, help path, ls, ip up, then ccsh",
-    state(W) == want("/cc-turtles") and ran() == "cc-turtles/bin/ip.lua up, cc-turtles/bin/ccsh.lua", state(W) .. " " .. ran())
+r = W:session({}, function() return W:osRun("startup.lua", {}) end)
+check("startup.lua at boot: boot leaves what it does in ROM mode, for the checkout (path, help path, ls, _G.ccnix, ip up), the computer's line runs, then `--end` runs ccsh; no shell or shutdown of boot's own",
+    state(W) == want("/cc-turtles") and ccnix.find("bin/ls.lua") == "/cc-turtles/bin/ls.lua"
+        and ccnix.lib == "/cc-turtles/lib/?.lua;/cc-turtles/turtle/?.lua;" and r.out == "mine\n" and r.errText == ""
+        and ran() == "startup.lua, cc-turtles/deploy/boot.lua, cc-turtles/bin/ip.lua up, cc-turtles/deploy/boot.lua --end, cc-turtles/bin/ccsh.lua",
+    state(W) .. " " .. ran() .. " " .. show(r.out) .. show(r.errText))
 
--- with a /startup folder: install's own file first, the end of startup
--- in files of its own, run in the folder's order
-W = world(false)
-W:file("cc-turtles/deploy/install.lua", repoFile("deploy/install.lua"))
-for _, p in ipairs({ "ls", "cu", "ip", "ccsh", "init", "router" }) do W:install(p) end
+-- with a /startup folder: a file of install's at each end, an earlier
+-- install's four gone; run in the folder's order
+W = checkout()
 W:dir("startup")
+for _, old in ipairs({ "00-cc-turtles", "zx-init", "zy-autostart", "zz-ccsh" }) do W:file("startup/" .. old .. ".lua", "-- an earlier install's\n") end
+W:file("startup/50-mine.lua", "print('mine')\n")
 r = W:session({}, function()
     return W:osRun("cc-turtles/deploy/install.lua", { "--init", "--autostart", "router", "--ccsh", "--no-reboot" })
 end)
 local names = W.fs.list("/startup")
-check("install with a /startup folder: its path file first, then init, the autostart and ccsh, each a file of its own",
-    r.ok and table.concat(names, " ") == "00-cc-turtles.lua zx-init.lua zy-autostart.lua zz-ccsh.lua"
+check("install with a /startup folder: 00-ccnix.lua (boot) and zz-ccnix.lua (--end) around the computer's own file, an earlier install's four gone; the settings set",
+    r.ok and table.concat(names, " ") == "00-ccnix.lua 50-mine.lua zz-ccnix.lua"
+        and W:read("startup/00-ccnix.lua") == FIRST .. "\n" and W:read("startup/zz-ccnix.lua") == LAST .. "\n"
         and STORE["init.boot"] == true and STORE["cc-turtles.autostart"] == "router" and STORE["net.forward"] == true,
     table.concat(names, " ") .. show(r.errText))
-reset(W)
-r = W:session({}, function()
-    for _, name in ipairs(names) do W:osRun("startup/" .. name, {}) end
-    return true
-end)
-check("run in turn: the path and ip up, init --boot (which wouldn't return), the router, ccsh: boot's order",
-    state(W) == want("/cc-turtles") and ran() == "startup/00-cc-turtles.lua, cc-turtles/bin/ip.lua up, startup/zx-init.lua, "
-        .. "cc-turtles/bin/init.lua --boot, startup/zy-autostart.lua, cc-turtles/pc/router.lua, startup/zz-ccsh.lua, cc-turtles/bin/ccsh.lua",
+local function folder()
+    reset(W)
+    return W:session({}, function()
+        for _, name in ipairs(names) do W:osRun("startup/" .. name, {}) end
+        return true
+    end)
+end
+r = folder()
+check("run in turn: boot (the path, ip up), the computer's own, then `--end`: init --boot alone (the router and ccsh are its): boot's order",
+    state(W) == want("/cc-turtles") and r.out == "mine\n" and ran() == "startup/00-ccnix.lua, cc-turtles/deploy/boot.lua, cc-turtles/bin/ip.lua up, "
+        .. "startup/50-mine.lua, startup/zz-ccnix.lua, cc-turtles/deploy/boot.lua --end, cc-turtles/bin/init.lua --boot",
     state(W) .. " " .. ran())
+STORE["init.boot"] = nil
+r = folder()
+check("without init.boot, `--end` runs the autostart (the router), then ccsh",
+    ran() == "startup/00-ccnix.lua, cc-turtles/deploy/boot.lua, cc-turtles/bin/ip.lua up, startup/50-mine.lua, startup/zz-ccnix.lua, "
+        .. "cc-turtles/deploy/boot.lua --end, cc-turtles/pc/router.lua, cc-turtles/bin/ccsh.lua", ran())

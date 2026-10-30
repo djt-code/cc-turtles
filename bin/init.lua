@@ -37,7 +37,7 @@ if args[1] == "boot" then
     settings.set("init.boot", on)
     settings.save()
     if not on then print("init doesn't start at boot now.")
-    elseif not fs.exists("/startup.lua") and not fs.exists("/startup/zx-init.lua") then
+    elseif not (fs.exists("/startup.lua") or fs.exists("/startup/zz-ccnix.lua") or fs.exists("/rom/ccnix/.manifest")) then
         print("init.boot is on, but startup doesn't run init: run deploy/install.")
     else
         print("init starts at boot.")

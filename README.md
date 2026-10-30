@@ -107,8 +107,7 @@ wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua
 ```
 
 That fetches `git`, clones the repo into `/cc-turtles` and runs
-`deploy/install` (below), which puts the programs on the path and their
-help on the help path, and reboots. With nothing named it takes
+`deploy/install` (below), then reboots. With nothing named it takes
 everything the device runs: a computer's disk holds 1 MB and the whole
 repo nearly fills it, so it leaves out `sim/` always, `pc/` on a turtle
 and `turtle/` on a computer (`--all` for everything). Name apps to take
@@ -167,21 +166,22 @@ path:
 cc-turtles/deploy/install
 ```
 
-It adds lines to the top of `/startup.lua` (or writes
-`/startup/00-cc-turtles.lua` if `/startup` is a directory) that put the
-repo's `bin/` on the path at boot, and `turtle/` on a turtle or `pc/` on a
-computer, and `help/` on the help path (`help mine`, `help grep`; `help
-cc-turtles` lists them all), and make `ls` run the repo's `ls` instead of
-CraftOS's, and bring the [network](#network) up while the setting
-`net.boot` is on (`--net` turns it on; `--router` forwarding too; `ip boot`
-and `ip boot off` later), then reboots. `--no-reboot` puts them on the
-path in the current shell instead. Running it again changes nothing.
-`deploy/` and `lib/` aren't on the path, so `install` and `cu` don't
-become commands. At the end of startup goes the [autostart](#autostart)
-(`--autostart <app>` picks what it runs: a turtle's job, or a computer's
-router screen), then ccsh with `--ccsh`. With `--init` (the setting
-`init.boot`), [init](#processes-and-services) comes just before them and
-doesn't return: it starts the services, then runs those two itself.
+It writes two lines into `/startup.lua` (or, if `/startup` is a
+directory, into `/startup/00-ccnix.lua` and `/startup/zz-ccnix.lua`) that
+run `deploy/boot.lua`: one at the top, where it does from the checkout
+what the ROM's boot does ([below](#ccnix-in-every-computers-rom): the
+path, the help path (`help mine`, `help grep`; `help cc-turtles` lists
+them all), `ls`, the [network](#network) while `net.boot` is on), and
+`--end` at the bottom, where it runs what doesn't return: with `--init`
+(the setting `init.boot`), [init](#processes-and-services), which starts
+the services and then runs the two below itself; else the
+[autostart](#autostart) (`--autostart <app>`: a turtle's job, or a
+computer's router screen), then ccsh with `--ccsh`. `--net` turns
+`net.boot` on (`--router` forwarding too; `ip boot` and `ip boot off`
+later). Then it reboots; `--no-reboot` runs boot in the current shell
+instead. Lines an earlier install wrote go (every line naming the repo's
+folder), yours stay, and running it again changes nothing. `deploy/` and
+`lib/` aren't on the path, so `install` and `cu` don't become commands.
 
 The shell looks a program name up in each directory on the path in turn,
 `.lua` optional. Run from anywhere, a program still finds its modules
@@ -189,21 +189,14 @@ The shell looks a program name up in each directory on the path in turn,
 keeps its files (`.turtlepos`, `mine.job`, `farm.map`, `claude.key` ...)
 next to itself in `turtle/`, not in the current directory.
 
-**Upgrading from before the folders** (2026-10-28, when everything was in
-the repo's top folder): after `git pull`, run `cc-turtles/deploy/install`
-again. It swaps the old path line (and the shell's, from when it was
-called Craftix) for the new ones. A job's files left in the top folder (`.turtlepos`, `mine.job`,
-`mine.seg`, `farm.map`, `claude.key`) are moved into `turtle/` the first
-time the program looks for them, so `mine --resume` and `reset` carry on.
-
 ### ccnix: in every computer's ROM
 
 On a server running the ccnix mod ([mod/](mod/), a submodule), every
 computer has all of this in its ROM already, at `/rom/ccnix`: nothing to
 install, and no disk used. At each boot `deploy/boot.lua` (run from
-`/rom/autorun`) does what `install`'s startup lines do: `bin/` and
-`turtle/` or `pc/` on the path, `help/` on the help path, `ls`, and the
-network while `net.boot` is on. With `init.boot`, `ccsh.login` or
+`/rom/autorun`) puts `bin/` and `turtle/` or `pc/` on the path, `help/`
+on the help path, makes `ls` ours, and brings the network up while
+`net.boot` is on. With `init.boot`, `ccsh.login` or
 `cc-turtles.autostart` set, it runs those at the end of startup, after the
 computer's own startup files. Programs find their libraries through
 `_G.ccnix`.
@@ -378,8 +371,7 @@ What CraftOS can't do:
   hidden files only with the setting `list.show_hidden`), and aliases come
   before the path, so `deploy/install` makes `ls` an alias for `bin/ls`.
   `dir` stays CraftOS's `list`; `alias ls list` brings the old `ls` back
-  until the next boot. Run `deploy/install` again after `git pull` to get
-  the alias on a device installed before `ls` existed.
+  until the next boot.
 - `ls -l` has no owner, group or link-count columns (CraftOS has none):
   the mode (`d`, and no `w` on read-only files such as `/rom`), the size,
   the modification time and the name.
@@ -1102,8 +1094,8 @@ it has nothing left to compost it sleeps until you give it more.
   turtle.
 - If the composter stays full for 10 seconds it asks whether the hopper below is
   full or missing, and keeps waiting.
-- To start it at boot: `echo "shell.run('autocompost')" >> /startup.lua`
-  (`shell.run('/cc-turtles/turtle/autocompost')` if `turtle/` isn't on the path).
+- To start it at boot: `deploy/install --autostart autocompost` (or `set
+  cc-turtles.autostart autocompost`; see [Autostart](#autostart)).
 
 ## Network
 
