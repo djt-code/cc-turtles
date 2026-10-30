@@ -9,11 +9,11 @@
 --   ccnix reset      drop the updates: back to the ROM (files of your own
 --                    in /ccnix, a turtle's job files, stay)
 --
--- The ccnix mod puts cc-turtles in every computer's ROM, at /rom/ccnix;
+-- The ccnix mod puts this repo in every computer's ROM, at /rom/ccnix;
 -- deploy/boot.lua says how the two layers go together.  When the ROM is
 -- newer than the repo's branch, an update keeps nothing: the ROM is it.
 -- The server's admin updates the ROM itself (see the mod's README).  On a
--- server without the mod, cc-turtles is a checkout of its own
+-- server without the mod, ccnix is a checkout of its own
 -- (deploy/setup clones it into /cc-turtles), and update is a git pull of
 -- that.
 
@@ -66,8 +66,8 @@ if cmd == nil or cmd == "status" then
     end
     if not state then
         print(manifest and "Updates: none (ccnix update fetches any)"
-            or (fs.exists(CHECKOUT .. "/.gitlite") and "cc-turtles is a checkout of its own here: " .. CHECKOUT
-                or "No cc-turtles here: deploy/setup installs it."))
+            or (fs.exists(CHECKOUT .. "/.gitlite") and "ccnix is a checkout of its own here: " .. CHECKOUT
+                or "No ccnix here: deploy/setup installs it."))
     elseif state.lower == nil then
         print(string.format("%s: a whole checkout at %s, %d files", OVER, (state.commit or "?"):sub(1, 7), count(state.files)))
     else

@@ -7,4 +7,4 @@ ccnix: this computer's ccnix: where it comes from, and updates
   ccnix reset
       drop the updates: back to the ROM (files of your own in /ccnix, a turtle's job files, stay)
 
-The ccnix mod puts cc-turtles in every computer's ROM, at /rom/ccnix; deploy/boot.lua says how the two layers go together.  When the ROM is newer than the repo's branch, an update keeps nothing: the ROM is it. The server's admin updates the ROM itself (see the mod's README).  On a server without the mod, cc-turtles is a checkout of its own (deploy/setup clones it into /cc-turtles), and update is a git pull of that.
+The ccnix mod puts this repo in every computer's ROM, at /rom/ccnix; deploy/boot.lua says how the two layers go together.  When the ROM is newer than the repo's branch, an update keeps nothing: the ROM is it. The server's admin updates the ROM itself (see the mod's README).  On a server without the mod, ccnix is a checkout of its own (deploy/setup clones it into /cc-turtles), and update is a git pull of that.

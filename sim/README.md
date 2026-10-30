@@ -34,8 +34,8 @@ Or on a ComputerCraft computer or turtle, no Python needed. A clone
 leaves sim/ out, so name what the simulators need:
 
 ```
-wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/bin/git.lua /git-boot.lua
-git-boot clone https://github.com/djt-code/cc-turtles /cc-turtles --only sim/ --only turtle/ --only bin/ --only lib/
+wget https://raw.githubusercontent.com/djt-code/ccnix/main/bin/git.lua /git-boot.lua
+git-boot clone https://github.com/djt-code/ccnix /cc-turtles --only sim/ --only turtle/ --only bin/ --only lib/
 rm git-boot.lua
 cd /cc-turtles
 ```

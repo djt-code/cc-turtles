@@ -14,9 +14,9 @@ Usage:
 
   <url> is the repo's web URL, with or without .git:
     https://git.example.com/me/cc-turtles
-    https://github.com/mepholic/cc-turtles.git
+    https://github.com/djt-code/ccnix.git
 
 Bootstrap onto a turtle or computer: deploy/setup.lua does it all;
-  wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua
+  wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua
 
 --token is only needed for private repos (Forgejo access token or GitHub PAT); it is saved in .gitlite so pull can reuse it.

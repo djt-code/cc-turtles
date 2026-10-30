@@ -1,8 +1,15 @@
-# cc-turtles
+# ccnix
 
-Turtle programs for [CC: Tweaked](https://tweaked.cc/), built around a shared
-navigation library. Written for a single cheap turtle that swaps its tool
-upgrade in software.
+A small Unix-like distribution for [CC: Tweaked](https://tweaked.cc/)
+computers and turtles: a POSIX-style shell (ccsh) and utilities, git, a
+network stack (routing, TCP, telnet), init and services, and turtle programs
+built around a shared navigation library, written for a single cheap turtle
+that swaps its tool upgrade in software. The ccnix mod ([mod/](mod/)) puts it
+in every computer's ROM; on a server without the mod, `deploy/setup`
+installs it.
+
+The repo was called cc-turtles until 2026-10-29. A computer installed with
+`setup` keeps it in `/cc-turtles`, as setup still puts it.
 
 The repo is in four folders:
 
@@ -94,7 +101,7 @@ farm layout is kept).
 On the turtle or computer, with HTTP enabled on the server:
 
 ```
-wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua
+wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua
 ```
 
 That fetches `git`, clones the repo into `/cc-turtles` and runs
@@ -138,8 +145,8 @@ the folders it leaves out.
 By hand, the same is:
 
 ```
-wget https://raw.githubusercontent.com/djt-code/cc-turtles/main/bin/git.lua /git-boot.lua
-git-boot clone https://github.com/djt-code/cc-turtles /cc-turtles
+wget https://raw.githubusercontent.com/djt-code/ccnix/main/bin/git.lua /git-boot.lua
+git-boot clone https://github.com/djt-code/ccnix /cc-turtles
 rm git-boot.lua
 cc-turtles/deploy/install
 ```

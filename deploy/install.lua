@@ -1,4 +1,4 @@
--- install.lua -- put cc-turtles on the shell's search path, then reboot
+-- install.lua -- put ccnix (this repo) on the shell's search path, then reboot
 --
 -- Usage (from wherever the repo was cloned):
 --   cc-turtles/deploy/install [--ccsh] [--net] [--router] [--init] [--autostart <app>] [--no-reboot]

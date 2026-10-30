@@ -1,4 +1,4 @@
--- turtlelib.lua -- shared helpers for the cc-turtles programs
+-- turtlelib.lua -- shared helpers for the turtle programs
 --
 -- Usage in a program (same directory):
 --     local T = require("turtlelib")

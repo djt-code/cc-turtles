@@ -1,6 +1,6 @@
--- setup.lua -- put cc-turtles on a turtle or computer in one go
+-- setup.lua -- put ccnix (this repo) on a turtle or computer in one go
 --
---   wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua [app...]
+--   wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua [app...]
 --
 -- Apps (any number; none means everything for this kind of device):
 --   mine farm mow autocompost claude   turtle programs (with turtlelib,
@@ -54,8 +54,8 @@
 -- the apps named want (deploy/install).  The apps' files are all there
 -- either way.
 
-local REPO = "https://github.com/djt-code/cc-turtles"
-local RAW = "https://raw.githubusercontent.com/djt-code/cc-turtles/main/"
+local REPO = "https://github.com/djt-code/ccnix"
+local RAW = "https://raw.githubusercontent.com/djt-code/ccnix/main/"
 local DIR = "/cc-turtles"
 
 -- What each app needs.  A path ending in / is a whole folder.

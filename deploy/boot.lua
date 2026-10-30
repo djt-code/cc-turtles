@@ -1,6 +1,6 @@
 -- boot.lua -- ccnix at boot, on a server whose computers have it in ROM
 --
--- The ccnix mod puts cc-turtles' programs in every computer's ROM, at
+-- The ccnix mod puts this repo's programs in every computer's ROM, at
 -- /rom/ccnix, and runs this from /rom/autorun at each boot: no install.
 --
 -- Two layers.  /rom/ccnix is the server's copy (what the mod shipped, or

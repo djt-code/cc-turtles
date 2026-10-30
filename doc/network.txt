@@ -9,7 +9,7 @@ Build it:
 Keep the two cables apart: touching, they're one wire. The modems don't need right-clicking (that only shares peripherals); messages cross a cable either way.
 
 Install (HTTP on):
-  on R: wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua router --autostart router
+  on R: wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua router --autostart router
   on A and B: the same, with just net instead of router --autostart router
 Each reboots when done. The network then comes up at every boot (on R with forwarding on, and the router's screen).
 
@@ -38,7 +38,7 @@ One cable, with VLANs: chain A, R and B on one cable, and give each network its 
 
 The real network: the ccnix mod (in the repo's mod/) adds a Network Gateway block, the server's way onto a CC network. Cable it to R's modem, give R an address on its network (`ip addr add back 10.0.0.2/24`, the gateway being 10.0.0.1) and `ip route add default via 10.0.0.1`. R's networks then reach the real network through the server, and real machines reach them, given the routes on the server's side (the mod's README).
 
-Telnet: on B, `wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua telnetd`, then `set telnetd.password pick-one` and reboot. On A, `telnet 10.0.2.20` and the password: B's shell, on A's screen. Ctrl+] then q comes back. `set telnetd.attach console` on B shows its console instead (the miner's screen, say).
+Telnet: on B, `wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua telnetd`, then `set telnetd.password pick-one` and reboot. On A, `telnet 10.0.2.20` and the password: B's shell, on A's screen. Ctrl+] then q comes back. `set telnetd.attach console` on B shows its console instead (the miner's screen, say).
 
 When it doesn't work:
   ip          what's set, and whether it's up
