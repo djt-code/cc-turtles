@@ -126,8 +126,8 @@ check("a coloured line's rows keep their colours; a plain line stays a string",
         and rows[2][1] == "then" and rows[2][2] == "eeee" and rows[3] == "plain",
     string.format("%s/%s | %s/%s | %s", tostring(rows[1][1]), tostring(rows[1][2]),
         tostring(rows[2] and rows[2][1]), tostring(rows[2] and rows[2][2]), tostring(rows[3])))
-check("colourLine and blitOf: one colour for the whole line",
-    pager.colourLine("abc", 16384)[2] == "eee" and pager.blitOf(1) == "0" and pager.blitOf(32768) == "f")
+check("blitOf: a colour's blit digit",
+    pager.blitOf(16384) == "e" and pager.blitOf(1) == "0" and pager.blitOf(32768) == "f")
 local coloured = {}
 for i = 1, 20 do coloured[i] = i % 2 == 0 and { "red " .. i, string.rep("e", #("red " .. i)) } or ("plain " .. i) end
 local blits = {}

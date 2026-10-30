@@ -12,7 +12,7 @@
 -- In the list, a line can also be { text, fg }: fg gives each character's
 -- colour as term.blit does, one hex digit apiece ("0" white, "e" red, ...).
 -- On a colour screen the line is drawn in those colours; elsewhere as
--- plain text.  pager.colourLine(text, colour) makes one in a single colour.
+-- plain text.  pager.blitOf(colour) is a colour's digit.
 --
 -- Text that fits on the screen is just printed.  Anything longer or wider
 -- opens in a viewer: every line but the bottom one shows text, the bottom
@@ -58,11 +58,6 @@ function P.blitOf(colour)
     local n = 0
     while colour > 1 do colour = colour / 2; n = n + 1 end
     return HEX:sub(n + 1, n + 1)
-end
-
--- `text` as a line all in `colour`.
-function P.colourLine(text, colour)
-    return { text, string.rep(P.blitOf(colour), #text) }
 end
 
 -- `lines` wrapped to `w` columns at spaces (a word longer than a row is

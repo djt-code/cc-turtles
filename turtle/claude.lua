@@ -158,12 +158,9 @@ local shown = {}                -- the lines shown this session
 local seen = 0                  -- how many of them were out at the last prompt
 local screenPrint = print
 
--- The blit digit of a colour, as term.blit takes them ("0" white).
-local function blit(colour)
-    local n = 0
-    while colour > 1 do colour = colour / 2; n = n + 1 end
-    return ("0123456789abcdef"):sub(n + 1, n + 1)
-end
+-- The blit digit of a colour, as term.blit takes them ("0" white); with
+-- no pager to show colours, every line is plain.
+local function blit(colour) return pager and pager.blitOf(colour) or "0" end
 
 -- Keep `text`'s lines; `fg`, on a colour screen, is each character's
 -- colour (blit digits), and a line that isn't all white keeps it, for the
