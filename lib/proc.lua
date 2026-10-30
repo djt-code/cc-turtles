@@ -23,6 +23,8 @@
 --
 -- Programs reach it through _G.proc (init sets it): proc.spawn, kill,
 -- list, self, console, term, inject, wait, and the service functions.
+-- The module's P.serviceDef, serviceNames and serviceStatus read the
+-- settings' services without init (service.lua).
 
 local P = {}
 
@@ -59,6 +61,55 @@ local function envApi(env)
         end,
         environ = function() return copy(env) end,
     }
+end
+
+-- Service `name` as the settings (settingsT) define it: { cmd, restart,
+-- enabled }, or nil without a service.<name>.cmd.
+function P.serviceDef(name, settingsT)
+    settingsT = settingsT or settings
+    local cmd = settingsT.get("service." .. name .. ".cmd")
+    if type(cmd) ~= "string" or cmd == "" then return nil end
+    return { cmd = cmd, restart = settingsT.get("service." .. name .. ".restart") or "always",
+             enabled = settingsT.get("service." .. name .. ".enabled") == true }
+end
+
+-- The services defined in the settings, and those in `known` (a kernel's
+-- K.services), sorted.
+function P.serviceNames(settingsT, known)
+    settingsT = settingsT or settings
+    local names, seen = {}, {}
+    for _, key in ipairs(settingsT.getNames()) do
+        local n = key:match("^service%.(.+)%.cmd$")
+        if n and not seen[n] then seen[n] = true; names[#names + 1] = n end
+    end
+    for n in pairs(known or {}) do
+        if not seen[n] then seen[n] = true; names[#names + 1] = n end
+    end
+    table.sort(names)
+    return names
+end
+
+-- { name, state ("running", "restarting", "stopped", "exited", or
+-- "-" never started), pid, enabled, cmd, restarts, since, last, lines
+-- (what it last showed) } for each service: kernel K's, or the settings'
+-- alone without one (init isn't running).
+function P.serviceStatus(settingsT, K)
+    local out = {}
+    for _, name in ipairs(P.serviceNames(settingsT, K and K.services)) do
+        local svc, d = K and K.services[name] or {}, P.serviceDef(name, settingsT)
+        local lines = {}
+        if svc.term and svc.term.getLine then
+            local _, h = svc.term.getSize()
+            for y = 1, h do
+                local l = svc.term.getLine(y):gsub("%s+$", "")
+                if l ~= "" then lines[#lines + 1] = l end
+            end
+        end
+        out[#out + 1] = { name = name, state = svc.state or "-", pid = svc.pid, enabled = d and d.enabled or false,
+                          cmd = d and d.cmd, restarts = svc.restarts or 0, since = svc.since, last = svc.last,
+                          lines = lines }
+    end
+    return out
 end
 
 -- o: native (the terminal under everything), shell (the shell to run
@@ -303,27 +354,9 @@ function P.new(o)
     --------------------------------------------------------------------
     -- Services
     --------------------------------------------------------------------
-    local function def(name)
-        local cmd = settingsT.get("service." .. name .. ".cmd")
-        if type(cmd) ~= "string" or cmd == "" then return nil end
-        return { cmd = cmd, restart = settingsT.get("service." .. name .. ".restart") or "always",
-                 enabled = settingsT.get("service." .. name .. ".enabled") == true }
-    end
+    local function def(name) return P.serviceDef(name, settingsT) end
     K.serviceDef = def
-
-    -- The services defined in the settings, sorted.
-    function K.serviceNames()
-        local names, seen = {}, {}
-        for _, key in ipairs(settingsT.getNames()) do
-            local n = key:match("^service%.(.+)%.cmd$")
-            if n and not seen[n] then seen[n] = true; names[#names + 1] = n end
-        end
-        for n in pairs(K.services) do
-            if not seen[n] then seen[n] = true; names[#names + 1] = n end
-        end
-        table.sort(names)
-        return names
-    end
+    function K.serviceNames() return P.serviceNames(settingsT, K.services) end
 
     local launch
 
@@ -380,27 +413,7 @@ function P.new(o)
         return true
     end
 
-    -- { name, state ("running", "restarting", "stopped", "exited", or
-    -- "-" never started), pid, enabled, cmd, restarts, since, last, lines
-    -- (what it last showed) } for each service.
-    function K.serviceStatus()
-        local out = {}
-        for _, name in ipairs(K.serviceNames()) do
-            local svc, d = K.services[name] or {}, def(name)
-            local lines = {}
-            if svc.term and svc.term.getLine then
-                local _, h = svc.term.getSize()
-                for y = 1, h do
-                    local l = svc.term.getLine(y):gsub("%s+$", "")
-                    if l ~= "" then lines[#lines + 1] = l end
-                end
-            end
-            out[#out + 1] = { name = name, state = svc.state or "-", pid = svc.pid, enabled = d and d.enabled or false,
-                              cmd = d and d.cmd, restarts = svc.restarts or 0, since = svc.since, last = svc.last,
-                              lines = lines }
-        end
-        return out
-    end
+    function K.serviceStatus() return P.serviceStatus(settingsT, K) end
 
     -- Start the services enabled in the settings.
     function K.startServices()

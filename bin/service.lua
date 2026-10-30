@@ -18,6 +18,7 @@
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("service",
     "service [status [name] | start|stop|restart|enable|disable|remove name | add name command...]")
+local P = require("proc")               -- the module: the settings' services, when init isn't running
 local args = { ... }
 local action, name = args[1] or "list", args[2]
 local proc = rawget(_G, "proc")
@@ -30,7 +31,7 @@ local function needInit()
 end
 
 local function key(n, what) return "service." .. n .. "." .. what end
-local function defined(n) return type(settings.get(key(n, "cmd"))) == "string" end
+local function defined(n) return P.serviceDef(n) ~= nil end
 
 local function since(ms)
     if not ms then return "" end
@@ -39,22 +40,8 @@ local function since(ms)
     return math.floor(s / 3600) .. "h"
 end
 
--- the services as settings have them (when init isn't running)
-local function fromSettings()
-    local out, seen = {}, {}
-    for _, k in ipairs(settings.getNames()) do
-        local n = k:match("^service%.(.+)%.cmd$")
-        if n and not seen[n] then
-            seen[n] = true
-            out[#out + 1] = { name = n, state = "-", cmd = settings.get(k), enabled = settings.get(key(n, "enabled")) == true }
-        end
-    end
-    table.sort(out, function(a, b) return a.name < b.name end)
-    return out
-end
-
 if action == "list" or action == "status" then
-    local list = proc and proc.services() or fromSettings()
+    local list = proc and proc.services() or P.serviceStatus()
     if name then
         local keep = {}
         for _, s in ipairs(list) do if s.name == name then keep[1] = s end end
