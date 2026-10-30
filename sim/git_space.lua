@@ -26,8 +26,8 @@ end
 -- text; DATES (if set) the commits' times, as GitHub gives them
 local COMMITS, HEAD, DATES
 local function sha(path, text) return (path .. ":" .. #text .. ":" .. text:sub(1, 8)):gsub("[^%w]", "_") end
-local API = "https://api.github.com/repos/me/cc-turtles"
-local RAW = "https://raw.githubusercontent.com/me/cc-turtles/"
+local API = "https://api.github.com/repos/me/ccnix"
+local RAW = "https://raw.githubusercontent.com/me/ccnix/"
 local fetched
 http = {
     get = function(req)
@@ -137,7 +137,7 @@ local REPO = {
 
 realPrint("== a turtle clones: sim/ and pc/ left out")
 COMMITS, HEAD, files, CAP, turtle = { c1 = REPO }, "c1", {}, 50000, {}
-local ok, err = git("clone", "https://github.com/me/cc-turtles", "/cc-turtles")
+local ok, err = git("clone", "https://github.com/me/ccnix", "/cc-turtles")
 check("the clone finished", ok and said("Done: 5 files."), err)
 check("sim/ and pc/ aren't on the disk", not has("sim/mine_tunnel.lua") and not has("pc/diskclone.lua")
     and has("turtle/mine.lua") and has("bin/git.lua"))
@@ -146,19 +146,19 @@ check("it says what it left out", said("Leaving out sim/, pc/"))
 
 realPrint("== a computer clones: sim/ and turtle/ left out; --all keeps everything")
 files, turtle = {}, nil
-git("clone", "https://github.com/me/cc-turtles", "/cc-turtles")
+git("clone", "https://github.com/me/ccnix", "/cc-turtles")
 check("a computer gets pc/ and not turtle/", has("pc/diskclone.lua") and not has("turtle/mine.lua") and not has("sim/lib/mock.lua"))
 files = {}
-git("clone", "https://github.com/me/cc-turtles", "/cc-turtles", "--all")
+git("clone", "https://github.com/me/ccnix", "/cc-turtles", "--all")
 check("--all gets sim/ too", has("sim/lib/mock.lua") and has("turtle/mine.lua") and #state().skip == 0)
 files = {}
-git("clone", "https://github.com/me/cc-turtles", "/cc-turtles", "--skip", "lib/")
+git("clone", "https://github.com/me/ccnix", "/cc-turtles", "--skip", "lib/")
 check("--skip adds to the device's rule", not has("lib/cu.lua") and not has("sim/lib/mock.lua")
     and table.concat(state().skip, ",") == "sim,turtle,lib")
 
 realPrint("== the disk fills during a clone, then there's room")
 files, CAP, turtle = { ["junk.txt"] = string.rep("j", 4000) }, 11000, {}
-ok, err = git("clone", "https://github.com/me/cc-turtles", "/cc-turtles")
+ok, err = git("clone", "https://github.com/me/ccnix", "/cc-turtles")
 check("it stops with a clear message", not ok, err)
 check(".gitlite keeps what it got, with no commit", state() and state().commit == nil and next(state().files) ~= nil)
 local before = 0
@@ -173,7 +173,7 @@ realPrint("== a checkout from before the device rule")
 local old = {}
 for p, t in pairs(REPO) do files["cc-turtles/" .. p] = t end
 for p, t in pairs(REPO) do old[p] = sha(p, t) end
-files["cc-turtles/.gitlite"] = json.encode({ url = "https://github.com/me/cc-turtles", branch = "main", commit = "c1", files = old })
+files["cc-turtles/.gitlite"] = json.encode({ url = "https://github.com/me/ccnix", branch = "main", commit = "c1", files = old })
 CAP = 100000
 ok = git("pull", "/cc-turtles")
 check("its next pull drops sim/ and pc/, even with no new commit", ok and not has("sim/mine_tunnel.lua")
@@ -196,7 +196,7 @@ for i = 1, 6 do
     NEWL["bin/p" .. i .. ".lua"] = OLDL["p" .. i .. ".lua"]
 end
 COMMITS, HEAD, files, CAP = { o1 = OLDL, n1 = NEWL }, "o1", {}, 100000
-git("clone", "https://github.com/me/cc-turtles", "/cc-turtles")
+git("clone", "https://github.com/me/ccnix", "/cc-turtles")
 HEAD, CAP = "n1", used() + 5000
 ok = git("pull", "/cc-turtles")
 local top, bin = 0, 0
@@ -208,7 +208,7 @@ check("every file is in bin/ and none is left at the top", ok and top == 0 and b
 
 realPrint("== --only: just the files and folders named; a pull changes the choice")
 COMMITS, HEAD, files, CAP, turtle = { c1 = REPO }, "c1", {}, 100000, {}
-ok = git("clone", "https://github.com/me/cc-turtles", "/cc-turtles", "--only", "turtle/mine.lua", "--only", "bin/")
+ok = git("clone", "https://github.com/me/ccnix", "/cc-turtles", "--only", "turtle/mine.lua", "--only", "bin/")
 check("only turtle/mine.lua and bin/", ok and has("turtle/mine.lua") and has("bin/cat.lua") and has("bin/git.lua")
     and not has("lib/cu.lua") and not has("README.md"))
 ok = git("pull", "/cc-turtles", "--only", "lib/", "--only", "bin/git.lua")
@@ -248,7 +248,7 @@ COMMITS, HEAD, files, CAP, turtle = { c1 = REPO, c2 = REPO2 }, "c1", {}, 200000,
 DATES = { c1 = "2026-10-01T00:00:00Z", c2 = "2026-10-20T12:00:00+02:00" }
 rom("c1", 1790812800, REPO)
 local only = { "--only", "bin/", "--only", "lib/", "--only", "pc/" }
-ok = git("clone", "https://github.com/me/cc-turtles", "/ccnix", "--lower", "/rom/ccnix", table.unpack(only))
+ok = git("clone", "https://github.com/me/ccnix", "/ccnix", "--lower", "/rom/ccnix", table.unpack(only))
 check("over a ROM at the branch's commit: nothing fetched", ok and #fetched == 0 and next(over().files) == nil,
     #fetched .. " fetched")
 check("the overlay remembers the ROM and its commit", over().lower == "/rom/ccnix" and over().lowerCommit == "c1")
@@ -277,7 +277,7 @@ files["ccnix/.gitlite"] = nil
 for k in pairs(files) do if k:match("^ccnix/") then files[k] = nil end end
 rom("c1", 1790812800, REPO)
 files["rom/ccnix/.manifest"] = nil
-ok = git("clone", "https://github.com/me/cc-turtles", "/ccnix", "--lower", "/rom/ccnix", table.unpack(only))
+ok = git("clone", "https://github.com/me/ccnix", "/ccnix", "--lower", "/rom/ccnix", table.unpack(only))
 check("no manifest under it: a whole checkout of what's asked for", ok and inOver("bin/cat.lua") and inOver("bin/git.lua")
     and inOver("lib/new.lua") and not inOver("README.md"))
 DATES = nil

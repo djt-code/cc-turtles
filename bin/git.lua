@@ -32,7 +32,7 @@
 --   git log    [dir] [-n <count>]
 --
 --   <url> is the repo's web URL, with or without .git:
---     https://git.example.com/me/cc-turtles
+--     https://git.example.com/me/ccnix
 --     https://github.com/djt-code/ccnix.git
 --
 -- Bootstrap onto a turtle or computer: deploy/setup.lua does it all;
