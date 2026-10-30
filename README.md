@@ -100,6 +100,44 @@ farm layout is kept).
 
 ## Install
 
+### ccnix: in every computer's ROM
+
+On a server running the ccnix mod ([mod/](mod/), a submodule), every
+computer has all of this in its ROM already, at `/rom/ccnix`: nothing to
+install, and no disk used. At each boot `deploy/boot.lua` (run from
+`/rom/autorun`) puts `bin/` and `turtle/` or `pc/` on the path, `help/`
+on the help path, makes `ls` ours, and brings the network up while
+`net.boot` is on. With `init.boot`, `ccsh.login` or
+`ccnix.autostart` set, it runs those at the end of startup, after the
+computer's own startup files. Programs find their libraries through
+`_G.ccnix`.
+
+Updates come without the server's admin. `ccnix update` pulls the latest
+from the repo into `/ccnix`, keeping only the files that differ from the
+ROM's: a few files, not the whole repo.
+- **From the next boot**, each program, library and help page comes from
+  `/ccnix` if it's there, else from the ROM. `ccnix` says what's in use,
+  and `ccnix reset` goes back to the ROM.
+- **When the server's copy changes** (the mod, or the server's own
+  checkout), updates made against the old one are left out until
+  `ccnix update` makes them again. They could pair a program with another
+  version's library.
+- **When the ROM is newer than the branch,** an update keeps nothing.
+- **Files deleted upstream** are still in the ROM until the server's copy
+  catches up.
+
+The server's admin updates the ROM itself with git: the mod's README says
+how.
+
+`setup` on such a server clones nothing:
+- it sets what the apps named want;
+- it moves an install from before ccnix (`/cc-turtles`) over: its startup
+  lines and files go, and a turtle's job files move to `/ccnix/turtle`
+  the next time the program looks for them;
+- it runs `ccnix update`.
+
+### Without the mod: `setup`
+
 On the turtle or computer, with HTTP enabled on the server:
 
 ```
@@ -169,7 +207,7 @@ ccnix/deploy/install
 It writes two lines into `/startup.lua` (or, if `/startup` is a
 directory, into `/startup/00-ccnix.lua` and `/startup/zz-ccnix.lua`) that
 run `deploy/boot.lua`: one at the top, where it does from the checkout
-what the ROM's boot does ([below](#ccnix-in-every-computers-rom): the
+what the ROM's boot does ([above](#ccnix-in-every-computers-rom): the
 path, the help path (`help mine`, `help grep`; `help ccnix` lists them
 all), `ls`, the [network](#network) while `net.boot` is on), and
 `--end` at the bottom, where it runs what doesn't return: with `--init`
@@ -188,42 +226,6 @@ The shell looks a program name up in each directory on the path in turn,
 (`turtlelib` beside the turtle programs, `cu` and the rest in `lib/`) and
 keeps its files (`.turtlepos`, `mine.job`, `farm.map`, `claude.key` ...)
 next to itself in `turtle/`, not in the current directory.
-
-### ccnix: in every computer's ROM
-
-On a server running the ccnix mod ([mod/](mod/), a submodule), every
-computer has all of this in its ROM already, at `/rom/ccnix`: nothing to
-install, and no disk used. At each boot `deploy/boot.lua` (run from
-`/rom/autorun`) puts `bin/` and `turtle/` or `pc/` on the path, `help/`
-on the help path, makes `ls` ours, and brings the network up while
-`net.boot` is on. With `init.boot`, `ccsh.login` or
-`ccnix.autostart` set, it runs those at the end of startup, after the
-computer's own startup files. Programs find their libraries through
-`_G.ccnix`.
-
-Updates come without the server's admin. `ccnix update` pulls the latest
-from the repo into `/ccnix`, keeping only the files that differ from the
-ROM's: a few files, not the whole repo.
-- **From the next boot**, each program, library and help page comes from
-  `/ccnix` if it's there, else from the ROM. `ccnix` says what's in use,
-  and `ccnix reset` goes back to the ROM.
-- **When the server's copy changes** (the mod, or the server's own
-  checkout), updates made against the old one are left out until
-  `ccnix update` makes them again. They could pair a program with another
-  version's library.
-- **When the ROM is newer than the branch,** an update keeps nothing.
-- **Files deleted upstream** are still in the ROM until the server's copy
-  catches up.
-
-The server's admin updates the ROM itself with git: the mod's README says
-how.
-
-`setup` on such a server clones nothing:
-- it sets what the apps named want;
-- it moves an install from before ccnix (`/cc-turtles`) over: its startup
-  lines and files go, and a turtle's job files move to `/ccnix/turtle`
-  the next time the program looks for them;
-- it runs `ccnix update`.
 
 ## Settings and autostart
 
@@ -1460,29 +1462,15 @@ local cu = require("cu").init("cat", "cat [-u] [file...]")
 
 ## Simulators
 
-`sim/` holds offline simulators for testing changes without a Minecraft
-server: each sets a scenario up in one of the mock worlds in `sim/lib/` (a
-farm, rock to tunnel through, a composter: the CC:Tweaked APIs around a
-small block world; for the utilities, a CraftOS computer with its
-shell), runs the real program and prints what happened. They need Python
-and [lupa](https://pypi.org/project/lupa/) (`pip install lupa`):
-
-```
-python sim/run.py                  # all of them, with a summary
-python sim/run.py farm_clone       # one (or several) by name
-python sim/run.py --check          # syntax-check every program
-```
-
-They also run on a ComputerCraft computer or turtle that has the repo, with
-`sim/runsim` (all of them) or `sim/runsim farm_clone`; full output lands in
-`sim/logs/`. `sim/watchsim farm_clone` (or `sim/watchsim mine_tunnel`)
-plays one out move by move on an attached Advanced Monitor (3x2 blocks or
-bigger), with a top-down (for the mine, a plan) and a side view; see
-[sim/README.md](sim/README.md) for what to build.
-
-See [sim/README.md](sim/README.md) for what each one covers. They're tests
-for the code, not for the game: the mock world only models the vanilla
-mechanics the programs rely on, so confirm anything new in game too.
+`sim/` holds offline simulators: each sets a scenario up in a mock world
+(a farm, rock to tunnel through, a composter, a CraftOS computer with its
+shell), runs the real program and prints what happened. `python
+sim/run.py` runs them all (`pip install lupa` first); `sim/runsim` runs
+them on a CC computer, and `sim/watchsim` plays one out on a monitor.
+[sim/README.md](sim/README.md) says what each covers and what to build.
+They're tests for the code, not for the game: the mock world only models
+the vanilla mechanics the programs rely on, so confirm anything new in
+game too.
 
 ## License
 
