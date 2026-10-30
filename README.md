@@ -1174,13 +1174,17 @@ the real header's (IP addresses as numbers, TCP's seq, ack, flags, window
 and payload bytes), so a bridge can turn them into real IPv4 and back. The
 header of `lib/net.lua` lists the mapping. Only string payloads can cross:
 UDP datagrams carrying tables stay in ComputerCraft.
-[ccnix](mod/) (the `mod/` submodule: `git submodule update --init`)
-is that bridge, a Minecraft mod. It adds a Network Gateway block for CC
-cables, with an address on its network (`10.0.0.1/24`). Routers on the cable
-route at it. Behind it, a TUN device on the server (Linux) carries their
-packets as real IPv4: a real machine can `telnet` to a CC computer, and CC
-computers reach whatever the server reaches. Its README has the server's
-setup. A device's `git clone` never fetches it: the submodule is a link,
+The ccnix mod, ccnix-mod ([mod/](mod/), a submodule), is that bridge. It
+adds a Network Gateway block for CC cables, with an address on its network
+(`10.0.0.1/24`). Routers on the cable route at it. Behind it, a TUN device
+on the server (Linux) carries their packets as real IPv4: a real machine
+can `telnet` to a CC computer, and CC computers reach whatever the server
+reaches. Its README has the server's setup.
+
+ccnix-mod has this repo as a submodule too (`ccnix/`, the ROM it builds).
+So `mod/` is set `update = none`, which keeps recursive submodule commands
+from going round for ever. `git submodule update --init --checkout mod`
+gets it. A device's `git clone` never fetches it: the submodule is a link,
 not files.
 
 **How it runs:** a plain computer can't run programs in the background, so

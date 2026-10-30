@@ -1,3 +1,4 @@
 [submodule "mod"]
 	path = mod
 	url = ../ccnix-mod.git
+	update = none
