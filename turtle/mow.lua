@@ -52,9 +52,6 @@ local SET_R = T.setting("mow.repeat", 0, "Minutes between mow passes; 0 = a sing
 local WIDTH  = tonumber(args[1]) or SET_W
 local LENGTH = tonumber(args[2]) or SET_L
 local REPEAT = tonumber(args[3]) or (SET_R > 0 and SET_R or nil)   -- minutes between passes; nil = once
-if tonumber(args[1]) and tonumber(args[2]) then
-    T.saveSettings({ ["mow.width"] = WIDTH, ["mow.length"] = LENGTH, ["mow.repeat"] = tonumber(args[3]) or 0 })
-end
 local MIN_FUEL = math.abs(WIDTH * LENGTH) + math.abs(WIDTH) + math.abs(LENGTH) + 150
 
 local TORCH = "minecraft:torch"
@@ -142,6 +139,11 @@ end
 
 --------------------------------------------------------------------------
 if not T.requireHome(HERE, "mow") then return end
+if tonumber(args[1]) and tonumber(args[2]) then
+    -- a size given is kept for next time, as mine and farm keep theirs: after
+    -- the home check (a "no" keeps the old one), and the repeat only if given
+    T.saveSettings({ ["mow.width"] = WIDTH, ["mow.length"] = LENGTH, ["mow.repeat"] = tonumber(args[3]) })
+end
 
 local plan = T.serpentine(WIDTH, LENGTH)
 print(string.format("Mowing %dx%d (%d tiles). Fuel: %s", WIDTH, LENGTH, #plan,
