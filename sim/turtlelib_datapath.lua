@@ -14,15 +14,15 @@ local S = { files = {} }               -- the computer's files, for M.fsApi
 fs = M.fsApi(S)
 local T = require("turtlelib")
 
-S.files, shell = { ["cc-turtles/mine.seg"] = "12 64" }, M.shellApi("cc-turtles/turtle/mine.lua")
+S.files, shell = { ["ccnix/mine.seg"] = "12 64" }, M.shellApi("ccnix/turtle/mine.lua")
 local p = T.dataPath("mine.seg")
-check("a file in the top folder is moved into turtle/", p == "cc-turtles/turtle/mine.seg"
-    and S.files[p] == "12 64" and S.files["cc-turtles/mine.seg"] == nil, p)
+check("a file in the top folder is moved into turtle/", p == "ccnix/turtle/mine.seg"
+    and S.files[p] == "12 64" and S.files["ccnix/mine.seg"] == nil, p)
 
-S.files = { ["cc-turtles/.turtlepos"] = "old", ["cc-turtles/turtle/.turtlepos"] = "new" }
+S.files = { ["ccnix/.turtlepos"] = "old", ["ccnix/turtle/.turtlepos"] = "new" }
 p = T.dataPath(".turtlepos")
 check("one already in turtle/ wins; the old one is left", S.files[p] == "new"
-    and S.files["cc-turtles/.turtlepos"] == "old", p)
+    and S.files["ccnix/.turtlepos"] == "old", p)
 
 S.files, shell = { ["farm.map"] = "x" }, M.shellApi("disk/farm.lua")
 p = T.dataPath("farm.map")

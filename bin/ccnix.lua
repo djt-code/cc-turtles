@@ -13,11 +13,11 @@
 -- deploy/boot.lua says how the two layers go together.  When the ROM is
 -- newer than the repo's branch, an update keeps nothing: the ROM is it.
 -- The server's admin updates the ROM itself (see the mod's README).  On a
--- server without the mod, ccnix is a checkout of its own
--- (deploy/setup clones it into /cc-turtles), and update is a git pull of
--- that.  `help ccnix` goes on with every command ccnix adds.
+-- server without the mod, ccnix is a whole checkout at /ccnix
+-- (deploy/setup clones it there), and update is a git pull of that.
+-- `help ccnix` goes on with every command ccnix adds.
 
-local ROM, OVER, CHECKOUT = "/rom/ccnix", "/ccnix", "/cc-turtles"
+local ROM, OVER = "/rom/ccnix", "/ccnix"
 local unjson = textutils.unserialiseJSON or textutils.unserializeJSON
 local args = { ... }
 
@@ -65,9 +65,7 @@ if cmd == nil or cmd == "status" then
         print("No ccnix in ROM here (a server without the mod).")
     end
     if not state then
-        print(manifest and "Updates: none (ccnix update fetches any)"
-            or (fs.exists(CHECKOUT .. "/.gitlite") and "ccnix is a checkout of its own here: " .. CHECKOUT
-                or "No ccnix here: deploy/setup installs it."))
+        print(manifest and "Updates: none (ccnix update fetches any)" or "No ccnix here: deploy/setup installs it.")
     elseif state.lower == nil then
         print(string.format("%s: a whole checkout at %s, %d files", OVER, (state.commit or "?"):sub(1, 7), count(state.files)))
     else
@@ -86,8 +84,8 @@ elseif cmd == "update" then
     for _, p in ipairs(only) do opts[#opts + 1] = "--only"; opts[#opts + 1] = p end
     local ok
     if not manifest then
-        if not fs.exists(CHECKOUT .. "/.gitlite") then die("no ccnix in ROM, and no checkout at " .. CHECKOUT .. ": deploy/setup makes one") end
-        ok = shell.run(git, "pull", CHECKOUT)
+        if not state then die("no ccnix in ROM, and no checkout at " .. OVER .. ": deploy/setup makes one") end
+        ok = shell.run(git, "pull", OVER)
     elseif state then
         ok = shell.run(git, "pull", OVER, "--lower", ROM, table.unpack(opts))
     else

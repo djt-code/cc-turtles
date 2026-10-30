@@ -18,7 +18,7 @@ local S = { files = {} }               -- the computer's files, for M.fsApi
 local SET, runs, out, EVENTS, failOn
 fs = M.fsApi(S)
 settings = { get = function(name, default) if SET[name] == nil then return default end return SET[name] end }
-shell = M.shellApi("cc-turtles/turtle/autostart.lua")
+shell = M.shellApi("ccnix/turtle/autostart.lua")
 shell.run = function(...)
     local line = table.concat({ ... }, " ")
     runs[#runs + 1] = line
@@ -28,7 +28,7 @@ os.startTimer = function() return 7 end
 os.pullEvent = function() return table.unpack(table.remove(EVENTS, 1) or { "timer", 7 }) end
 printError = function(s) out[#out + 1] = s end
 
-local DIR = "cc-turtles/turtle/"
+local DIR = "ccnix/turtle/"
 local function boot(name, set, have, opts)
     opts = opts or {}
     S.files, SET, runs, out, EVENTS, failOn = {}, set, {}, {}, opts.events or {}, opts.fail
@@ -61,7 +61,7 @@ check("a finished tunnel: nothing, and it says why", r == "" and o:find("finishe
 r, o = boot("mine stopped", { ["ccnix.autostart"] = "mine" }, { ["mine.job"] = "3 3 0 16 2 stopped", [".turtlepos"] = AT_START })
 check("a tunnel that stopped itself (out of chests): left to you", r == "" and o:find("stopped itself", 1, true) ~= nil, o)
 r = (function()
-    S.files, SET, runs, out, EVENTS, failOn = { ["cc-turtles/mine.job"] = "3 3 0 16 2 active", ["cc-turtles/.turtlepos"] = AT_START },
+    S.files, SET, runs, out, EVENTS, failOn = { ["ccnix/mine.job"] = "3 3 0 16 2 active", ["ccnix/.turtlepos"] = AT_START },
         { ["ccnix.autostart"] = "mine" }, {}, {}, {}, nil
     package.loaded.turtlelib = nil
     print = function() end

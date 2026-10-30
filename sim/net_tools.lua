@@ -211,7 +211,7 @@ _G.ccnet = nil
 --------------------------------------------------------------------------
 for _, f in ipairs({ "install", "boot" }) do
     local hf = assert(io.open(PROJ .. "/deploy/" .. f .. ".lua", "rb"))
-    W:file("cc-turtles/deploy/" .. f .. ".lua", hf:read("a"))
+    W:file("ccnix/deploy/" .. f .. ".lua", hf:read("a"))
     hf:close()
 end
 W:install("ip")
@@ -219,15 +219,15 @@ help = help or { path = function() return "/rom/help" end, setPath = function() 
 local turtleWas = turtle
 turtle = nil
 STORE["net.boot"], STORE["net.forward"] = nil, nil
-r = W:session({}, function() return W:osRun("cc-turtles/deploy/install.lua", { "--autostart", "router", "--no-reboot" }) end)
+r = W:session({}, function() return W:osRun("ccnix/deploy/install.lua", { "--autostart", "router", "--no-reboot" }) end)
 local startup = W:read("startup.lua") or ""
 check("install --autostart router on a computer: net.boot and forwarding on, the router at boot; startup runs boot.lua first and `--end` last",
     STORE["net.boot"] == true and STORE["net.forward"] == true and STORE["ccnix.autostart"] == "router"
-        and startup == 'shell.run("/cc-turtles/deploy/boot.lua")\nshell.run("/cc-turtles/deploy/boot.lua", "--end")\n',
+        and startup == 'shell.run("/ccnix/deploy/boot.lua")\nshell.run("/ccnix/deploy/boot.lua", "--end")\n',
     show(startup) .. show(r.out) .. show(r.errText))
 check("and, not rebooting, the network came up in this shell (forwarding)", _G.ccnet ~= nil and _G.ccnet.forward == true,
     show(r.out))
-r = W:session({}, function() return W:osRun("cc-turtles/deploy/install.lua", { "--no-reboot" }) end)
+r = W:session({}, function() return W:osRun("ccnix/deploy/install.lua", { "--no-reboot" }) end)
 check("install again: the same startup", W:read("startup.lua") == startup, show(W:read("startup.lua")))
 r = W:run("ip", "boot", "off")
 check("ip boot off: net.boot off", STORE["net.boot"] == false and r.out:find("doesn't start"))

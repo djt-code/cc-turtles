@@ -60,6 +60,6 @@ Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 
 At the prompt, ccsh first runs the commands in /.profile (PS1, export...), as `. /.profile` would.  Leave with exit, or by holding Ctrl+T at the prompt; with jobs left, the first try only warns, and the jobs end with the shell.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.  A script or -c waits for its background jobs before it ends: they can't outlive it.
 
-A script can start with #!/cc-turtles/bin/ccsh (the stock shell honours the #! line), or run as `ccsh script`.
+A script can start with #!/ccnix/bin/ccsh (the stock shell honours the #! line; under the ROM alone it's #!/rom/ccnix/bin/ccsh), or run as `ccsh script`.
 
 Programs see a pipe or a file as io.input() and io.output().  print, write, term.write and printError are redirected too, so stock programs can be piped: `ls | grep lua`.  ls lays its names out in columns as it would on screen, so `ls | wc -l` counts rows, not files.  Full-screen programs (edit, paint) need the screen: don't pipe them.  While a command runs, _G.POSIX_SH is set (echo leaves > to the shell then).

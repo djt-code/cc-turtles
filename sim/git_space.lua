@@ -105,7 +105,7 @@ fs = {
         return { readAll = function() return data end, close = function() end }
     end,
 }
-shell = { resolve = function(p) return (p:gsub("^/+", "")) end, getRunningProgram = function() return "cc-turtles/bin/git.lua" end }
+shell = { resolve = function(p) return (p:gsub("^/+", "")) end, getRunningProgram = function() return "ccnix/bin/git.lua" end }
 printError = function(s) realPrint("   ! " .. s) end
 
 local out
@@ -124,8 +124,8 @@ local function said(s)
     for _, l in ipairs(out) do if l:find(s, 1, true) then return true end end
     return false
 end
-local function state() return json.decode(files["cc-turtles/.gitlite"] or "null") end
-local function has(p) return files["cc-turtles/" .. p] ~= nil end
+local function state() return json.decode(files["ccnix/.gitlite"] or "null") end
+local function has(p) return files["ccnix/" .. p] ~= nil end
 
 local REPO = {
     ["README.md"] = string.rep("r", 1000),
@@ -137,7 +137,7 @@ local REPO = {
 
 realPrint("== a turtle clones: sim/ and pc/ left out")
 COMMITS, HEAD, files, CAP, turtle = { c1 = REPO }, "c1", {}, 50000, {}
-local ok, err = git("clone", "https://github.com/me/ccnix", "/cc-turtles")
+local ok, err = git("clone", "https://github.com/me/ccnix", "/ccnix")
 check("the clone finished", ok and said("Done: 5 files."), err)
 check("sim/ and pc/ aren't on the disk", not has("sim/mine_tunnel.lua") and not has("pc/diskclone.lua")
     and has("turtle/mine.lua") and has("bin/git.lua"))
@@ -146,36 +146,36 @@ check("it says what it left out", said("Leaving out sim/, pc/"))
 
 realPrint("== a computer clones: sim/ and turtle/ left out; --all keeps everything")
 files, turtle = {}, nil
-git("clone", "https://github.com/me/ccnix", "/cc-turtles")
+git("clone", "https://github.com/me/ccnix", "/ccnix")
 check("a computer gets pc/ and not turtle/", has("pc/diskclone.lua") and not has("turtle/mine.lua") and not has("sim/lib/mock.lua"))
 files = {}
-git("clone", "https://github.com/me/ccnix", "/cc-turtles", "--all")
+git("clone", "https://github.com/me/ccnix", "/ccnix", "--all")
 check("--all gets sim/ too", has("sim/lib/mock.lua") and has("turtle/mine.lua") and #state().skip == 0)
 files = {}
-git("clone", "https://github.com/me/ccnix", "/cc-turtles", "--skip", "lib/")
+git("clone", "https://github.com/me/ccnix", "/ccnix", "--skip", "lib/")
 check("--skip adds to the device's rule", not has("lib/cu.lua") and not has("sim/lib/mock.lua")
     and table.concat(state().skip, ",") == "sim,turtle,lib")
 
 realPrint("== the disk fills during a clone, then there's room")
 files, CAP, turtle = { ["junk.txt"] = string.rep("j", 4000) }, 11000, {}
-ok, err = git("clone", "https://github.com/me/ccnix", "/cc-turtles")
+ok, err = git("clone", "https://github.com/me/ccnix", "/ccnix")
 check("it stops with a clear message", not ok, err)
 check(".gitlite keeps what it got, with no commit", state() and state().commit == nil and next(state().files) ~= nil)
 local before = 0
 for _ in pairs(state().files) do before = before + 1 end
 files["junk.txt"] = nil
-ok = git("pull", "/cc-turtles")
+ok = git("pull", "/ccnix")
 check("git pull finishes it", ok and has("turtle/mine.lua") and has("README.md") and state().commit == "c1",
     #fetched .. " fetched, " .. before .. " kept")
 check("fetching only what was missing", #fetched == 5 - before)
 
 realPrint("== a checkout from before the device rule")
 local old = {}
-for p, t in pairs(REPO) do files["cc-turtles/" .. p] = t end
+for p, t in pairs(REPO) do files["ccnix/" .. p] = t end
 for p, t in pairs(REPO) do old[p] = sha(p, t) end
-files["cc-turtles/.gitlite"] = json.encode({ url = "https://github.com/me/ccnix", branch = "main", commit = "c1", files = old })
+files["ccnix/.gitlite"] = json.encode({ url = "https://github.com/me/ccnix", branch = "main", commit = "c1", files = old })
 CAP = 100000
-ok = git("pull", "/cc-turtles")
+ok = git("pull", "/ccnix")
 check("its next pull drops sim/ and pc/, even with no new commit", ok and not has("sim/mine_tunnel.lua")
     and not has("pc/diskclone.lua") and has("turtle/mine.lua") and said("from now on"))
 check("and fetches nothing it had", #fetched == 0, #fetched)
@@ -186,7 +186,7 @@ for p, t in pairs(REPO) do moved[p] = t end
 moved["turtle/mine.lua"], moved["bin/mine.lua"] = nil, REPO["turtle/mine.lua"]
 COMMITS.c2, HEAD = moved, "c2"
 CAP = used() + 1500
-ok = git("pull", "/cc-turtles")
+ok = git("pull", "/ccnix")
 check("the pull fits: the old copy goes before the new one comes", ok and has("bin/mine.lua") and not has("turtle/mine.lua"))
 
 realPrint("== the whole repo moves into a folder, on a disk with room for a few files more")
@@ -196,34 +196,34 @@ for i = 1, 6 do
     NEWL["bin/p" .. i .. ".lua"] = OLDL["p" .. i .. ".lua"]
 end
 COMMITS, HEAD, files, CAP = { o1 = OLDL, n1 = NEWL }, "o1", {}, 100000
-git("clone", "https://github.com/me/ccnix", "/cc-turtles")
+git("clone", "https://github.com/me/ccnix", "/ccnix")
 HEAD, CAP = "n1", used() + 5000
-ok = git("pull", "/cc-turtles")
+ok = git("pull", "/ccnix")
 local top, bin = 0, 0
 for k in pairs(files) do
-    if k:match("^cc%-turtles/p%d") then top = top + 1 elseif k:match("^cc%-turtles/bin/") then bin = bin + 1 end
+    if k:match("^ccnix/p%d") then top = top + 1 elseif k:match("^ccnix/bin/") then bin = bin + 1 end
 end
 check("every file is in bin/ and none is left at the top", ok and top == 0 and bin == 6,
     top .. " at the top, " .. bin .. " in bin/")
 
 realPrint("== --only: just the files and folders named; a pull changes the choice")
 COMMITS, HEAD, files, CAP, turtle = { c1 = REPO }, "c1", {}, 100000, {}
-ok = git("clone", "https://github.com/me/ccnix", "/cc-turtles", "--only", "turtle/mine.lua", "--only", "bin/")
+ok = git("clone", "https://github.com/me/ccnix", "/ccnix", "--only", "turtle/mine.lua", "--only", "bin/")
 check("only turtle/mine.lua and bin/", ok and has("turtle/mine.lua") and has("bin/cat.lua") and has("bin/git.lua")
     and not has("lib/cu.lua") and not has("README.md"))
-ok = git("pull", "/cc-turtles", "--only", "lib/", "--only", "bin/git.lua")
+ok = git("pull", "/ccnix", "--only", "lib/", "--only", "bin/git.lua")
 check("pull --only swaps the choice: what's no longer wanted goes, the new comes", ok and has("lib/cu.lua")
     and has("bin/git.lua") and not has("bin/cat.lua") and not has("turtle/mine.lua"))
-ok = git("pull", "/cc-turtles")
+ok = git("pull", "/ccnix")
 check("a plain pull keeps the choice", ok and has("lib/cu.lua") and not has("bin/cat.lua") and #fetched == 0)
 turtle = nil
-ok = git("pull", "/cc-turtles", "--only", "sim/", "--only", "turtle/mine.lua")
+ok = git("pull", "/ccnix", "--only", "sim/", "--only", "turtle/mine.lua")
 check("on a computer, --only sim/ and a turtle program: fetched though the device rule leaves them out",
     ok and has("sim/lib/mock.lua") and has("turtle/mine.lua") and not has("lib/cu.lua"))
-ok = git("pull", "/cc-turtles", "--only", "sim/", "--skip", "sim/lib")
+ok = git("pull", "/ccnix", "--only", "sim/", "--skip", "sim/lib")
 check("a --skip given as well still leaves its folder out", ok and has("sim/mine_tunnel.lua") and not has("sim/lib/mock.lua"))
 turtle = {}
-ok = git("pull", "/cc-turtles", "--all")
+ok = git("pull", "/ccnix", "--all")
 check("pull --all brings everything back, sim/ too", ok and has("sim/lib/mock.lua") and has("pc/diskclone.lua")
     and has("bin/cat.lua"))
 

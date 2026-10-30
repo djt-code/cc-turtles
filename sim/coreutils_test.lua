@@ -155,7 +155,7 @@ r = W:sh("test ! ]")
 check("test ! ] is false", r.status == 1)
 r = W:sh('test "hello world" = "hello world"')
 check("quoted strings through the shell", r.status == 0)
-check("[ is resolvable as a program name", W.shell.resolveProgram("[") == "cc-turtles/bin/[.lua")
+check("[ is resolvable as a program name", W.shell.resolveProgram("[") == "ccnix/bin/[.lua")
 
 --------------------------------------------------------------------------
 -- 6. expr

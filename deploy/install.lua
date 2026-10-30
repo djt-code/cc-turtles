@@ -1,7 +1,7 @@
 -- install.lua -- run ccnix (this repo) at every boot from a checkout, then reboot
 --
 -- Usage (from wherever the repo was cloned):
---   cc-turtles/deploy/install [--ccsh] [--net] [--router] [--init] [--autostart <app>] [--no-reboot]
+--   ccnix/deploy/install [--ccsh] [--net] [--router] [--init] [--autostart <app>] [--no-reboot]
 --
 -- Writes two lines into /startup.lua, the first at the top and the last
 -- at the bottom (or, if /startup is a directory, into /startup/00-ccnix.lua

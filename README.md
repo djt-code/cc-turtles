@@ -8,8 +8,8 @@ that swaps its tool upgrade in software. The ccnix mod ([mod/](mod/)) puts it
 in every computer's ROM; on a server without the mod, `deploy/setup`
 installs it.
 
-The repo was called cc-turtles until 2026-10-29. A computer installed with
-`setup` keeps it in `/cc-turtles`, as setup still puts it.
+The repo was called cc-turtles, and installed to `/cc-turtles`, until
+2026-10-29; `setup` moves such an install to `/ccnix`.
 
 The programs are in four folders (and `deploy/` installs them, `help/`
 is their help, `sim/` tests them):
@@ -106,7 +106,7 @@ On the turtle or computer, with HTTP enabled on the server:
 wget run https://raw.githubusercontent.com/djt-code/ccnix/main/deploy/setup.lua
 ```
 
-That fetches `git`, clones the repo into `/cc-turtles` and runs
+That fetches `git`, clones the repo into `/ccnix` and runs
 `deploy/install` (below), then reboots. With nothing named it takes
 everything the device runs: a computer's disk holds 1 MB and the whole
 repo nearly fills it, so it leaves out `sim/` always, `pc/` on a turtle
@@ -147,9 +147,9 @@ By hand, the same is:
 
 ```
 wget https://raw.githubusercontent.com/djt-code/ccnix/main/bin/git.lua /git-boot.lua
-git-boot clone https://github.com/djt-code/ccnix /cc-turtles
+git-boot clone https://github.com/djt-code/ccnix /ccnix
 rm git-boot.lua
-cc-turtles/deploy/install
+ccnix/deploy/install
 ```
 
 Later, `git pull` inside the directory fetches only the files that changed.
@@ -157,13 +157,13 @@ Later, `git pull` inside the directory fetches only the files that changed.
 `git log` lists recent commits on the branch, marking the one checked out,
 in the pager (see `pager.lua` above; `q` quits).
 If HTTP is disabled on the server, drop the files into
-`<world>/computercraft/computer/<id>/cc-turtles/` by hand.
+`<world>/computercraft/computer/<id>/ccnix/` by hand.
 
 To run the programs from any directory, put them on the shell's search
 path:
 
 ```
-cc-turtles/deploy/install
+ccnix/deploy/install
 ```
 
 It writes two lines into `/startup.lua` (or, if `/startup` is a
@@ -407,7 +407,7 @@ A POSIX-style shell for CraftOS. Type `ccsh` to start it, and `exit`
 /$ wc -l *.lua | sort -n | tail -n 3
 /$ grep -c diamond mine.log > count.txt 2>/dev/null || echo none
 /$ echo "$(wc -l < farm.map) lines in the map"
-/$ cd cc-turtles && git pull && cd /
+/$ cd ccnix && git pull && cd /
 ```
 
 | | |
@@ -426,7 +426,7 @@ A POSIX-style shell for CraftOS. Type `ccsh` to start it, and `exit`
 | Compound commands | `if a; then b; elif c; then d; else e; fi`, `while`/`until a; do b; done`, `for x in words; do b; done` (without `in`: `"$@"`), `case w in a\|b*) x;; *) y;; esac`, `{ a; b; }`, `( a; b )` (a subshell: its variables, functions, `exit` and `cd` are its own), `break [n]`, `continue [n]`. Each can be piped and redirected whole: `for f in *.lua; do wc -l $f; done \| sort -n`, `while read l; do ...; done < file` |
 | Functions | `name() { body; }` (or `function name { body; }`): `$1`... are its arguments, `return [n]`, `local x=1` until it returns |
 | Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill`, `break`, `continue`, `return`, `local` |
-| Scripts | `ccsh file [args]`, `ccsh -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/bin/ccsh` run by name |
+| Scripts | `ccsh file [args]`, `ccsh -c 'commands' [name [args]]`, or a file starting `#!/ccnix/bin/ccsh` run by name |
 
 A line ending in `\`, `|`, `&&` or `||`, or inside quotes, carries on at a
 `>` prompt. Tab completes as in the stock shell, for the command after

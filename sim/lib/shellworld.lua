@@ -7,7 +7,7 @@
 --   -- r.out, r.err (lines), r.status, r.ok
 --
 -- An in-memory file system (directories, a read-only /rom with stubs of
--- the stock programs, the repo's programs copied into /cc-turtles/bin
+-- the stock programs, the repo's programs copied into /ccnix/bin
 -- (or lib/, turtle/, pc/, as in the repo) as they are run or required),
 -- the shell, io, term, os and the printing globals,
 -- all as CraftOS has them.  A program runs in its own environment over
@@ -41,7 +41,7 @@ local ROM = {
 local ALIASES = { ls = "list", dir = "list", cp = "copy", mv = "move", rm = "delete", clr = "clear",
                   rs = "redstone", sh = "shell" }
 -- a plain turtle's path (rom/startup.lua: rednet and fun are for non-turtles)
-local PATH = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/cc-turtles/bin:/cc-turtles/turtle"
+local PATH = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/ccnix/bin:/ccnix/turtle"
 -- where the repo keeps its Lua files, in the order a name is looked for
 local REPO_DIRS = { "bin", "lib", "turtle", "pc" }
 
@@ -628,7 +628,7 @@ function SW.new(proj, opts)
     local W = setmetatable({
         proj = proj, files = {}, dirs = { [""] = true }, mtime = {}, ctime = {},
         now = opts.now or 1793188800, clock = 0, capacity = opts.capacity or 1000000,
-        cwd = "", path = PATH, aliases = {}, stack = {}, progDir = "cc-turtles",
+        cwd = "", path = PATH, aliases = {}, stack = {}, progDir = "ccnix",
         typed = {}, _tty = {}, _err = {},
     }, W_)
     for k, v in pairs(ALIASES) do W.aliases[k] = v end
@@ -681,7 +681,7 @@ function W_:dir(p) self.mkdirs(clean(p)) end
 function W_:read(p) return self.files[clean(p)] end
 
 -- Copy <repo>/<dir>/<name>.lua (bin/, lib/, turtle/ or pc/) into the
--- same folder of /cc-turtles; its path there, or nil if the repo has no
+-- same folder of /ccnix; its path there, or nil if the repo has no
 -- such file.
 function W_:install(name)
     for _, dir in ipairs(REPO_DIRS) do
@@ -708,7 +708,7 @@ function W_.readFn(W)
 end
 
 -- require for code in directory `dir`, as cc.require does it: each
--- program its own package.loaded; for a program in /cc-turtles, a name
+-- program its own package.loaded; for a program in /ccnix, a name
 -- missing there is copied in from the repo first.
 function W_:makeRequire(env, dir)
     local W = self
@@ -826,7 +826,7 @@ end
 
 -- Run a command line through the world's shell (aliases, the path,
 -- quoting), as typed at the prompt; a repo program of the command's name
--- is copied into /cc-turtles first.  Same result as run.
+-- is copied into /ccnix first.  Same result as run.
 function W_:sh(line, opts)
     return self:session(opts, function()
         local words = tokenise(line)
@@ -837,7 +837,7 @@ function W_:sh(line, opts)
     end)
 end
 
--- fn(env) inside the world, as if it were a program in /cc-turtles/bin
+-- fn(env) inside the world, as if it were a program in /ccnix/bin
 -- (env.require("cu") works); r.value is what it returned.
 function W_:call(fn, opts)
     return self:session(opts, function()

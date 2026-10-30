@@ -31,8 +31,9 @@
 --   setup farm coreutils ccsh       a farmer you can also use as a shell
 --   setup router --autostart router    a router, its screen up at boot
 --
--- It fetches the latest git, then clones the repo into /cc-turtles, or
--- pulls it if it's there already, and runs deploy/install to put the
+-- It fetches the latest git, then clones the repo into /ccnix, or pulls
+-- it if it's there already (an install at /cc-turtles, the folder until
+-- 2026-10-29, is moved there first), and runs deploy/install to put the
 -- programs on the path.  A clone leaves out what the device doesn't run
 -- (sim/, and pc/ on a turtle or turtle/ on a computer): see bin/git.lua.
 -- Run it again any time to update (naming apps again changes what's
@@ -56,7 +57,7 @@
 
 local REPO = "https://github.com/djt-code/ccnix"
 local RAW = "https://raw.githubusercontent.com/djt-code/ccnix/main/"
-local DIR = "/cc-turtles"
+local DIR = "/ccnix"
 
 -- What each app needs.  A path ending in / is a whole folder.
 local TURTLE = { "turtle/turtlelib.lua", "turtle/home.lua", "turtle/autostart.lua" }
@@ -244,6 +245,13 @@ local function git(...)
     local ok, e = pcall(gitFn, ...)
     if not ok and e ~= "" then printError(tostring(e)) end      -- "": git said why
     return ok
+end
+
+-- the install folder was /cc-turtles until 2026-10-29: the same checkout,
+-- moved (install swaps its startup lines; a turtle's job files come along)
+if fs.exists("/cc-turtles/.gitlite") and not fs.exists(DIR) then
+    fs.move("/cc-turtles", DIR)
+    print("Moved /cc-turtles to " .. DIR .. ", where ccnix lives now.")
 end
 
 local ok

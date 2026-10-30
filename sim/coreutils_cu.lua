@@ -196,4 +196,4 @@ r = W:sh('echo "a  b" c')
 check("through the shell: double quotes make one word", r.out == "a  b c\n", show(r.out))
 r = W:sh("ls")
 check("shell: ls is the rom's list (stub), aliases and path work", r.ok and r.err[1] == nil
-    and W.shell.resolveProgram("ls") == "rom/programs/list.lua" and W.shell.resolveProgram("echo") == "cc-turtles/bin/echo.lua")
+    and W.shell.resolveProgram("ls") == "rom/programs/list.lua" and W.shell.resolveProgram("echo") == "ccnix/bin/echo.lua")

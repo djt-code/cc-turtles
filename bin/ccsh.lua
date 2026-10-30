@@ -89,8 +89,9 @@
 -- rest of the line, with status 130.  A script or -c waits for its
 -- background jobs before it ends: they can't outlive it.
 --
--- A script can start with #!/cc-turtles/bin/ccsh (the stock shell honours
--- the #! line), or run as `ccsh script`.
+-- A script can start with #!/ccnix/bin/ccsh (the stock shell honours the
+-- #! line; under the ROM alone it's #!/rom/ccnix/bin/ccsh), or run as
+-- `ccsh script`.
 --
 -- Programs see a pipe or a file as io.input() and io.output().  print,
 -- write, term.write and printError are redirected too, so stock programs

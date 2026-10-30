@@ -83,7 +83,7 @@ check("a bad option: usage error 2", r.status == 2 and r.err[1] == "ls: illegal 
 
 r = W:sh("ls -a d")
 check("at the prompt, before install: CraftOS's ls (an alias for list)", not r.out:find(".hidden", 1, true))
-W.shell.setAlias("ls", "/cc-turtles/bin/ls.lua")              -- what install's startup line does
+W.shell.setAlias("ls", "/ccnix/bin/ls.lua")              -- what install's startup line does
 r = W:sh("ls -a d")
 check("with install's alias: ours, hidden files and all", r.out == ".  ..  .hidden  a.txt  big.bin  sub\n", show(r.out))
 

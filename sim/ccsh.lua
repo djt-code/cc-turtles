@@ -36,7 +36,7 @@ local HELPERS = {
     tick = [[local _, v = os.pullEvent("x") print("tick " .. tostring(v))]],
     ywait = [[os.pullEvent("y") print("y")]],
 }
-for name, src in pairs(HELPERS) do W:file("cc-turtles/bin/" .. name .. ".lua", src) end
+for name, src in pairs(HELPERS) do W:file("ccnix/bin/" .. name .. ".lua", src) end
 
 local function sh(line, opts) return W:run("ccsh", "-c", line, opts or {}) end
 local function show(s) return (tostring(s):gsub("\n", "|")) end
@@ -132,7 +132,7 @@ r = sh([[printf 'a b  c \n' | read x y; echo "$x/$y"; read v < f.txt; echo $v; r
 check("read splits a line into names, the last gets the rest; 1 at the end",
     r.out == "a/b  c\nhi\n1\n", show(r.out))
 r = sh([[echo $PATH; PATH=$PATH:/x; echo $PATH]])
-local p0 = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/cc-turtles/bin:/cc-turtles/turtle"
+local p0 = ".:/rom/programs:/rom/programs/http:/rom/programs/turtle:/ccnix/bin:/ccnix/turtle"
 check("$PATH is the shell's path, and setting it sets that", r.out == p0 .. "\n" .. p0 .. ":/x\n" and W.path == p0 .. ":/x",
     show(r.out))
 W.path = p0
@@ -192,7 +192,7 @@ check("no label: \\h is the ID; the default prompt unchanged", r.out:find("1> z\
     and r.out:find("/$ PS1", 1, true) == nil and r.out:find("/$ ", 1, true) ~= nil, show(r.out))
 
 -- 11. scripts
-W:file("s.sh", "#!/cc-turtles/bin/ccsh\n# a script\necho \"$0 $# $1\"\nargs \"$@\"\nshift\nargs $*\nexit 5\n")
+W:file("s.sh", "#!/ccnix/bin/ccsh\n# a script\necho \"$0 $# $1\"\nargs \"$@\"\nshift\nargs $*\nexit 5\n")
 r = W:run("ccsh", "s.sh", "a b", "c")
 check("a script: $0 $# $1 \"$@\" shift $*, exit", r.out == "s.sh 2 a b\n[a b][c]\n[c]\n" and r.status == 5,
     show(r.out))
@@ -276,7 +276,7 @@ W.multishell = { setFocus = function(id) focus = id end, getCurrent = function()
 W.shell.openTab = function(...) opened = { ... }; return 3 end
 r = sh([[export E=tabbed; fg genv E]])
 check("fg prog: a new tab, shown, running ccsh to run it",
-    opened and opened[1] == "/cc-turtles/bin/ccsh.lua" and opened[2] == "--spawn" and focus == 3 and r.status == 0,
+    opened and opened[1] == "/ccnix/bin/ccsh.lua" and opened[2] == "--spawn" and focus == 3 and r.status == 0,
     show(table.concat(opened or {}, " ")))
 r = W:run("ccsh", "--spawn", opened[3])
 check("there it runs with the environment, the tab named for it",
@@ -293,7 +293,7 @@ check("no tabs (no multishell), or no such job: said, status 1",
 
 -- 16. compound commands: if, while, until, for, case, { }, ( ), functions
 for _, u in ipairs({ "test", "expr", "seq", "sort" }) do W:install(u) end
-W:file("cc-turtles/bin/cdto.lua", [[shell.setDir(shell.resolve(... or ""))]])
+W:file("ccnix/bin/cdto.lua", [[shell.setDir(shell.resolve(... or ""))]])
 r = sh([[if false; then echo a; elif true; then echo b; else echo c; fi; if false; then echo x; fi; echo "s=$?"
 X=3; if test "$X" -gt 2; then echo big; else echo small; fi]])
 check("if, elif, else; an if with nothing true is status 0; test as the condition", r.out == "b\ns=0\nbig\n", show(r.out))
