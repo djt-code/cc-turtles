@@ -116,8 +116,11 @@ Updates come without the server's admin. `ccnix update` pulls the latest
 from the repo into `/ccnix`, keeping only the files that differ from the
 ROM's: a few files, not the whole repo.
 - **From the next boot**, each program, library and help page comes from
-  `/ccnix` if it's there, else from the ROM. `ccnix` says what's in use,
+  `/ccnix` if it's there, else from the ROM. `ccnix` says what's in use
+  (each layer's version, and commit), `ccnix version` the version alone,
   and `ccnix reset` goes back to the ROM.
+- **Versions** are semantic (major.minor.patch), kept in `deploy/version`;
+  a ROM from before there was one shows as "unversioned".
 - **When the server's copy changes** (the mod, or the server's own
   checkout), updates made against the old one are left out until
   `ccnix update` makes them again. They could pair a program with another

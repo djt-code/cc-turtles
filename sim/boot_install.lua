@@ -49,7 +49,8 @@ local COMMIT = "1111111111111111111111111111111111111111"
 -- what the ROM holds of the repo (the mod puts it all there; this is
 -- what boot, ls and the checks touch)
 local ROM_FILES = { "bin/ls.lua", "bin/ip.lua", "bin/ccsh.lua", "bin/init.lua", "bin/ccnix.lua", "lib/cu.lua",
-                    "turtle/autostart.lua", "pc/router.lua", "help/ls.txt", "deploy/boot.lua", "deploy/install.lua" }
+                    "turtle/autostart.lua", "pc/router.lua", "help/ls.txt", "deploy/boot.lua", "deploy/install.lua",
+                    "deploy/version" }
 local STUB = { ["bin/ip.lua"] = true, ["bin/ccsh.lua"] = true, ["bin/init.lua"] = true,
                ["turtle/autostart.lua"] = true, ["pc/router.lua"] = true }
 local RAN = {}
@@ -303,3 +304,35 @@ r = folder()
 check("without init.boot, `--end` runs the autostart (the router), then ccsh",
     ran() == "startup/00-ccnix.lua, ccnix/deploy/boot.lua, ccnix/bin/ip.lua up, startup/50-mine.lua, startup/zz-ccnix.lua, "
         .. "ccnix/deploy/boot.lua --end, ccnix/pc/router.lua, ccnix/bin/ccsh.lua", ran())
+
+--------------------------------------------------------------------------
+-- ccnix: the version in use, the ROM's and the updates'
+--------------------------------------------------------------------------
+local VERSION = repoFile("deploy/version"):match("%S+")
+local function ccnixSays(W, ...)
+    local args = { ... }
+    return W:session({}, function() return W:osRun("rom/ccnix/bin/ccnix.lua", args) end)
+end
+W = world(true)
+boot(W)
+r = ccnixSays(W)
+check("ccnix: the ROM's version (deploy/version) with its commit; no updates",
+    r.out:find("ROM: ccnix " .. VERSION:gsub("%.", "%%.") .. ", https://github.com/djt%-code/ccnix main at 1111111")
+        and r.out:find("Updates: none"), show(r.out) .. show(r.errText))
+r = ccnixSays(W, "version")
+check("ccnix version: the ROM's", r.out == "ccnix " .. VERSION .. "\n", show(r.out))
+overlay(W, COMMIT, { ["deploy/version"] = "blob-new", ["deploy/boot.lua"] = "blob-boot" })
+W:file("ccnix/deploy/version", "9.8.7\n")
+W:file("ccnix/deploy/boot.lua", repoFile("deploy/boot.lua"))
+boot(W)
+r = ccnixSays(W)
+check("updates with a newer version: theirs, in use", r.out:find("Updates: ccnix 9%.8%.7, 2 files at 2222222, in use"),
+    show(r.out))
+r = ccnixSays(W, "version")
+check("ccnix version: the updates' once they're in use", r.out == "ccnix 9.8.7\n", show(r.out))
+W:file("rom/ccnix/deploy/version", nil)
+overlay(W, "3333333333333333333333333333333333333333", {})
+boot(W)
+r = ccnixSays(W, "version")
+check("a ROM from before versions (updates made for another ROM aren't used): unversioned",
+    r.out == "ccnix unversioned\n", show(r.out))

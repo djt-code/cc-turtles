@@ -25,4 +25,12 @@ other side. Read the sibling's code. Don't assume it's unaffected.
   one bumped lags its sibling by one commit. That's expected. Each submodule
   has a `local` remote pointing at the sibling's folder, so fetch from that.
 - If the sibling needs nothing, say so in a line, so it's clear it was checked.
+
+## Versions
+
+Both use semantic versioning, each its own: ccnix's is `deploy/version`
+(the ROM carries it; `ccnix version` and the mod's `/ccnix` show it), the
+mod's is `mod_version` in its `gradle.properties`. Bump them with the
+change that calls for it: a new feature the minor, a fix the patch (while
+they're 0.x, a breaking change is a minor bump too).
 - Pushing is never implied: ask before pushing either repo.

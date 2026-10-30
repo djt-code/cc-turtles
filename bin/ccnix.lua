@@ -1,7 +1,8 @@
 -- ccnix.lua -- this computer's ccnix: where it comes from, and updates
 --
---   ccnix            what the ROM has (its commit), and this computer's
---                    updates over it, if any
+--   ccnix            what the ROM has (its version and commit), and this
+--                    computer's updates over it, if any
+--   ccnix version    the version in use (semantic: major.minor.patch)
 --   ccnix update     the latest from the ROM's repo into /ccnix with git,
 --                    keeping only the files that differ from the ROM's;
 --                    reboot to use them (all of them: until then, programs
@@ -13,9 +14,10 @@
 -- deploy/boot.lua says how the two layers go together.  When the ROM is
 -- newer than the repo's branch, an update keeps nothing: the ROM is it.
 -- The server's ops update the ROM itself: /ccnix rom update (the mod's
--- README).  On a
--- server without the mod, ccnix is a whole checkout at /ccnix
--- (deploy/setup clones it there), and update is a git pull of that.
+-- README).  On a server without the mod, ccnix is a whole checkout at
+-- /ccnix (deploy/setup clones it there), and update is a git pull of that.
+-- The version is deploy/version's: a ROM from before there was one shows
+-- as "unversioned".
 -- `help ccnix` goes on with every command ccnix adds.
 
 local ROM, OVER = "/rom/ccnix", "/ccnix"
@@ -56,10 +58,20 @@ local function find(path)
     end
 end
 
+-- The version in the file at path (deploy/version), or nil.
+local function versionIn(path)
+    if not path or not fs.exists(path) or fs.isDir(path) then return nil end
+    local f = fs.open(path, "r")
+    local text = f.readAll() or ""
+    f.close()
+    return text:match("^%s*(%S+)")
+end
+local romVersion = versionIn(ROM .. "/deploy/version") or "unversioned"
+
 local cmd = args[1]
 if cmd == nil or cmd == "status" then
     if manifest then
-        print(string.format("ROM: %s %s at %s (%s)", manifest.url or "?", manifest.branch or "?",
+        print(string.format("ROM: ccnix %s, %s %s at %s (%s)", romVersion, manifest.url or "?", manifest.branch or "?",
             (manifest.commit or "?"):sub(1, 7), when(manifest.date)))
         print("  " .. count(manifest.files) .. " files, from " .. (manifest.source or "the mod"))
     else
@@ -68,15 +80,20 @@ if cmd == nil or cmd == "status" then
     if not state then
         print(manifest and "Updates: none (ccnix update fetches any)" or "No ccnix here: deploy/setup installs it.")
     elseif state.lower == nil then
-        print(string.format("%s: a whole checkout at %s, %d files", OVER, (state.commit or "?"):sub(1, 7), count(state.files)))
+        print(string.format("%s: ccnix %s, a whole checkout at %s, %d files", OVER,
+            versionIn(OVER .. "/deploy/version") or "unversioned", (state.commit or "?"):sub(1, 7), count(state.files)))
     else
         local inUse = manifest and state.lowerCommit == manifest.commit
-        print(string.format("Updates: %d files at %s, %s", count(state.files), (state.commit or "?"):sub(1, 7),
-            inUse and "in use" or "made for another ROM: ccnix update"))
+        -- (a version file the same as the ROM's isn't kept)
+        print(string.format("Updates: ccnix %s, %d files at %s, %s", versionIn(OVER .. "/deploy/version") or romVersion,
+            count(state.files), (state.commit or "?"):sub(1, 7), inUse and "in use" or "made for another ROM: ccnix update"))
     end
     if fs.exists("/cc-turtles/.gitlite") then
         print("An install from before ccnix runs this computer (/cc-turtles); deploy/setup moves it over.")
     end
+
+elseif cmd == "version" then
+    print("ccnix " .. (versionIn(find("deploy/version")) or "unversioned"))
 
 elseif cmd == "update" then
     local git = find("bin/git.lua") or die("no git")
@@ -111,5 +128,5 @@ elseif cmd == "reset" then
     print("Back to the ROM's: reboot to use it.")
 
 else
-    print("Usage: ccnix [status | update | reset]")
+    print("Usage: ccnix [status | version | update | reset]")
 end

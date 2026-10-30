@@ -1,13 +1,15 @@
 ccnix: this computer's ccnix: where it comes from, and updates
 
   ccnix
-      what the ROM has (its commit), and this computer's updates over it, if any
+      what the ROM has (its version and commit), and this computer's updates over it, if any
+  ccnix version
+      the version in use (semantic: major.minor.patch)
   ccnix update
       the latest from the ROM's repo into /ccnix with git, keeping only the files that differ from the ROM's; reboot to use them (all of them: until then, programs already found keep the ROM's)
   ccnix reset
       drop the updates: back to the ROM (files of your own in /ccnix, a turtle's job files, stay)
 
-The ccnix mod puts this repo in every computer's ROM, at /rom/ccnix; deploy/boot.lua says how the two layers go together.  When the ROM is newer than the repo's branch, an update keeps nothing: the ROM is it. The server's ops update the ROM itself: /ccnix rom update (the mod's README).  On a server without the mod, ccnix is a whole checkout at /ccnix (deploy/setup clones it there), and update is a git pull of that. `help ccnix` goes on with every command ccnix adds.
+The ccnix mod puts this repo in every computer's ROM, at /rom/ccnix; deploy/boot.lua says how the two layers go together.  When the ROM is newer than the repo's branch, an update keeps nothing: the ROM is it. The server's ops update the ROM itself: /ccnix rom update (the mod's README).  On a server without the mod, ccnix is a whole checkout at /ccnix (deploy/setup clones it there), and update is a git pull of that. The version is deploy/version's: a ROM from before there was one shows as "unversioned". `help ccnix` goes on with every command ccnix adds.
 
 The commands ccnix adds; `help <command>` for one.
 
