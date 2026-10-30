@@ -186,7 +186,7 @@ def build():
             first = text.split("\n", 1)[0]
             out.append("  " + (first if first.startswith(name[:-4] + ":") else name[:-4] + ": " + first))
         out.append("")
-    out.append("Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, craftix.login).")
+    out.append("Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, ccsh.login).")
     files["cc-turtles.txt"] = "\n".join(out) + "\n"
     return files
 

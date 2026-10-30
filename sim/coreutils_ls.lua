@@ -88,7 +88,7 @@ r = W:sh("ls -a d")
 check("with install's alias: ours, hidden files and all", r.out == ".  ..  .hidden  a.txt  big.bin  sub\n", show(r.out))
 
 -- with the fileserver's pool mounted: its member disks' mounts are hidden
--- like dot files, from ls and from Craftix's globs
+-- like dot files, from ls and from ccsh's globs
 local J = require("jbod")
 W:dir("disk"); W:dir("disk2"); W:dir("dusty")
 W:file("disk/a.txt", "a")
@@ -103,17 +103,17 @@ check("ls -a / shows them", r.out:find("disk%s") ~= nil and r.out:find("disk2") 
 r = W:run("ls", "-1", "/jbod")
 check("their files are in /jbod", r.out == "a.txt\n", show(r.out))
 W:install("echo")
-r = W:run("craftix", "-c", "echo *")
-check("Craftix: * leaves them out", not r.out:find("disk") and r.out:find("dusty") and r.out:find("jbod"), show(r.out))
-r = W:run("craftix", "-c", "echo d*")
+r = W:run("ccsh", "-c", "echo *")
+check("ccsh: * leaves them out", not r.out:find("disk") and r.out:find("dusty") and r.out:find("jbod"), show(r.out))
+r = W:run("ccsh", "-c", "echo d*")
 check("and d* matches them, as .* does dot files", r.out == "d disk disk2 dusty\n", show(r.out))
 
 -- a pool mounted by an older jbod.lua (before a git pull: no isMember):
--- ls and Craftix carry on, showing the disks
+-- ls and ccsh carry on, showing the disks
 local isMember = W.fs.jbodPool.isMember
 W.fs.jbodPool.isMember = nil
 r = W:run("ls", "/")
-local r2 = W:run("craftix", "-c", "echo *")
-check("an older pool (no isMember): ls and Craftix work, disks shown",
+local r2 = W:run("ccsh", "-c", "echo *")
+check("an older pool (no isMember): ls and ccsh work, disks shown",
     r.status == 0 and r.out:find("disk2") and r2.out:find("disk2"), show(r.out) .. " / " .. show(r2.out))
 W.fs.jbodPool.isMember = isMember

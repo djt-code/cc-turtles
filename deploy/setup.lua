@@ -6,7 +6,7 @@
 --   mine farm mow autocompost claude   turtle programs (with turtlelib,
 --                                      home and autostart)
 --   coreutils                          cat, grep, ls-style utilities...
---   craftix                            the POSIX-style shell, started at boot
+--   ccsh                            the POSIX-style shell, started at boot
 --   diskclone                          for a computer with a disk drive
 --   fileserver                         its disk drives as one folder, /jbod
 --   net                                the network: ip, ping, traceroute, nc;
@@ -24,11 +24,11 @@
 -- Options: --autostart <app> (a turtle runs it at every boot: resumes its
 -- job, or starts one from the settings; see turtle/autostart.lua; on a
 -- computer: router, its status screen at every boot),
--- --craftix (Craftix at boot without naming it), --no-reboot, --all
+-- --ccsh (ccsh at boot without naming it), --no-reboot, --all
 -- (everything, sim/ too), --skip <dir> (leave out more).
 --
 --   setup mine --autostart mine        a miner that carries on after reboots
---   setup farm coreutils craftix       a farmer you can also use as a shell
+--   setup farm coreutils ccsh       a farmer you can also use as a shell
 --   setup router --autostart router    a router, its screen up at boot
 --
 -- It fetches the latest git, then clones the repo into /cc-turtles, or
@@ -62,7 +62,7 @@ local APPS = {
     autocompost = { "turtle/autocompost.lua", TURTLE },
     claude = { "turtle/claude.lua", TURTLE },
     coreutils = { "bin/", "lib/" },
-    craftix = { "bin/craftix.lua" },
+    ccsh = { "bin/ccsh.lua" },
     diskclone = { "pc/diskclone.lua" },
     fileserver = { "pc/fileserver.lua", "lib/jbod.lua" },
     net = { NET },
@@ -80,7 +80,7 @@ local args = { ... }
 local i = 1
 while i <= #args do
     local a = args[i]
-    if a == "--craftix" or a == "--no-reboot" then installArgs[#installArgs + 1] = a
+    if a == "--ccsh" or a == "--no-reboot" then installArgs[#installArgs + 1] = a
     elseif a == "--all" then cloneArgs[#cloneArgs + 1] = a
     elseif a == "--skip" and args[i + 1] then
         cloneArgs[#cloneArgs + 1] = a
@@ -92,7 +92,7 @@ while i <= #args do
     elseif APPS[a] then
         apps[#apps + 1] = a
     else
-        print("Usage: setup [app...] [--autostart app] [--craftix] [--no-reboot] [--all] [--skip dir]...")
+        print("Usage: setup [app...] [--autostart app] [--ccsh] [--no-reboot] [--all] [--skip dir]...")
         local names = {}
         for name in pairs(APPS) do names[#names + 1] = name end
         table.sort(names)
@@ -132,7 +132,7 @@ local function paths()
     addAll(ALWAYS)
     for _, a in ipairs(apps) do
         addAll(APPS[a])
-        if a == "craftix" then installArgs[#installArgs + 1] = "--craftix" end
+        if a == "ccsh" then installArgs[#installArgs + 1] = "--ccsh" end
         if a == "net" or a == "telnet" or a == "telnetd" then installArgs[#installArgs + 1] = "--net" end
         if a == "router" then installArgs[#installArgs + 1] = "--router" end
         if a == "init" or a == "telnetd" then installArgs[#installArgs + 1] = "--init" end

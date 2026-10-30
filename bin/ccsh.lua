@@ -1,10 +1,10 @@
--- craftix.lua -- Craftix, a small POSIX-style shell for CraftOS
+-- ccsh.lua -- ccsh, a small POSIX-style shell for CraftOS
 --
---   craftix                               an interactive shell
---   craftix -c 'commands' [name [arg...]] run one command line
---   craftix script [arg...]               run a file of commands
+--   ccsh                               an interactive shell
+--   ccsh -c 'commands' [name [arg...]] run one command line
+--   ccsh script [arg...]               run a file of commands
 --
--- Craftix runs inside the stock CraftOS shell and has it find and run the
+-- ccsh runs inside the stock CraftOS shell and has it find and run the
 -- programs (the same path, aliases and directory; cd, alias and set work
 -- as they always do).  What it adds:
 --
@@ -27,7 +27,7 @@
 --                         os.environ()): the exported variables (PS1 is
 --                         one), PATH, PWD and HOSTNAME, and for one
 --                         command its own X=1 words.  A
---                         Craftix run from Craftix starts with them as
+--                         ccsh run from ccsh starts with them as
 --                         exported variables; `env` shows them.
 --   PS1                   the prompt, an exported variable: \h (label, or
 --                         ID), \w (the directory), \W (its last part), \i
@@ -82,15 +82,15 @@
 --
 -- Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 --
--- At the prompt, Craftix first runs the commands in /.profile (PS1,
+-- At the prompt, ccsh first runs the commands in /.profile (PS1,
 -- export...), as `. /.profile` would.  Leave with exit, or by holding
 -- Ctrl+T at the prompt; with jobs left, the first try only warns, and the
 -- jobs end with the shell.  Ctrl+T while a command runs stops it, and the
 -- rest of the line, with status 130.  A script or -c waits for its
 -- background jobs before it ends: they can't outlive it.
 --
--- A script can start with #!/cc-turtles/bin/craftix (the stock shell honours
--- the #! line), or run as `craftix script`.
+-- A script can start with #!/cc-turtles/bin/ccsh (the stock shell honours
+-- the #! line), or run as `ccsh script`.
 --
 -- Programs see a pipe or a file as io.input() and io.output().  print,
 -- write, term.write and printError are redirected too, so stock programs
@@ -118,7 +118,7 @@ local TTY = {}                       -- an fd that is left as it is
 local P = {
     vars = {},                       -- the variables
     exported = {},                   -- the names in programs' environment
-    pos = {}, arg0 = "craftix",      -- $1..., $0
+    pos = {}, arg0 = "ccsh",      -- $1..., $0
     status = 0,                      -- $?
     subStatus = nil,                 -- the last $(...)'s status
     exiting = false,                 -- exit ran
@@ -146,11 +146,11 @@ local function cloneState(s)
     return c
 end
 
--- What os.getenv, os.setenv and os.environ were when Craftix started:
--- CraftOS has none, but a Craftix that runs another gives it its own.
+-- What os.getenv, os.setenv and os.environ were when ccsh started:
+-- CraftOS has none, but a ccsh that runs another gives it its own.
 -- A command's are put in only while it runs, like its io.
 local sys = { getenv = rawget(os, "getenv"), setenv = rawget(os, "setenv"), environ = rawget(os, "environ") }
--- An environment taken over (from a Craftix that ran this one, or for
+-- An environment taken over (from a ccsh that ran this one, or for
 -- fg/bg prog) as exported variables; PATH, PWD and HOSTNAME are worked
 -- out afresh.
 local function importEnv(env)
@@ -905,7 +905,7 @@ local function enter(ctx)
     io.output(ctx.output)
     io.stderr = ctx.stderr
     _G.write, _G.printError, _G.read, kb.readLine = ctx.write, ctx.printError, ctx.read, ctx.kb
-    _G.POSIX_SH = "craftix"
+    _G.POSIX_SH = "ccsh"
     os.getenv, os.setenv, os.environ = ctx.env.getenv, ctx.env.setenv, ctx.env.environ
     return o
 end
@@ -981,7 +981,7 @@ local function step(j, ...)
     if coroutine.status(j.co) == "dead" then
         j.state = "done"
         if r[1] then j.value, j.status = r[2], type(r[2]) == "number" and r[2] or 0
-        else printError("craftix: " .. tostring(r[2])); j.status = 1 end
+        else printError("ccsh: " .. tostring(r[2])); j.status = 1 end
     elseif r[2] == REQ then
         j.req, j.filter, waiters[j] = r[3], nil, true
     else
@@ -1222,7 +1222,7 @@ local function waitAll()
 end
 
 -- fg prog / bg prog: as CraftOS's fg and bg, prog in a new multishell tab
--- (shown, for fg), and with the environment: a Craftix runs it there.
+-- (shown, for fg), and with the environment: a ccsh runs it there.
 local SELF = "/" .. shell.getRunningProgram()
 local spawned = 0
 local function openTab(a, b, assigns, focus)
@@ -1231,8 +1231,8 @@ local function openTab(a, b, assigns, focus)
         return 1
     end
     if not shell.resolveProgram(a[2]) then b.err(a[1] .. ": " .. a[2] .. ": not found"); return 127 end
-    local hand = rawget(_G, "CRAFTIX_SPAWN") or {}
-    _G.CRAFTIX_SPAWN = hand
+    local hand = rawget(_G, "CCSH_SPAWN") or {}
+    _G.CCSH_SPAWN = hand
     spawned = spawned + 1
     local token = os.getComputerID() .. "." .. os.epoch("utc") .. "." .. spawned
     hand[token] = { env = processEnv(assigns), argv = { table.unpack(a, 2) } }
@@ -1451,17 +1451,17 @@ local function redirect(redirs, fd, opened)
             local n = tonumber(name)
             if name == "-" then fd[r.fd] = r.op == "<&" and { data = "" } or stream(function() end)
             elseif n and fd[n] then fd[r.fd] = fd[n]
-            else report(fd[2], "craftix: " .. name .. ": bad file descriptor"); return false end
+            else report(fd[2], "ccsh: " .. name .. ": bad file descriptor"); return false end
         elseif r.op == "<" then
             local text = name == "/dev/null" and "" or readFile(name)
-            if not text then report(fd[2], "craftix: " .. name .. ": No such file or directory"); return false end
+            if not text then report(fd[2], "ccsh: " .. name .. ": No such file or directory"); return false end
             fd[r.fd] = { data = text }
         elseif name == "/dev/null" then
             fd[r.fd] = stream(function() end)
         else
             local path = shell.resolve(name)
             local f = not fs.isDir(path) and fs.open(path, r.op == ">>" and "ab" or "wb")
-            if not f then report(fd[2], "craftix: " .. name .. ": can't create"); return false end
+            if not f then report(fd[2], "ccsh: " .. name .. ": can't create"); return false end
             local s = stream(function(x) f.write(x) end, function() f.close() end)
             opened[#opened + 1] = s
             fd[r.fd] = s
@@ -1530,8 +1530,8 @@ local turns = 0
 local function breathe()
     turns = turns + 1
     if turns % 100 ~= 0 then return end
-    os.queueEvent("craftix_loop")
-    if os.pullEventRaw("craftix_loop") == "terminate" then P.interrupted, P.status = true, 130 end
+    os.queueEvent("ccsh_loop")
+    if os.pullEventRaw("ccsh_loop") == "terminate" then P.interrupted, P.status = true, 130 end
 end
 
 local function loop(cmd, items)
@@ -1626,7 +1626,7 @@ end
 -- A function called: its arguments as $1..., its body with the call's
 -- input and output.
 local function callFunction(body, argv, fd)
-    if P.funcDepth >= 64 then report(fd[2], "craftix: " .. argv[1] .. ": functions nested too deep"); return 1 end
+    if P.funcDepth >= 64 then report(fd[2], "ccsh: " .. argv[1] .. ": functions nested too deep"); return 1 end
     local pos, loops, locals = P.pos, P.loopDepth, P.locals
     P.pos, P.loopDepth, P.locals = { table.unpack(argv, 2) }, 0, {}
     P.funcDepth = P.funcDepth + 1
@@ -1667,7 +1667,7 @@ local function runCommand(cmd, inText, out)
     local builtin = builtins[argv[1]]
     if builtin then
         return done(builtin(argv, {
-            err = function(s) report(fd[2], "craftix: " .. s) end,
+            err = function(s) report(fd[2], "ccsh: " .. s) end,
             out = function(s)
                 if fd[1] ~= TTY and fd[1].raw then fd[1].raw(s) else write(s) end
             end,
@@ -1680,7 +1680,7 @@ local function runCommand(cmd, inText, out)
         }))
     end
     if not shell.resolveProgram(argv[1]) then
-        report(fd[2], "craftix: " .. argv[1] .. ": not found")
+        report(fd[2], "ccsh: " .. argv[1] .. ": not found")
         return done(127)
     end
 
@@ -1749,7 +1749,7 @@ function runSource(src)
     local ok, list = pcall(parse, src)
     if not ok then
         if type(list) ~= "table" then error(list, 0) end
-        printError("craftix: syntax error: " .. (list.msg ~= "" and list.msg or "unexpected end of line"))
+        printError("ccsh: syntax error: " .. (list.msg ~= "" and list.msg or "unexpected end of line"))
         P.status = 2
         return
     end
@@ -1827,14 +1827,14 @@ local PROFILE = "/.profile"
 local function interactive()
     jobControl = true
     local hist, warned = {}, false
-    print("Craftix: exit, or hold Ctrl+T, to leave")
+    print("ccsh: exit, or hold Ctrl+T, to leave")
     if fs.exists(PROFILE) and not fs.isDir(PROFILE) then
         runTop(function() runSource(readFile(PROFILE)) end)
     end
     while true do
         if P.exiting then
             if liveJobs() == 0 or warned then break end
-            printError("craftix: there are jobs (jobs lists them); exit again to end them")
+            printError("ccsh: there are jobs (jobs lists them); exit again to end them")
             P.exiting, warned = false, true
         end
         notify()
@@ -1842,12 +1842,12 @@ local function interactive()
         if not got then
             if liveJobs() == 0 or warned then print(); break end
             print()
-            printError("craftix: there are jobs (jobs lists them); Ctrl+T again to end them")
+            printError("ccsh: there are jobs (jobs lists them); Ctrl+T again to end them")
             warned = true
         else
             P.interrupted = false
             if got.err then
-                printError("craftix: syntax error: " .. got.err)
+                printError("ccsh: syntax error: " .. got.err)
                 P.status = 2
             elseif #got.list > 0 then
                 local j = run(newJob(function() runList(got.list); return P.status end, mainP, got.line))
@@ -1859,14 +1859,14 @@ local function interactive()
     endJobs()
 end
 
--- craftix --spawn token: what fg or bg prog left in CRAFTIX_SPAWN, run
+-- ccsh --spawn token: what fg or bg prog left in CCSH_SPAWN, run
 -- in this new tab with its environment.
 local function spawn(token)
-    local hand = rawget(_G, "CRAFTIX_SPAWN")
+    local hand = rawget(_G, "CCSH_SPAWN")
     local rec = hand and hand[token]
-    if not rec then printError("craftix: --spawn: nothing to run"); P.status = 2; return end
+    if not rec then printError("ccsh: --spawn: nothing to run"); P.status = 2; return end
     hand[token] = nil
-    if next(hand) == nil then _G.CRAFTIX_SPAWN = nil end
+    if next(hand) == nil then _G.CCSH_SPAWN = nil end
     importEnv(rec.env)
     if multishell and multishell.setTitle and multishell.getCurrent then
         multishell.setTitle(multishell.getCurrent(), fs.getName(rec.argv[1]))
@@ -1878,11 +1878,11 @@ end
 
 if args[1] == "-c" then
     if not args[2] then
-        printError("usage: craftix [-c command [name [arg...]] | script [arg...]]")
+        printError("usage: ccsh [-c command [name [arg...]] | script [arg...]]")
         P.status = 2
     else
         -- The stock shell splits words at spaces and keeps single quotes,
-        -- so `craftix -c 'echo a; b'` typed there arrives as "'echo",
+        -- so `ccsh -c 'echo a; b'` typed there arrives as "'echo",
         -- "a;", "b'": join the pieces up to the closing quote and drop the
         -- quotes, as a POSIX shell would have.
         local src, k = args[2], 3
@@ -1893,7 +1893,7 @@ if args[1] == "-c" then
             end
             if #src > 1 and src:sub(-1) == "'" then src = src:sub(2, -2) end
         end
-        P.arg0 = args[k] or "craftix"
+        P.arg0 = args[k] or "ccsh"
         for j = k + 1, #args do P.pos[#P.pos + 1] = args[j] end
         runTop(function() runSource(src) end)
         waitAll()
@@ -1903,7 +1903,7 @@ elseif args[1] == "--spawn" then
 elseif args[1] then
     local text = readFile(args[1])
     if not text then
-        printError("craftix: " .. args[1] .. ": can't open")
+        printError("ccsh: " .. args[1] .. ": can't open")
         P.status = 127
     else
         P.arg0 = args[1]

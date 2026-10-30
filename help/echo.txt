@@ -11,4 +11,4 @@ CraftOS extension: its shell has no redirects, so echo does them:
       adds a line to the end
 (">file" attached works too; the last one given wins.)  The shell splits words on spaces and strips double quotes, so a quoted phrase becomes one argument; use single quotes for Lua strings:
   echo shell.run('autocompost') > /startup.lua
-Under Craftix (_G.POSIX_SH set) the shell does the redirects, and a > that reaches echo was quoted: it's printed like any other string.
+Under ccsh (_G.POSIX_SH set) the shell does the redirects, and a > that reaches echo was quoted: it's printed like any other string.

@@ -1,13 +1,13 @@
-craftix: Craftix, a small POSIX-style shell for CraftOS
+ccsh: ccsh, a small POSIX-style shell for CraftOS
 
-  craftix
+  ccsh
       an interactive shell
-  craftix -c 'commands' [name [arg...]]
+  ccsh -c 'commands' [name [arg...]]
       run one command line
-  craftix script [arg...]
+  ccsh script [arg...]
       run a file of commands
 
-Craftix runs inside the stock CraftOS shell and has it find and run the programs (the same path, aliases and directory; cd, alias and set work as they always do).  What it adds:
+ccsh runs inside the stock CraftOS shell and has it find and run the programs (the same path, aliases and directory; cd, alias and set work as they always do).  What it adds:
 
   a | b | c
       pipes.  Each command runs to its end, then the next reads what it wrote: nothing streams, so `a | head` still runs all of a.
@@ -20,7 +20,7 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
   X=value $X ${X} ${X:-default} $? $# $1..$9 $@ "$@" $* $$ $! $0
       variables.  $PATH is the shell's path (setting it changes the path), $PWD its directory and $HOSTNAME the computer's label (its ID if it has none).  $! is the last & job's process ID.
   export X  X=1 cmd
-      the environment.  Programs read it with os.getenv("X") (and change their own copy with os.setenv(name, value), list it with os.environ()): the exported variables (PS1 is one), PATH, PWD and HOSTNAME, and for one command its own X=1 words.  A Craftix run from Craftix starts with them as exported variables; `env` shows them.
+      the environment.  Programs read it with os.getenv("X") (and change their own copy with os.setenv(name, value), list it with os.environ()): the exported variables (PS1 is one), PATH, PWD and HOSTNAME, and for one command its own X=1 words.  A ccsh run from ccsh starts with them as exported variables; `env` shows them.
   PS1
       the prompt, an exported variable: \h (label, or ID), \w (the directory), \W (its last part), \i (the ID), \$, \n and \\: PS1='\h \W\$ '.  It starts as '\h:\w\$ ' ("label:/dir$ ") on a computer with a label, '\w\$ ' without one, unless the environment brought one.
   *  ?  [abc]  [!a-z]
@@ -58,8 +58,8 @@ Craftix runs inside the stock CraftOS shell and has it find and run the programs
 
 Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 
-At the prompt, Craftix first runs the commands in /.profile (PS1, export...), as `. /.profile` would.  Leave with exit, or by holding Ctrl+T at the prompt; with jobs left, the first try only warns, and the jobs end with the shell.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.  A script or -c waits for its background jobs before it ends: they can't outlive it.
+At the prompt, ccsh first runs the commands in /.profile (PS1, export...), as `. /.profile` would.  Leave with exit, or by holding Ctrl+T at the prompt; with jobs left, the first try only warns, and the jobs end with the shell.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.  A script or -c waits for its background jobs before it ends: they can't outlive it.
 
-A script can start with #!/cc-turtles/bin/craftix (the stock shell honours the #! line), or run as `craftix script`.
+A script can start with #!/cc-turtles/bin/ccsh (the stock shell honours the #! line), or run as `ccsh script`.
 
 Programs see a pipe or a file as io.input() and io.output().  print, write, term.write and printError are redirected too, so stock programs can be piped: `ls | grep lua`.  ls lays its names out in columns as it would on screen, so `ls | wc -l` counts rows, not files.  Full-screen programs (edit, paint) need the screen: don't pipe them.  While a command runs, _G.POSIX_SH is set (echo leaves > to the shell then).

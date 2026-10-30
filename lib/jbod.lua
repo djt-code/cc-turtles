@@ -96,7 +96,7 @@ function J.new(base, opts)
     -- Drives with a disk that has files on it and isn't a member.
     function P.others() P.members(); return others end
 
-    -- Is `path` a member's own mount (/disk, /disk2...)?  ls and Craftix
+    -- Is `path` a member's own mount (/disk, /disk2...)?  ls and ccsh
     -- treat those as hidden, like a name starting with a dot: their files
     -- are in the pool.
     function P.isMember(path)

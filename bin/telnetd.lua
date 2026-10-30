@@ -4,7 +4,7 @@
 --
 -- Any telnet client can connect (ours is `telnet`).  After the password,
 -- each connection gets a shell of its own, sized to the client's screen:
--- Craftix if craftix.login is on, else the CraftOS shell; leaving it
+-- ccsh if ccsh.login is on, else the CraftOS shell; leaving it
 -- closes the connection.  With telnetd.attach set to "console" it gets
 -- the console instead, whatever runs there (the miner's screen, the
 -- farmer's...): what's on the screen is shown, and what's typed goes to
@@ -84,7 +84,7 @@ local function startSession(s)
     if not attach then
         ptys = ptys + 1
         s.term = proc.newTerm(s.w, s.h, true)
-        local cmd = settings.get("craftix.login") and fs.exists(repo .. "/bin/craftix.lua") and repo .. "/bin/craftix" or nil
+        local cmd = settings.get("ccsh.login") and fs.exists(repo .. "/bin/ccsh.lua") and repo .. "/bin/ccsh" or nil
         s.pid = proc.spawn({ cmd = cmd, term = s.term, tty = "pts/" .. ptys })
     end
     send(s, T.MODES_ON)                         -- (the first frame clears the screen)

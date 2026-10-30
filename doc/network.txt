@@ -36,7 +36,7 @@ UDP: the same with `nc -u -l 7` and `nc -u 10.0.2.20 7`: the lines go one way, a
 
 One cable, with VLANs: chain A, R and B on one cable, and give each network its own VLAN. On R: `ip addr add left.10 10.0.1.1/24` and `ip addr add left.20 10.0.2.1/24`; on A `back.10`, on B `back.20`. Each VLAN is its own channel on the wire, so A and B still talk only through R.
 
-The real network: the Craftix Gateway mod (in the repo's mod/) adds a Network Gateway block, the server's way onto a CC network. Cable it to R's modem, give R an address on its network (`ip addr add back 10.0.0.2/24`, the gateway being 10.0.0.1) and `ip route add default via 10.0.0.1`. R's networks then reach the real network through the server, and real machines reach them, given the routes on the server's side (the mod's README).
+The real network: the ccnix mod (in the repo's mod/) adds a Network Gateway block, the server's way onto a CC network. Cable it to R's modem, give R an address on its network (`ip addr add back 10.0.0.2/24`, the gateway being 10.0.0.1) and `ip route add default via 10.0.0.1`. R's networks then reach the real network through the server, and real machines reach them, given the routes on the server's side (the mod's README).
 
 Telnet: on B, `wget run https://raw.githubusercontent.com/djt-code/cc-turtles/main/deploy/setup.lua telnetd`, then `set telnetd.password pick-one` and reboot. On A, `telnet 10.0.2.20` and the password: B's shell, on A's screen. Ctrl+] then q comes back. `set telnetd.attach console` on B shows its console instead (the miner's screen, say).
 

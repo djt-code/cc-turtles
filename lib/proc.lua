@@ -430,7 +430,7 @@ function P.new(o)
             local e = K.exited[pid]
             return e and e.ok or false, e and e.err
         end,
-        -- A process ID nothing will use (Craftix numbers its jobs so).
+        -- A process ID nothing will use (ccsh numbers its jobs so).
         reservePid = function()
             local pid = K.nextPid
             K.nextPid = pid + 1

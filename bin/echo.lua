@@ -15,7 +15,7 @@
 -- words on spaces and strips double quotes, so a quoted phrase becomes one
 -- argument; use single quotes for Lua strings:
 --   echo shell.run('autocompost') > /startup.lua
--- Under Craftix (_G.POSIX_SH set) the shell does the redirects, and a >
+-- Under ccsh (_G.POSIX_SH set) the shell does the redirects, and a >
 -- that reaches echo was quoted: it's printed like any other string.
 
 package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/

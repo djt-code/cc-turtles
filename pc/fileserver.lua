@@ -7,7 +7,7 @@
 --   fileserver add <drive>     make a disk that has files on it part of the pool
 --                              (its files join the pool where they are)
 --   fileserver startup         mount it at every boot (a line at the top of
---                              /startup.lua, ahead of Craftix and the rest)
+--                              /startup.lua, ahead of ccsh and the rest)
 --
 -- Disk drives count whether they're beside the computer or on wired
 -- modems (right-click each drive's modem to connect it: `peripherals`
@@ -84,7 +84,7 @@ elseif cmd == "startup" then
     if text:find(line, 1, true) then
         print(target .. " mounts it already.")
     else
-        -- first, before anything that doesn't return (Craftix at boot, the
+        -- first, before anything that doesn't return (ccsh at boot, the
         -- autostart), which deploy/install puts at the end
         local f = fs.open(target, "w")
         f.write(line .. "\n" .. text)

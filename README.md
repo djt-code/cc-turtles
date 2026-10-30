@@ -8,7 +8,7 @@ The repo is in four folders:
 
 - `turtle/`: the turtle programs and `turtlelib`, the library they share;
 - `pc/`: programs for a plain computer;
-- `bin/`: the shell's utilities, `git` and Craftix, for any computer;
+- `bin/`: the shell's utilities, `git` and ccsh, for any computer;
 - `lib/`: the modules the `bin/` programs require (`cu`, `regex`, `pager`).
 
 `deploy/install` puts `bin/` and `turtle/` (or `pc/`) on the path; see
@@ -26,7 +26,7 @@ The repo is in four folders:
 | `lib/pager.lua` | Library: a `less`-style viewer for `more`, `git log` and `claude`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), the mouse wheel 3 lines, `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. A program that colours its output can hand it lines as `{ text, fg }` (`fg` one blit digit per character, as `term.blit` takes them), and on a colour screen they're shown in those colours. |
 | `bin/echo.lua` | Prints its arguments, or writes them to a file with `>` (replace) or `>>` (append), which the CraftOS shell can't do itself. The shell strips double quotes, so use single quotes for Lua strings. |
 | POSIX utilities (`bin/`) | `ls` `head` `tail` `grep` `wc` `sort` `uniq` `cut` `tr` `tee` `od` `strings` `printf` `cmp` `diff` `find` `du` `df` `touch` `pwd` `basename` `dirname` `test`/`[` `expr` `true` `false` `sleep` `xargs` `env`, plus `which` and `seq`: the basic options of each, for the commands CraftOS lacks (and `ls`, which replaces CraftOS's). `lib/cu.lua` is their shared option parser and exit status; `lib/regex.lua` the POSIX regular expressions behind `grep` and `expr`. See [Utilities](#utilities). |
-| `bin/craftix.lua` | Craftix, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables and an environment for programs, globs, `$(...)`, background jobs with `fg`/`bg`/Ctrl+Z, and `/.profile`. See [Craftix](#craftix). |
+| `bin/ccsh.lua` | ccsh, a POSIX-style shell that runs inside the stock one: pipes, redirects, `&&`/`\|\|`/`;`, quoting, variables and an environment for programs, globs, `$(...)`, background jobs with `fg`/`bg`/Ctrl+Z, and `/.profile`. See [ccsh](#ccsh). |
 | `turtle/claude.lua` | Lets Claude drive the turtle: you type a goal, the model writes Lua that runs on the turtle (with `turtlelib` in scope), sees what came of it, and carries on until it's done or asks you something. |
 | `turtle/autocompost.lua` | A stationary turtle on top of a composter: composts everything compostable in its inventory, forever. |
 | Network (`bin/ip.lua`, `bin/ping.lua`, `bin/traceroute.lua`, `bin/nc.lua`, `lib/net.lua`) | A small network stack over modems, in layers: frames on a modem channel (VLANs: one channel each), ARP, IP with routing and ICMP, UDP and TCP. `ip` sets it up, `ping` and `traceroute` diagnose it, `nc` makes TCP connections (and `nc -u` sends datagrams). See [Network](#network). |
@@ -107,7 +107,7 @@ just those, with what they need and their help:
 |---|---|
 | `mine` `farm` `mow` `autocompost` `claude` | the program, with `turtlelib`, `home` and `autostart` |
 | `coreutils` | the utilities in `bin/` and their modules in `lib/` |
-| `craftix` | [Craftix](#craftix), started at every boot |
+| `ccsh` | [ccsh](#ccsh), started at every boot |
 | `diskclone` | for a computer with a disk drive |
 | `fileserver` | its disk drives as one folder, `/jbod` |
 | `net` | the network: `ip`, `ping`, `traceroute`, `nc`, up at every boot |
@@ -118,14 +118,14 @@ just those, with what they need and their help:
 
 `git` and `deploy/` always come. Options: `--autostart <app>` (a turtle
 runs it at every boot, see [Autostart](#autostart); on a computer,
-`router`: its status screen), `--craftix` (Craftix at boot without naming
+`router`: its status screen), `--ccsh` (ccsh at boot without naming
 it), `--no-reboot`, `--all`, `--skip <dir>`. For example, `setup router
 --autostart router` makes a router that's routing, its screen up, after
 every boot; `setup net` a computer on the network.
 
 ```
 wget run .../deploy/setup.lua mine --autostart mine     a miner that carries on after reboots
-wget run .../deploy/setup.lua farm coreutils craftix    a farmer you can also work in
+wget run .../deploy/setup.lua farm coreutils ccsh    a farmer you can also work in
 ```
 
 Run it again to update: naming apps again changes what's there, naming
@@ -168,7 +168,7 @@ path in the current shell instead. Running it again changes nothing.
 `deploy/` and `lib/` aren't on the path, so `install` and `cu` don't
 become commands. At the end of startup goes the [autostart](#autostart)
 (`--autostart <app>` picks what it runs: a turtle's job, or a computer's
-router screen), then Craftix with `--craftix`. With `--init` (the setting
+router screen), then ccsh with `--ccsh`. With `--init` (the setting
 `init.boot`), [init](#processes-and-services) comes just before them and
 doesn't return: it starts the services, then runs those two itself.
 
@@ -180,7 +180,7 @@ next to itself in `turtle/`, not in the current directory.
 
 **Upgrading from before the folders** (2026-10-28, when everything was in
 the repo's top folder): after `git pull`, run `cc-turtles/deploy/install`
-again. It swaps the old path line (and an old Craftix line) for the new
+again. It swaps the old path line (and an old ccsh line) for the new
 ones. A job's files left in the top folder (`.turtlepos`, `mine.job`,
 `mine.seg`, `farm.map`, `claude.key`) are moved into `turtle/` the first
 time the program looks for them, so `mine --resume` and `reset` carry on.
@@ -198,7 +198,7 @@ time the program looks for them, so `mine --resume` and `reset` carry on.
 | `farm.repeat` | 20 | minutes between passes (0: one) |
 | `mow.width`, `mow.length`, `mow.repeat`, `mow.torches` | 16, 16, 0, true | the lawn, minutes between passes (0: one), torches |
 | `cc-turtles.autostart` | "" | what a turtle runs at boot |
-| `craftix.login` | false | Craftix at boot |
+| `ccsh.login` | false | ccsh at boot |
 | `init.boot` | false | [init](#processes-and-services) at boot: processes, services |
 
 A size given on the command line is saved: after `farm learn 9 12` or
@@ -271,7 +271,7 @@ departs from POSIX.
 | `ls` | `-a -A -d -F -h -l -p -R -r -S -t -1`; `ls -lah` as on Linux; replaces CraftOS's `ls` (see below) |
 | `cat` | `-u`; files byte for byte |
 | `more` | `-c -s -u`; pages in the pager, a `::::` header per file |
-| `echo` | no options; XSI escapes (`\n \t \c \0num` ...); `> file` and `>> file` (outside Craftix) |
+| `echo` | no options; XSI escapes (`\n \t \c \0num` ...); `> file` and `>> file` (outside ccsh) |
 | `head` | `-n N`, `-c N` (and `-N`) |
 | `tail` | `-n [+-]N`, `-c [+-]N`, `-f` (polls once a second), `-r` |
 | `grep` | `-E -F -c -e -f -i -l -n -q -s -v -x`; basic regexes by default |
@@ -297,11 +297,11 @@ departs from POSIX.
 | `true`, `false` | none |
 | `sleep` | seconds, decimals allowed |
 | `xargs` | `-0 -E -I -L -n -p -r -s -t -x` |
-| `env` | `-i -u name`, `name=value`; the environment Craftix gives programs (none outside it) |
+| `env` | `-i -u name`, `name=value`; the environment ccsh gives programs (none outside it) |
 | `which` | `-a` (not POSIX: which file the shell would run) |
 | `seq` | `-s sep -w -f format`, `[first [increment]] last`, decimals and negatives (not POSIX: GNU's) |
 
-They all work the same way, so [Craftix](#craftix) can join them up with
+They all work the same way, so [ccsh](#ccsh) can join them up with
 pipes. With no file operands, or the operand `-`, a utility reads standard
 input (`io.input()`, the keyboard in the stock shell). The keyboard has no
 end of file: hold Ctrl+T to end the input (inside these programs Ctrl+T
@@ -323,7 +323,7 @@ What CraftOS can't do:
   backslash escapes. It splits words on spaces and strips double quotes,
   so `grep "two words" notes.txt` works but `*` reaches the program as is.
   `echo` does `>` and `>>` itself, since that's how you'd write a file at
-  the prompt. [Craftix](#craftix) adds all of these.
+  the prompt. [ccsh](#ccsh) adds all of these.
 - The ROM's programs come first on the path, so `cp`, `mv`, `rm`,
   `mkdir`, `cd`, `clear`, `edit`, `type`, `set` and `alias` are always the
   CraftOS ones; there is no POSIX version of those here. `ls` is the
@@ -356,12 +356,12 @@ used to be): it shows a long file a screenful at a time with `pager.lua`'s
 keys, prints text that fits, and copies its input like `cat` when the
 output isn't the screen.
 
-## Craftix
+## ccsh
 
-A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
+A POSIX-style shell for CraftOS. Type `ccsh` to start it, and `exit`
 (or hold Ctrl+T at its prompt) to get back to the stock shell.
-`deploy/install --craftix` starts it at every boot, until you
-`set craftix.login false`.
+`deploy/install --ccsh` starts it at every boot, until you
+`set ccsh.login false`.
 
 ```
 /$ wc -l *.lua | sort -n | tail -n 3
@@ -377,16 +377,16 @@ A POSIX-style shell for CraftOS. Type `craftix` to start it, and `exit`
 | Lists | `a ; b`, `a && b`, `a \|\| b`, `! a`; a newline is a `;` |
 | Quoting | `'single'`, `"double $X"`, `\x`; `#` comments |
 | Variables | `X=value`, `$X`, `${X}`, `${X:-default}`, `$?`, `$#`, `$1`..`$9`, `$@`, `"$@"`, `$*`, `$$`, `$!`, `$0`; `$PATH` is the shell's path (setting it changes the path), `$PWD` its directory, `$HOSTNAME` the computer's label (or ID), `$!` the last background job's process ID |
-| Environment | `export X`, `export X=1`, `export -n X`, `export -p`, `unset X`; `X=1 cmd` for one command. Programs read it with `os.getenv("X")`, and change their own copy with `os.setenv(name, value)`; `os.environ()` lists it. It holds the exported variables (`PS1` is one), `PATH`, `PWD` and `HOSTNAME`. A Craftix started from Craftix takes it over, and `env` shows it |
+| Environment | `export X`, `export X=1`, `export -n X`, `export -p`, `unset X`; `X=1 cmd` for one command. Programs read it with `os.getenv("X")`, and change their own copy with `os.setenv(name, value)`; `os.environ()` lists it. It holds the exported variables (`PS1` is one), `PATH`, `PWD` and `HOSTNAME`. A ccsh started from ccsh takes it over, and `env` shows it |
 | Jobs | `a &` in the background (its own copy of the variables); `jobs [-l\|-p]`; `fg [%n]`, `bg [%n]`; `wait [%n\|pid]`; `kill [-9] %n\|pid`; Ctrl+Z at the prompt stops the job in front. `fg prog` and `bg prog` open a multishell tab as CraftOS's do, with the environment |
-| Startup | `/.profile` runs when Craftix starts at the prompt: set `PS1`, `export` variables |
+| Startup | `/.profile` runs when ccsh starts at the prompt: set `PS1`, `export` variables |
 | Prompt | `PS1`, an exported variable: it starts as `'\h:\w\$ '` (`label:/dir$ `) on a computer with a label, `'\w\$ '` (`/dir$ `) without, unless the environment brought one. Set it with `\h` (label, or ID), `\w` (directory), `\W` (its last part), `\i` (ID), `\$`, `\n`: `PS1='\h \W\$ '` |
 | Globs | `*`, `?`, `[abc]`, `[!a-z]`; names starting with `.` only match an explicit dot |
 | Substitution | `$(cmd)`, `` `cmd` `` (a subshell) |
 | Compound commands | `if a; then b; elif c; then d; else e; fi`, `while`/`until a; do b; done`, `for x in words; do b; done` (without `in`: `"$@"`), `case w in a\|b*) x;; *) y;; esac`, `{ a; b; }`, `( a; b )` (a subshell: its variables, functions, `exit` and `cd` are its own), `break [n]`, `continue [n]`. Each can be piped and redirected whole: `for f in *.lua; do wc -l $f; done \| sort -n`, `while read l; do ...; done < file` |
 | Functions | `name() { body; }` (or `function name { body; }`): `$1`... are its arguments, `return [n]`, `local x=1` until it returns |
 | Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill`, `break`, `continue`, `return`, `local` |
-| Scripts | `craftix file [args]`, `craftix -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/bin/craftix` run by name |
+| Scripts | `ccsh file [args]`, `ccsh -c 'commands' [name [args]]`, or a file starting `#!/cc-turtles/bin/ccsh` run by name |
 
 A line ending in `\`, `|`, `&&` or `||`, or inside quotes, carries on at a
 `>` prompt. Tab completes as in the stock shell, for the command after
@@ -414,10 +414,10 @@ which go to the job in front. Their output shares the screen with the
 prompt. A stopped job keeps up to 256 of the events it misses (timers,
 rednet...) and gets them when `fg` or `bg` starts it again. A job can't
 outlive the shell: `exit` with jobs left warns once, then ends them, and
-a script or `craftix -c` waits for its jobs before it ends. For one that
+a script or `ccsh -c` waits for its jobs before it ends. For one that
 should keep running, `bg prog` puts it in its own tab.
 
-How it works: Craftix runs inside the stock shell and has it find and run
+How it works: ccsh runs inside the stock shell and has it find and run
 programs, so the path, aliases, `cd`, `alias`, `set` and the programs'
 `shell` API are the stock ones. A pipe runs each command to the end and
 then hands what it wrote to the next one. While a command runs, its
@@ -432,16 +432,16 @@ And what CraftOS rules out:
 - Nothing streams: `a | head` still runs all of `a`, holding its output
   in memory.
 - CraftOS has no environment: `os.getenv` exists only for programs
-  Craftix runs (and what they run in turn). The stock shell's programs
+  ccsh runs (and what they run in turn). The stock shell's programs
   and other tabs don't see it.
 - `/dev/null` only works in redirects; there's no such file.
 - Stock programs lay out text as they would on the screen: `ls` writes
   columns, so `ls | wc -l` counts rows, not files.
 - Full-screen programs (`edit`, `paint`) need the screen; don't pipe them.
-- From the stock shell, `craftix -c 'a; b'` works (Craftix joins the
+- From the stock shell, `ccsh -c 'a; b'` works (ccsh joins the
   pieces back up), but use double quotes for anything with double quotes
   or runs of spaces in it.
-- `exit` is Craftix's own: the stock `exit` program would end the stock
+- `exit` is ccsh's own: the stock `exit` program would end the stock
   shell under it, which shuts the computer down.
 
 ## mow
@@ -1129,7 +1129,7 @@ the real header's (IP addresses as numbers, TCP's seq, ack, flags, window
 and payload bytes), so a bridge can turn them into real IPv4 and back. The
 header of `lib/net.lua` lists the mapping. Only string payloads can cross:
 UDP datagrams carrying tables stay in ComputerCraft.
-[Craftix Gateway](mod/) (the `mod/` submodule: `git submodule update --init`)
+[ccnix](mod/) (the `mod/` submodule: `git submodule update --init`)
 is that bridge, a Minecraft mod. It adds a Network Gateway block for CC
 cables, with an address on its network (`10.0.0.1/24`). Routers on the cable
 route at it. Behind it, a TUN device on the server (Linux) carries their
@@ -1143,7 +1143,7 @@ not files.
 `os.pullEvent`, `sleep`, `read` and `parallel` go through. The network is
 handled (ARP answered, pings replied to, packets forwarded, datagrams put
 in sockets) whenever anything on the computer waits for an event, which is
-nearly always, and `ip up` returns at once: the shell, Craftix, a farm or
+nearly always, and `ip up` returns at once: the shell, ccsh, a farm or
 the router's screen carry on as usual. A program that computes for a long
 time without waiting holds the network up meanwhile. `ip boot` starts it
 at every boot (a line at the top of `/startup.lua`).
@@ -1188,8 +1188,8 @@ telnetd                     the server: run it as a service (setup telnetd does)
 
 `telnetd` serves Telnet on port 23 over [TCP](#network), so any telnet
 client can use it as well as ours. After the password, a connection gets
-a shell of its own, sized to the client's screen (Craftix if
-`craftix.login` is on, else the CraftOS shell), or, with `telnetd.attach`
+a shell of its own, sized to the client's screen (ccsh if
+`ccsh.login` is on, else the CraftOS shell), or, with `telnetd.attach`
 set to `console`, the computer's console, whatever runs there: the miner's
 or the farmer's screen, which you then see and type into as if you were
 standing at it. On the console Ctrl+T isn't passed on, so a stray one
@@ -1235,8 +1235,8 @@ runs everything:
   redstone) to every process. A command runs in a CraftOS shell of its
   own, with the usual path, aliases and directory.
 - **The console:** the autostart first, if `cc-turtles.autostart` names one
-  (the miner, the farmer, the router's screen), then Craftix if
-  `craftix.login` is on, then the CraftOS shell, each when the one before
+  (the miner, the farmer, the router's screen), then ccsh if
+  `ccsh.login` is on, then the CraftOS shell, each when the one before
   ends. Leaving that last shell shuts the computer down, as leaving
   CraftOS's does.
 - **Services:** commands kept running in the background, each in a hidden
@@ -1250,8 +1250,8 @@ runs everything:
   `proc.inject(pid, event, ...)` (an event for one process alone),
   `proc.term(pid)` (its terminal: `getLine` reads it back).
 
-Craftix's `&` jobs belong to the shell: they end with it. A service is
-the way to keep something running. Under `init`, Craftix numbers its jobs
+ccsh's `&` jobs belong to the shell: they end with it. A service is
+the way to keep something running. Under `init`, ccsh numbers its jobs
 with process IDs no process will get, and its `kill` passes any other
 number on to `init`. As in CraftOS, a program that computes for a long
 time without waiting for an event holds everything up meanwhile.
@@ -1302,7 +1302,7 @@ drive's modem to connect it (`peripherals` lists them as `drive_0`,
   a member's own mount (`/disk2/...`) are in the pool too.
 - **The members' own mounts are hidden:** with the pool mounted, `ls`
   treats `/disk`, `/disk2`... of member disks like dot files (`ls -a` or
-  `ls -A` shows them), and Craftix's `*` and `?` skip them unless the
+  `ls -A` shows them), and ccsh's `*` and `?` skip them unless the
   pattern starts with a plain character (`disk*` matches them, `*` doesn't),
   as `.*` is needed for dot files. A disk that isn't a member shows as
   usual.

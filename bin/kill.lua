@@ -8,7 +8,7 @@
 -- one that catches it can tidy up first); KILL ends it at once; 0 only
 -- checks it's there.  A signal is a name (TERM, SIGTERM) or its number
 -- (15, 9, 2, 1, 0).  -l lists them.  Process 1 is init itself.  Needs
--- init (`help init`); Craftix's own kill also takes %job.
+-- init (`help init`); ccsh's own kill also takes %job.
 -- Exit status 1 if any process couldn't be signalled.
 
 package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/

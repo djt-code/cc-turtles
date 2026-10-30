@@ -1,6 +1,6 @@
--- sim/craftix.lua
+-- sim/ccsh.lua
 --
--- Craftix, the POSIX-style shell, on a shellworld turtle: quoting and
+-- ccsh, the POSIX-style shell, on a shellworld turtle: quoting and
 -- variables, pipes, redirects, && || ! ;, globs, $(...), builtins, how
 -- print/term.write/printError output is captured, a command that waits
 -- for events (its io swapped in only while it runs), Ctrl+T, the prompt
@@ -38,7 +38,7 @@ local HELPERS = {
 }
 for name, src in pairs(HELPERS) do W:file("cc-turtles/bin/" .. name .. ".lua", src) end
 
-local function sh(line, opts) return W:run("craftix", "-c", line, opts or {}) end
+local function sh(line, opts) return W:run("ccsh", "-c", line, opts or {}) end
 local function show(s) return (tostring(s):gsub("\n", "|")) end
 
 -- 1. quoting, variables, field splitting
@@ -89,10 +89,10 @@ r = sh([[cat nope 2>/dev/null; echo x > /dev/null; cat < /dev/null; echo done]])
 check("/dev/null swallows output and reads as empty", r.out == "done\n" and #r.err == 0, show(r.out))
 r = sh([[echo x > /rom/x; echo $?; cat < nope; echo $?]])
 check("a file that can't be made or read: the shell says so, status 1, command not run",
-    r.out == "1\n1\n" and r.err[1] == "craftix: /rom/x: can't create"
-    and r.err[2] == "craftix: nope: No such file or directory", show(r.out) .. " " .. table.concat(r.err, "|"))
+    r.out == "1\n1\n" and r.err[1] == "ccsh: /rom/x: can't create"
+    and r.err[2] == "ccsh: nope: No such file or directory", show(r.out) .. " " .. table.concat(r.err, "|"))
 r = sh([[echo '>' x; echo hi '>' f2.txt]])
-check("a quoted > is just text to echo under craftix", r.out == "> x\nhi > f2.txt\n" and W:read("f2.txt") == nil,
+check("a quoted > is just text to echo under ccsh", r.out == "> x\nhi > f2.txt\n" and W:read("f2.txt") == nil,
     show(r.out))
 
 -- 4. && || ! ; and status
@@ -100,7 +100,7 @@ r = sh([[false || echo yes; true && echo ok; false && echo no; false; echo $?; !
 false && echo a || echo b]])
 check("&&, ||, !, $?", r.out == "yes\nok\n1\n0\n1\nb\n", show(r.out))
 r = sh([[nosuch; echo $?]])
-check("a missing program: not found, 127", r.out == "127\n" and r.err[1] == "craftix: nosuch: not found",
+check("a missing program: not found, 127", r.out == "127\n" and r.err[1] == "ccsh: nosuch: not found",
     show(r.out) .. " " .. show(r.err[1]))
 r = sh([[crash; echo $?]])
 check("a program that errors: its message, status 1", r.out == "1\n" and (r.err[1] or ""):find("boom") ~= nil,
@@ -143,7 +143,7 @@ check(". runs a file in this shell", r.out == "from-lib\n", show(r.out))
 -- 8. syntax errors
 local function synErr(line, want)
     local rr = sh(line)
-    return rr.status == 2 and rr.err[1] == "craftix: syntax error: " .. want, show(rr.err[1])
+    return rr.status == 2 and rr.err[1] == "ccsh: syntax error: " .. want, show(rr.err[1])
 end
 check("echo | : unexpected end of line, status 2", synErr("echo |", "unexpected end of line"))
 check("true && : unexpected end of line", synErr("true &&", "unexpected end of line"))
@@ -167,39 +167,39 @@ check("while it waits, the shell's own io, write and terminal are back", #during
 r = sh([[waitT; echo after]], { events = { { "terminate" } } })
 check("Ctrl+T stops the command and the rest of the line, status 130",
     r.out == "" and r.status == 130 and r.err[1] == "Terminated", show(r.out) .. " " .. r.status)
-r = W:run("craftix", { stdin = "waitT; echo no\necho $?\n", events = { { "terminate" } } })
+r = W:run("ccsh", { stdin = "waitT; echo no\necho $?\n", events = { { "terminate" } } })
 check("and the prompt carries on, $? 130", r.out:find("/$ 130\n", 1, true) ~= nil and not r.out:find("no\n", 1, true),
     show(r.out))
 W.yieldEvents = false
 
 -- 10. the prompt
-r = W:run("craftix", { stdin = "echo one\necho 'two\nthree'\nexit 4\necho never\n" })
+r = W:run("ccsh", { stdin = "echo one\necho 'two\nthree'\nexit 4\necho never\n" })
 check("prompts, a quote carried to a second line, exit n",
     r.out:find("/$ one\n", 1, true) ~= nil and r.out:find("> two\nthree\n", 1, true) ~= nil and r.status == 4
     and not r.out:find("never"), show(r.out))
-r = W:run("craftix", { stdin = "echo x\n" })
+r = W:run("ccsh", { stdin = "echo x\n" })
 check("Ctrl+T at the prompt leaves, status 0", r.status == 0 and r.out:find("x\n", 1, true) ~= nil, show(r.out))
-r = W:run("craftix", { stdin = "ask | cat\ntyped\n" })
+r = W:run("ccsh", { stdin = "ask | cat\ntyped\n" })
 check("a command reading the keyboard while its output is piped", r.out:find("got typed\n", 1, true) ~= nil, show(r.out))
 W.label = "lab-r"
-r = W:run("craftix", { stdin = "echo $HOSTNAME\n" })
+r = W:run("ccsh", { stdin = "echo $HOSTNAME\n" })
 check("a computer with a label: label:/dir$ , and $HOSTNAME", r.out:find("lab-r:/$ lab-r\n", 1, true) ~= nil, show(r.out))
-r = W:run("craftix", { stdin = "PS1='[\\i \\h \\W]\\$ '\necho y\n" })
+r = W:run("ccsh", { stdin = "PS1='[\\i \\h \\W]\\$ '\necho y\n" })
 check("PS1 with \\i \\h \\W \\$", r.out:find("[1 lab-r /]$ y\n", 1, true) ~= nil, show(r.out))
 W.label = nil
-r = W:run("craftix", { stdin = "PS1='\\h> '\necho z\n" })
+r = W:run("ccsh", { stdin = "PS1='\\h> '\necho z\n" })
 check("no label: \\h is the ID; the default prompt unchanged", r.out:find("1> z\n", 1, true) ~= nil
     and r.out:find("/$ PS1", 1, true) == nil and r.out:find("/$ ", 1, true) ~= nil, show(r.out))
 
 -- 11. scripts
-W:file("s.sh", "#!/cc-turtles/bin/craftix\n# a script\necho \"$0 $# $1\"\nargs \"$@\"\nshift\nargs $*\nexit 5\n")
-r = W:run("craftix", "s.sh", "a b", "c")
+W:file("s.sh", "#!/cc-turtles/bin/ccsh\n# a script\necho \"$0 $# $1\"\nargs \"$@\"\nshift\nargs $*\nexit 5\n")
+r = W:run("ccsh", "s.sh", "a b", "c")
 check("a script: $0 $# $1 \"$@\" shift $*, exit", r.out == "s.sh 2 a b\n[a b][c]\n[c]\n" and r.status == 5,
     show(r.out))
-r = W:run("craftix", "-c", [[args "$0" "$@"]], "me", "x", "y z")
+r = W:run("ccsh", "-c", [[args "$0" "$@"]], "me", "x", "y z")
 check("-c with a name and arguments", r.out == "[me][x][y z]\n", show(r.out))
--- what the stock shell passes for: craftix -c 'args $0 $1; exit' nm one
-r = W:run("craftix", "-c", "'args", "$0", "$1;", "exit'", "nm", "one")
+-- what the stock shell passes for: ccsh -c 'args $0 $1; exit' nm one
+r = W:run("ccsh", "-c", "'args", "$0", "$1;", "exit'", "nm", "one")
 check("-c from the stock shell: a single-quoted command split at spaces is joined back",
     r.out == "[nm][one]\n" and r.status == 0, show(r.out))
 
@@ -214,24 +214,24 @@ r = sh([[export A=1 B="it's" C; export -n A; export -p]])
 check("export -p: re-readable, quoted; export -n unexports; a name with no value is listed bare",
     r.out == "export B='it'\\''s'\nexport C\nexport HOSTNAME='1'\nexport PATH='" .. p0
         .. "'\nexport PS1='\\w\\$ '\nexport PWD='/'\n", show(r.out))
-r = sh([[genv HOSTNAME PS1; PS1='$ '; genv PS1; craftix -c 'echo "$PS1"']])
+r = sh([[genv HOSTNAME PS1; PS1='$ '; genv PS1; ccsh -c 'echo "$PS1"']])
 check("HOSTNAME and PS1 are in the environment; a PS1 set is passed on",
     r.out == "HOSTNAME=1\nPS1=\\w\\$ \nPS1=$ \n$ \n", show(r.out))
 W.label = "lab-e"
 r = sh([[genv HOSTNAME PS1]])
 W.label = nil
 check("with a label: HOSTNAME is it, PS1 starts as \\h:\\w\\$ ", r.out == "HOSTNAME=lab-e\nPS1=\\h:\\w\\$ \n", show(r.out))
-r = W:run("craftix", { stdin = "unset PS1\necho u\n" })
+r = W:run("ccsh", { stdin = "unset PS1\necho u\n" })
 check("PS1 unset: the prompt falls back to the default text", r.out:find("/$ u\n", 1, true) ~= nil, show(r.out))
-r = sh([[export A=outer; craftix -c 'echo $A; genv A; B=in genv B'; genv B]])
-check("a Craftix run from Craftix takes the environment as exported variables",
+r = sh([[export A=outer; ccsh -c 'echo $A; genv A; B=in genv B'; genv B]])
+check("a ccsh run from ccsh takes the environment as exported variables",
     r.out == "outer\nA=outer\nB=in\nB=nil\n", show(r.out))
 r = sh([[export E=1; env | grep ^E=; env -u E genv E; env F=2 genv F; env -i genv E PATH; genv E]])
 check("env lists it, and runs a command with it changed (-u, name=value, -i), then puts it back",
     r.out == "E=1\nE=nil\nF=2\nE=nil\nPATH=nil\nE=1\n", show(r.out))
 r = W:run("env")
-check("env outside Craftix: there is no environment, 125",
-    r.status == 125 and r.err[1] == "env: no environment here: run it under craftix", show(r.err[1]))
+check("env outside ccsh: there is no environment, 125",
+    r.status == 125 and r.err[1] == "env: no environment here: run it under ccsh", show(r.err[1]))
 
 -- 13. jobs
 W.yieldEvents = true
@@ -250,23 +250,23 @@ r = sh([[tick & wait; echo no]], { events = { { "terminate" }, { "terminate" } }
 check("Ctrl+T ends wait and the rest of the line; again, the jobs left at the end",
     r.out == "" and r.status == 130, show(r.out) .. " " .. r.status)
 local ctrlZ = { { "key", keys.leftCtrl }, { "key", keys.z } }
-r = W:run("craftix", { stdin = "tick\njobs\nfg\necho \"fg $?\"\n", events = { ctrlZ[1], ctrlZ[2], { "x", 9 } } })
+r = W:run("ccsh", { stdin = "tick\njobs\nfg\necho \"fg $?\"\n", events = { ctrlZ[1], ctrlZ[2], { "x", 9 } } })
 check("at the prompt, Ctrl+Z stops a command; jobs; fg starts it again in front",
     r.out:find("/$ \n[1]+ Stopped  tick\n/$ [1]+ Stopped  tick\n/$ tick\ntick 9\n/$ fg 0\n", 1, true) ~= nil,
     show(r.out))
-r = W:run("craftix", { stdin = "tick\nywait\nbg\njobs\n", events = { ctrlZ[1], ctrlZ[2], { "x", 4 }, { "y" } } })
+r = W:run("ccsh", { stdin = "tick\nywait\nbg\njobs\n", events = { ctrlZ[1], ctrlZ[2], { "x", 4 }, { "y" } } })
 check("a stopped job keeps the events it misses; bg starts it in the background; Done told before the prompt",
     r.out:find("/$ y\n/$ [1]+ tick &\ntick 4\n[1]+ Done     tick\n/$ /$ ", 1, true) ~= nil, show(r.out))
-r = W:run("craftix", { stdin = "tick &\nexit\nexit\n" })
+r = W:run("ccsh", { stdin = "tick &\nexit\nexit\n" })
 check("exit with jobs: a warning first, then the jobs end with the shell",
-    r.out:find("/$ [1] 1\n", 1, true) ~= nil and r.err[1] == "craftix: there are jobs (jobs lists them); exit again to end them",
+    r.out:find("/$ [1] 1\n", 1, true) ~= nil and r.err[1] == "ccsh: there are jobs (jobs lists them); exit again to end them",
     show(r.out) .. " " .. show(r.errText))
 W.yieldEvents = false
 
 -- 14. .profile, and fg/bg prog in a tab
 W:file(".profile", "PS1='p> '\nexport PF=yes\n")
-r = W:run("craftix", { stdin = "genv PF\n" })
-check("/.profile runs when Craftix starts at the prompt", r.out:find("p> PF=yes\n", 1, true) ~= nil, show(r.out))
+r = W:run("ccsh", { stdin = "genv PF\n" })
+check("/.profile runs when ccsh starts at the prompt", r.out:find("p> PF=yes\n", 1, true) ~= nil, show(r.out))
 r = sh("genv PF")
 check("but not for -c or a script", r.out == "PF=nil\n", show(r.out))
 W.files[".profile"] = nil
@@ -275,21 +275,21 @@ W.multishell = { setFocus = function(id) focus = id end, getCurrent = function()
     setTitle = function(_, t) title = t end }
 W.shell.openTab = function(...) opened = { ... }; return 3 end
 r = sh([[export E=tabbed; fg genv E]])
-check("fg prog: a new tab, shown, running Craftix to run it",
-    opened and opened[1] == "/cc-turtles/bin/craftix.lua" and opened[2] == "--spawn" and focus == 3 and r.status == 0,
+check("fg prog: a new tab, shown, running ccsh to run it",
+    opened and opened[1] == "/cc-turtles/bin/ccsh.lua" and opened[2] == "--spawn" and focus == 3 and r.status == 0,
     show(table.concat(opened or {}, " ")))
-r = W:run("craftix", "--spawn", opened[3])
+r = W:run("ccsh", "--spawn", opened[3])
 check("there it runs with the environment, the tab named for it",
-    r.out == "E=tabbed\n" and title == "genv" and rawget(_G, "CRAFTIX_SPAWN") == nil, show(r.out))
+    r.out == "E=tabbed\n" and title == "genv" and rawget(_G, "CCSH_SPAWN") == nil, show(r.out))
 focus, opened = nil, nil
 r = sh([[bg genv E]])
 check("bg prog: a tab left in the background", opened ~= nil and focus == nil)
-r = W:run("craftix", "--spawn", opened[3])
+r = W:run("ccsh", "--spawn", opened[3])
 W.multishell, W.shell.openTab = nil, nil
 r = sh([[fg genv; fg %1]])
 check("no tabs (no multishell), or no such job: said, status 1",
-    r.err[1] == "craftix: fg: genv: no such job, and no tabs to run it in (multishell needs an advanced computer)"
-    and r.err[2] == "craftix: fg: %1: no such job" and r.status == 1, show(r.errText))
+    r.err[1] == "ccsh: fg: genv: no such job, and no tabs to run it in (multishell needs an advanced computer)"
+    and r.err[2] == "ccsh: fg: %1: no such job" and r.status == 1, show(r.errText))
 
 -- 16. compound commands: if, while, until, for, case, { }, ( ), functions
 for _, u in ipairs({ "test", "expr", "seq", "sort" }) do W:install(u) end
@@ -304,7 +304,7 @@ check("for: words as they're split and quoted, $(...)", r.out == "[a]\n[b c]\n[d
 r = sh([[for f in *.txt; do echo $f; done]], { cwd = "g" })
 check("for over a glob", r.out == "a1.txt\na2.txt\nb.txt\n", show(r.out))
 W.shell.setDir("")
-r = W:run("craftix", "-c", [[for a; do echo "<$a>"; done]], "name", "x", "y z")
+r = W:run("ccsh", "-c", [[for a; do echo "<$a>"; done]], "name", "x", "y z")
 check("for with no in: the arguments", r.out == "<x>\n<y z>\n", show(r.out))
 r = sh([[for i in 1 2 3 4; do if test $i = 2; then continue; fi; if test $i = 4; then break; fi; echo $i; done
 for a in 1 2; do for b in x y; do echo $a$b; break 2; done; done
@@ -321,7 +321,7 @@ c() { if test $1 -gt 0; then echo $1; c $(expr $1 - 1); fi; }; c 3
 function k { echo k; }; k; s() { echo b; echo a; }; s | sort]])
 check("functions: arguments and $#, return n, local, recursion, the function keyword, piped",
     r.out == "hi bob (1)\nhi a b (2)\n3\nin 2\nout 1\n3\n2\n1\nk\na\nb\n", show(r.out))
-r = W:run("craftix", "-c", [[f() { echo "f $1"; }; f in; echo "after $1"]], "name", "out")
+r = W:run("ccsh", "-c", [[f() { echo "f $1"; }; f in; echo "after $1"]], "name", "out")
 check("a function's arguments are its own: $1 is back after", r.out == "f in\nafter out\n", show(r.out))
 r = sh([[w() { echo inside; } > ff.txt; w; w; cat ff.txt; echo hi > m2.txt
 for i in 3 1 2; do echo $i; done | sort; { echo a; echo b; } > g.txt; cat g.txt
@@ -334,7 +334,7 @@ r = sh([[X=1; (X=2; echo $X); echo $X; (exit 3); echo $?; (cdto g; echo $PWD); e
 Y=$(X=5; echo $X); echo "$X $Y"; (f() { echo sub; }; f); f 2>/dev/null; echo $?]])
 check("( ): its own variables, exit, directory and functions; $(...) is a subshell too",
     r.out == "2\n1\n3\n/g\n/\n1 5\nsub\n127\n", show(r.out))
-r = W:run("craftix", { stdin = "for i in 1 2\ndo echo $i\ndone\nif true\nthen echo yes; fi\n" })
+r = W:run("ccsh", { stdin = "for i in 1 2\ndo echo $i\ndone\nif true\nthen echo yes; fi\n" })
 check("at the prompt, a for or if goes on to the next line until it's done",
     r.out:find("/$ > > 1\n2\n", 1, true) ~= nil and r.out:find("/$ > yes\n", 1, true) ~= nil, show(r.out))
 check("syntax: fi twice", synErr("if true; then :; fi fi", "unexpected fi"))
@@ -346,8 +346,8 @@ check("a loop of builtins alone still sees Ctrl+T (status 130, the rest of the l
     r.status == 130 and r.out == "", show(r.out) .. " " .. r.status)
 r = sh([[break; return; echo after]])
 check("break outside a loop, return outside a function: said, and the line goes on",
-    r.out == "after\n" and r.err[1] == "craftix: break: only meaningful in a loop"
-        and r.err[2] == "craftix: return: only in a function or a . file", show(r.errText))
+    r.out == "after\n" and r.err[1] == "ccsh: break: only meaningful in a loop"
+        and r.err[2] == "ccsh: return: only in a function or a . file", show(r.errText))
 
 -- 15. nothing left behind
 check("after: the screen, io, printing globals, POSIX_SH and os.getenv are as they were",

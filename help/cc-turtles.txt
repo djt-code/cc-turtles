@@ -3,8 +3,8 @@ cc-turtles: the commands this repo adds. `help <command>` for one.
 Anywhere (bin/):
   basename: the last part of a path name (POSIX basename)
   cat: concatenate files to standard output (POSIX cat)
+  ccsh: ccsh, a small POSIX-style shell for CraftOS
   cmp: compare two files byte by byte (POSIX cmp)
-  craftix: Craftix, a small POSIX-style shell for CraftOS
   cut: write selected parts of each line (POSIX cut)
   df: report free disk space (POSIX df)
   diff: show the differences between two files (POSIX diff)
@@ -65,4 +65,4 @@ Computers (pc/):
 Topics:
   network: setting up a network lab (3 computers, 2 networks, a router)
 
-Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, craftix.login).
+Settings: `set` lists them (mine.*, farm.*, mow.*, cc-turtles.autostart, ccsh.login).

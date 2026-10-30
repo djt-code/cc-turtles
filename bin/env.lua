@@ -6,9 +6,9 @@
 -- variable, sorted by name.  With one, runs it with the environment
 -- changed for it alone: -i starts from an empty one, -u name takes name
 -- out, name=value sets it.  The environment is what a program reads with
--- os.getenv(name): under Craftix, the exported variables (export, and
+-- os.getenv(name): under ccsh, the exported variables (export, and
 -- X=1 cmd; PS1 is one), PATH, PWD and HOSTNAME.  CraftOS itself has
--- none: outside Craftix env says so.
+-- none: outside ccsh env says so.
 -- Exit status: the command's, 127 if it isn't found; 125 for env's own
 -- errors.
 
@@ -16,7 +16,7 @@ package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?
 local cu = require("cu").init("env", "env [-i] [-u name]... [name=value]... [command [arg...]]")
 local args = { ... }
 if not (os.environ and os.setenv) then
-    cu.fail("no environment here: run it under craftix", 125)
+    cu.fail("no environment here: run it under ccsh", 125)
     return cu.exit()
 end
 

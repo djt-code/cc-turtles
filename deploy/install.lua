@@ -1,11 +1,11 @@
 -- install.lua -- put cc-turtles on the shell's search path, then reboot
 --
 -- Usage (from wherever the repo was cloned):
---   cc-turtles/deploy/install [--craftix] [--net] [--router] [--init] [--autostart <app>] [--no-reboot]
+--   cc-turtles/deploy/install [--ccsh] [--net] [--router] [--init] [--autostart <app>] [--no-reboot]
 --
 -- Adds lines to the top of /startup.lua (or, if /startup is a directory,
 -- writes /startup/00-cc-turtles.lua, which runs first) that add the
--- repo's bin/ (cat, echo, git, craftix and the rest) to the shell's path
+-- repo's bin/ (cat, echo, git, ccsh and the rest) to the shell's path
 -- at boot, and turtle/ (mine, farm, ...) on a turtle or pc/ (diskclone)
 -- on a computer, so they run from any directory, and help/ to the help
 -- path, so `help mine` works, and makes `ls` run bin/ls (CraftOS's ls is
@@ -34,12 +34,12 @@
 --    forwarding, and its status screen).  --autostart <app> sets it (and
 --    --autostart router is --router too); `set cc-turtles.autostart ""`
 --    turns it off.
---  * Craftix, the POSIX-style shell (/startup/zz-craftix.lua), while the
---    setting craftix.login is on; --craftix adds it and turns that on.
---    Leaving Craftix (exit) gives the stock prompt; to stop it starting,
---    `set craftix.login false`.
+--  * ccsh, the POSIX-style shell (/startup/zz-ccsh.lua), while the
+--    setting ccsh.login is on; --ccsh adds it and turns that on.
+--    Leaving ccsh (exit) gives the stock prompt; to stop it starting,
+--    `set ccsh.login false`.
 -- Last, so the rest of startup runs first; a job that never returns
--- means no Craftix until you stop it with Ctrl+T.
+-- means no ccsh until you stop it with Ctrl+T.
 
 local noReboot, login, autostart, netBoot, router, initBoot = false, false, nil, false, false, false
 local AUTOSTART = turtle and { mine = true, farm = true, mow = true, autocompost = true } or { router = true }
@@ -49,7 +49,7 @@ local i = 1
 while i <= #args do
     local a = args[i]
     if a == "--no-reboot" then noReboot = true
-    elseif a == "--craftix" then login = true
+    elseif a == "--ccsh" then login = true
     elseif a == "--net" then netBoot = true
     elseif a == "--router" then netBoot, router = true, true
     elseif a == "--init" then initBoot = true
@@ -58,7 +58,7 @@ while i <= #args do
         if autostart == "router" then netBoot, router = true, true end
         i = i + 1
     else
-        print("Usage: install [--craftix] [--net] [--router] [--init] [--autostart " .. CHOICES .. "] [--no-reboot]")
+        print("Usage: install [--ccsh] [--net] [--router] [--init] [--autostart " .. CHOICES .. "] [--no-reboot]")
         if a == "--autostart" then print("(--autostart on a " .. (turtle and "turtle" or "computer") .. ": " .. CHOICES .. ")") end
         return
     end
@@ -73,7 +73,7 @@ local function pathLine(dir)
         dir, dir)
 end
 local function loginLineFor(prog)
-    return string.format('if settings.get("craftix.login") then shell.run("%s") end', prog)
+    return string.format('if settings.get("ccsh.login") then shell.run("%s") end', prog)
 end
 local dirs = { repo .. "/bin", repo .. (turtle and "/turtle" or "/pc") }
 local lines = {}
@@ -90,7 +90,7 @@ lines[#lines + 1] = string.format(
 lines[#lines + 1] = string.format(
     'if settings.get("net.boot") and fs.exists("%s/bin/ip.lua") then shell.run("%s/bin/ip", "up") end', repo, repo)
 local block = table.concat(lines, "\n") .. "\n"
-local loginLine = loginLineFor(repo .. "/bin/craftix")
+local loginLine = loginLineFor(repo .. "/bin/ccsh")
 local turtleAutoLine = string.format(
     'if settings.get("cc-turtles.autostart", "") ~= "" and fs.exists("%s/turtle/autostart.lua") then shell.run("%s/turtle/autostart") end',
     repo, repo)
@@ -101,8 +101,16 @@ local autoLine = turtle and turtleAutoLine or computerAutoLine
 local initLine = string.format(
     'if settings.get("init.boot") and fs.exists("%s/bin/init.lua") then shell.run("%s/bin/init", "--boot") end',
     repo, repo)
--- what earlier installs wrote, when the programs were in the repo's top folder
-local stale = { pathLine(repo), loginLineFor(repo .. "/craftix") }
+-- what earlier installs wrote: the path line from when the programs were
+-- in the repo's top folder, and the shell's line from when it was called
+-- Craftix (in the top folder, then in bin/)
+local stalePath = pathLine(repo)
+local function oldLogin(prog) return string.format('if settings.get("craftix.login") then shell.run("%s") end', prog) end
+local staleLogins = { oldLogin(repo .. "/craftix"), oldLogin(repo .. "/bin/craftix") }
+local function hasAny(text, list, tail)
+    for _, l in ipairs(list) do if text:find(l .. (tail or ""), 1, true) then return true end end
+    return false
+end
 
 local function read(path)
     if not fs.exists(path) then return nil end
@@ -140,7 +148,7 @@ if folder then
 else
     target = "/startup.lua"
     current = read(target) or ""
-    rest = without(without(current, lines), { stale[1] })
+    rest = without(without(current, lines), { stalePath })
 end
 
 -- `lines` holds the path and help lines; an earlier install's has the
@@ -155,7 +163,7 @@ else
     print("Put " .. table.concat(dirs, " and ") .. " on the path, and help/ on the help path, in " .. target .. ".")
 end
 
--- The end of startup: the autostart (a turtle), then Craftix
+-- The end of startup: the autostart (a turtle), then ccsh
 local wasLogin, hadAuto
 if folder then
     local function put(path, line, want)
@@ -163,25 +171,30 @@ if folder then
         if want and not had then write(path, line .. "\n") end
         return had
     end
-    local old = read("/startup/zz-craftix.lua") or ""
-    wasLogin = old:find(loginLine, 1, true) ~= nil or old:find(stale[2], 1, true) ~= nil
-    if old:find(stale[2], 1, true) then fs.delete("/startup/zz-craftix.lua") end
+    local old = (read("/startup/zz-ccsh.lua") or "") .. (read("/startup/zz-craftix.lua") or "")
+    wasLogin = old:find(loginLine, 1, true) ~= nil or hasAny(old, staleLogins)
+    if fs.exists("/startup/zz-craftix.lua") then fs.delete("/startup/zz-craftix.lua") end
     put("/startup/zx-init.lua", initLine, true)
     hadAuto = put("/startup/zy-autostart.lua", autoLine, true)
-    put("/startup/zz-craftix.lua", loginLine, login or wasLogin)
+    put("/startup/zz-ccsh.lua", loginLine, login or wasLogin)
 else
     local text = read(target) or ""
-    wasLogin = text:find(loginLine .. "\n", 1, true) ~= nil or text:find(stale[2] .. "\n", 1, true) ~= nil
+    wasLogin = text:find(loginLine .. "\n", 1, true) ~= nil or hasAny(text, staleLogins, "\n")
     hadAuto = text:find(autoLine .. "\n", 1, true) ~= nil
-    local body = without(text, { initLine, loginLine, stale[2], turtleAutoLine, computerAutoLine })
+    local body = without(without(text, { initLine, loginLine, turtleAutoLine, computerAutoLine }), staleLogins)
     local tail = initLine .. "\n" .. autoLine .. "\n" .. ((login or wasLogin) and (loginLine .. "\n") or "")
     local new = body .. ((body == "" or body:sub(-1) == "\n" or tail == "") and "" or "\n") .. tail
     if new ~= text then write(target, new) end
 end
 if turtle and not hadAuto then print("The autostart is in startup (it runs what cc-turtles.autostart names).") end
-if login and not wasLogin then print("Craftix starts at boot.") end
+if login and not wasLogin then print("ccsh starts at boot.") end
+if settings.get("craftix.login") ~= nil then         -- (the setting from when it was Craftix)
+    if settings.get("ccsh.login") == nil then settings.set("ccsh.login", settings.get("craftix.login")) end
+    settings.unset("craftix.login")
+    settings.save()
+end
 if login then
-    settings.set("craftix.login", true)
+    settings.set("ccsh.login", true)
     settings.save()
 end
 if netBoot then
@@ -206,7 +219,7 @@ if noReboot then
     -- this shell gets it now; others after a reboot
     load(block, "=startup", "t", { shell = shell, help = help, fs = fs, settings = settings })()
     print("Not rebooting: on the path in this shell now, everywhere after a reboot.")
-    if login then print("Type craftix to start it now.") end
+    if login then print("Type ccsh to start it now.") end
     return
 end
 print("Rebooting in 3 seconds (Ctrl+T to cancel)...")
