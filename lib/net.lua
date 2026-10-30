@@ -46,6 +46,9 @@
 -- router) on that channel, answering ARP for its address, with routes
 -- pointing at it.  mod/ (the ccnix mod, a submodule) is one: a
 -- block on CC cables, and a TUN device on the Minecraft server.
+--   ARP   frame data { op = "request" | "reply", sha, spa, tpa, tha }: the
+--         sender's MAC and address, the target's address and (in a reply)
+--         MAC.
 --   IP    { src, dst (numbers: a.b.c.d as a*2^24 + ...), ttl, id, proto,
 --         data }; proto "icmp" = 1, "tcp" = 6, "udp" = 17.  No options,
 --         fragments or TOS (the bridge reassembles, and fills in 0).
