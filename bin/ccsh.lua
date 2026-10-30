@@ -146,10 +146,10 @@ local function cloneState(s)
     return c
 end
 
--- What os.getenv, os.setenv and os.environ were when ccsh started:
--- CraftOS has none, but a ccsh that runs another gives it its own.
--- A command's are put in only while it runs, like its io.
-local sys = { getenv = rawget(os, "getenv"), setenv = rawget(os, "setenv"), environ = rawget(os, "environ") }
+-- What os.environ was when ccsh started: CraftOS has none, but a ccsh
+-- that runs another gives it its own.  A command's os.getenv, setenv and
+-- environ are put in only while it runs, like its io.
+local sys = { environ = rawget(os, "environ") }
 -- An environment taken over (from a ccsh that ran this one, or for
 -- fg/bg prog) as exported variables; PATH, PWD and HOSTNAME are worked
 -- out afresh.
@@ -169,14 +169,10 @@ P.exported.PS1 = true
 
 -- The functions a program gets over its environment `env`.
 local function envApi(env)
-    -- with a system getenv that can't list its names, ask it for the rest
-    local fallback = not sys.environ and sys.getenv
     return {
         getenv = function(name)
             if type(name) ~= "string" then error("bad argument #1 (string expected, got " .. type(name) .. ")", 2) end
-            local v = env[name]
-            if v == nil and fallback then return fallback(name) end
-            return v
+            return env[name]
         end,
         setenv = function(name, value)
             if type(name) ~= "string" or not name:match("^[^=]+$") then error("bad argument #1 (a name expected)", 2) end
@@ -692,9 +688,7 @@ local function getVar(name)
         return os.getComputerLabel and os.getComputerLabel() or tostring(os.getComputerID())
     elseif name == "!" then return P.lastBg and tostring(P.lastBg) or ""
     end
-    local v = P.vars[name]
-    if v == nil and sys.getenv and not sys.environ then v = sys.getenv(name) end
-    return v or ""
+    return P.vars[name] or ""
 end
 
 local function setVar(name, v)
