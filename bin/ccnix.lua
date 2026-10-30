@@ -15,7 +15,7 @@
 -- The server's admin updates the ROM itself (see the mod's README).  On a
 -- server without the mod, ccnix is a checkout of its own
 -- (deploy/setup clones it into /cc-turtles), and update is a git pull of
--- that.
+-- that.  `help ccnix` goes on with every command ccnix adds.
 
 local ROM, OVER, CHECKOUT = "/rom/ccnix", "/ccnix", "/cc-turtles"
 local unjson = textutils.unserialiseJSON or textutils.unserializeJSON

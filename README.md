@@ -170,8 +170,8 @@ It writes two lines into `/startup.lua` (or, if `/startup` is a
 directory, into `/startup/00-ccnix.lua` and `/startup/zz-ccnix.lua`) that
 run `deploy/boot.lua`: one at the top, where it does from the checkout
 what the ROM's boot does ([below](#ccnix-in-every-computers-rom): the
-path, the help path (`help mine`, `help grep`; `help cc-turtles` lists
-them all), `ls`, the [network](#network) while `net.boot` is on), and
+path, the help path (`help mine`, `help grep`; `help ccnix` lists them
+all), `ls`, the [network](#network) while `net.boot` is on), and
 `--end` at the bottom, where it runs what doesn't return: with `--init`
 (the setting `init.boot`), [init](#processes-and-services), which starts
 the services and then runs the two below itself; else the

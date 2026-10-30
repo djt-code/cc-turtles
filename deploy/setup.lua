@@ -79,7 +79,7 @@ local APPS = {
     telnet = { "bin/telnet.lua", "lib/telnet.lua", NET },
     telnetd = { "bin/telnetd.lua", "lib/telnet.lua", NET, INIT },
 }
-local ALWAYS = { "bin/git.lua", "lib/pager.lua", "deploy/", "help/cc-turtles.txt" }
+local ALWAYS = { "bin/git.lua", "lib/pager.lua", "deploy/", "help/ccnix.txt" }
 local AUTOSTART = turtle and { mine = true, farm = true, mow = true, autocompost = true } or { router = true }
 
 local cloneArgs, installArgs, apps = {}, {}, {}

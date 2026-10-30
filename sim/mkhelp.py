@@ -9,8 +9,9 @@ one line per paragraph (it reflows on a 39-column turtle); indented lines
 becomes each command on its line and what it does on the next, and a
 "* " bullet's or a "name = ..." definition's lines are joined.  The header
 stops at a "How it works" section, which is about the code, not its use.
-help/cc-turtles.txt lists every command, and the topics: hand-written
-help in doc/<topic>.txt (a guide, not a program's), copied as it is.
+help/ccnix.txt ends with the index: every command, and the topics:
+hand-written help in doc/<topic>.txt (a guide, not a program's), copied
+as it is.
 """
 import glob
 import os
@@ -167,7 +168,7 @@ def build():
         text = [name + ": " + first] + reflow(rest)
         files[name + ".txt"] = "\n".join(text).rstrip() + "\n"
         index.setdefault(d, []).append((name, first))
-    out = ["cc-turtles: the commands this repo adds. `help <command>` for one.", ""]
+    out = ["The commands ccnix adds; `help <command>` for one.", ""]
     titles = {"bin": "Anywhere (bin/)", "turtle": "Turtles (turtle/)", "pc": "Computers (pc/)"}
     for d in DIRS:
         if d not in index:
@@ -188,7 +189,7 @@ def build():
         out.append("")
     out.append("Settings: `set` lists them, with what each means (mine.*, farm.*, mow.*, net.*, telnetd.*,"
                " service.*, ccnix.autostart, ccsh.login, init.boot).")
-    files["cc-turtles.txt"] = "\n".join(out) + "\n"
+    files["ccnix.txt"] = files["ccnix.txt"] + "\n" + "\n".join(out) + "\n"     # the index, after the program's own
     return files
 
 
