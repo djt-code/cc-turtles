@@ -65,13 +65,14 @@ function J.new(base, opts)
     local members, others, seen = {}, {}, nil
 
     local function real(m, rel) return base.combine(m.root, rel) end
+    local function full(rel) return "/" .. base.combine(P.mount, rel) end
     local function hiddenTop(name) return name == MARK or name == PARTS end
-    local function isMember(root) return base.exists(base.combine(root, MARK)) end
+    local function marked(root) return base.exists(base.combine(root, MARK)) end
 
     local function adopt(d)
         local h = base.open(base.combine(d.root, MARK), "w")
         if not h then return false end
-        h.write("cc-turtles jbod member\n")
+        h.write("ccnix jbod member\n")
         h.close()
         if opts.label then opts.label(d.name) end
         return true
@@ -84,7 +85,7 @@ function J.new(base, opts)
             seen = t
             members, others = {}, {}
             for _, d in ipairs(opts.drives()) do
-                if isMember(d.root) then members[#members + 1] = d
+                if marked(d.root) then members[#members + 1] = d
                 elseif #base.list(d.root) == 0 and adopt(d) then members[#members + 1] = d
                 else others[#others + 1] = d end
             end
@@ -112,7 +113,7 @@ function J.new(base, opts)
     function P.add(name)
         for _, d in ipairs(opts.drives()) do
             if d.name == name then
-                if isMember(d.root) then return true, "already a member" end
+                if marked(d.root) then return true, "already a member" end
                 for _, n in ipairs(base.list(d.root)) do
                     if hiddenTop(n) then return false, "it has a " .. n .. " already" end
                 end
@@ -233,7 +234,7 @@ function J.new(base, opts)
         removeFile(rel)
         local list = {}
         for _, m in ipairs(P.members()) do list[#list + 1] = m end
-        if #list == 0 then error("/" .. P.mount .. ": no disks in the pool", 0) end
+        if #list == 0 then error(full("") .. ": no disks in the pool", 0) end
         table.sort(list, function(a, b) return free(a) > free(b) end)
         local first = list[1]
         local need = math.max(#data, MIN) + missingDirs(first, rel) * MIN
@@ -249,7 +250,7 @@ function J.new(base, opts)
             room[i] = math.max(0, free(m) - cost)
             total = total + room[i]
         end
-        if total < #data then error("/" .. P.mount .. "/" .. rel .. ": Out of space", 0) end
+        if total < #data then error(full(rel) .. ": Out of space", 0) end
         local pieces, at = {}, 1
         for i, m in ipairs(list) do
             if at > #data then break end
@@ -344,7 +345,6 @@ function J.new(base, opts)
     -- The fs functions, for paths inside the pool
     ----------------------------------------------------------------------
     local F = {}
-    local function full(rel) return "/" .. base.combine(P.mount, rel) end
 
     function F.exists(rel) return isDir(rel) or holder(rel) ~= nil end
     F.isDir = isDir
@@ -410,14 +410,14 @@ function J.new(base, opts)
         if hidden(rel) then error(full(rel) .. ": Access denied", 0) end
         if holder(rel) then error(full(rel) .. ": File exists", 0) end
         local list = P.members()
-        if #list == 0 then error("/" .. P.mount .. ": no disks in the pool", 0) end
+        if #list == 0 then error(full("") .. ": no disks in the pool", 0) end
         local best = list[1]
         for _, m in ipairs(list) do if free(m) > free(best) then best = m end end
         base.makeDir(real(best, rel))
     end
 
     function F.delete(rel)
-        if rel == "" then error("/" .. P.mount .. ": Access denied", 0) end
+        if rel == "" then error(full(rel) .. ": Access denied", 0) end
         if hidden(rel) then return end
         if isDir(rel) then
             for _, n in ipairs(F.list(rel)) do F.delete(base.combine(rel, n)) end
@@ -441,7 +441,7 @@ function J.new(base, opts)
         elseif kind == "w" or kind == "a" then
             if rel == "" or isDir(rel) then return nil, full(rel) .. ": Cannot write to directory" end
             if hidden(rel) then return nil, full(rel) .. ": Access denied" end
-            if #P.members() == 0 then return nil, "/" .. P.mount .. ": no disks in the pool" end
+            if #P.members() == 0 then return nil, full("") .. ": no disks in the pool" end
             local start = kind == "a" and contents(rel) or ""
             if start == false then return nil, full(rel) .. ": part of it is on a disk that's out" end
             start = start or ""
