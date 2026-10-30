@@ -40,6 +40,10 @@
 --    `set ccsh.login false`.
 -- Last, so the rest of startup runs first; a job that never returns
 -- means no ccsh until you stop it with Ctrl+T.
+--
+-- On a server with ccnix in ROM (the ccnix mod), its boot (deploy/boot.lua)
+-- does all of that from the settings, so install, run from there, only
+-- sets them.
 
 local noReboot, login, autostart, netBoot, router, initBoot = false, false, nil, false, false, false
 local AUTOSTART = turtle and { mine = true, farm = true, mow = true, autocompost = true } or { router = true }
@@ -67,6 +71,7 @@ end
 
 -- the repo is the directory above this one
 local repo = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram()))
+local romMode = fs.exists("/rom/ccnix/.manifest") and (repo == "/rom/ccnix" or repo == "/ccnix")
 local function pathLine(dir)
     return string.format(
         "if not (':' .. shell.path() .. ':'):find(':%s:', 1, true) then shell.setPath(shell.path() .. ':%s') end",
@@ -139,55 +144,57 @@ local function without(text, drop)
     return text
 end
 
-local folder = fs.isDir("/startup")
-local target, rest, current
-if folder then
-    target = "/startup/00-cc-turtles.lua"
-    current = read(target) or ""
-    rest = ""                                   -- ours alone: (re)written whole
-else
-    target = "/startup.lua"
-    current = read(target) or ""
-    rest = without(without(current, lines), { stalePath })
-end
-
--- `lines` holds the path and help lines; an earlier install's has the
--- path lines alone, so drop what's left of those too
-local pathOnly = {}
-for i = 1, #dirs do pathOnly[i] = lines[i] end
-rest = without(rest, pathOnly)
-if block .. rest == current then
-    print(target .. " already puts " .. table.concat(dirs, " and ") .. " on the path.")
-else
-    write(target, block .. rest)
-    print("Put " .. table.concat(dirs, " and ") .. " on the path, and help/ on the help path, in " .. target .. ".")
-end
-
--- The end of startup: the autostart (a turtle), then ccsh
-local wasLogin, hadAuto
-if folder then
-    local function put(path, line, want)
-        local had = (read(path) or ""):find(line, 1, true) ~= nil
-        if want and not had then write(path, line .. "\n") end
-        return had
+if not romMode then
+    local folder = fs.isDir("/startup")
+    local target, rest, current
+    if folder then
+        target = "/startup/00-cc-turtles.lua"
+        current = read(target) or ""
+        rest = ""                                   -- ours alone: (re)written whole
+    else
+        target = "/startup.lua"
+        current = read(target) or ""
+        rest = without(without(current, lines), { stalePath })
     end
-    local old = (read("/startup/zz-ccsh.lua") or "") .. (read("/startup/zz-craftix.lua") or "")
-    wasLogin = old:find(loginLine, 1, true) ~= nil or hasAny(old, staleLogins)
-    if fs.exists("/startup/zz-craftix.lua") then fs.delete("/startup/zz-craftix.lua") end
-    put("/startup/zx-init.lua", initLine, true)
-    hadAuto = put("/startup/zy-autostart.lua", autoLine, true)
-    put("/startup/zz-ccsh.lua", loginLine, login or wasLogin)
-else
-    local text = read(target) or ""
-    wasLogin = text:find(loginLine .. "\n", 1, true) ~= nil or hasAny(text, staleLogins, "\n")
-    hadAuto = text:find(autoLine .. "\n", 1, true) ~= nil
-    local body = without(without(text, { initLine, loginLine, turtleAutoLine, computerAutoLine }), staleLogins)
-    local tail = initLine .. "\n" .. autoLine .. "\n" .. ((login or wasLogin) and (loginLine .. "\n") or "")
-    local new = body .. ((body == "" or body:sub(-1) == "\n" or tail == "") and "" or "\n") .. tail
-    if new ~= text then write(target, new) end
+
+    -- `lines` holds the path and help lines; an earlier install's has the
+    -- path lines alone, so drop what's left of those too
+    local pathOnly = {}
+    for i = 1, #dirs do pathOnly[i] = lines[i] end
+    rest = without(rest, pathOnly)
+    if block .. rest == current then
+        print(target .. " already puts " .. table.concat(dirs, " and ") .. " on the path.")
+    else
+        write(target, block .. rest)
+        print("Put " .. table.concat(dirs, " and ") .. " on the path, and help/ on the help path, in " .. target .. ".")
+    end
+
+    -- The end of startup: the autostart (a turtle), then ccsh
+    local wasLogin, hadAuto
+    if folder then
+        local function put(path, line, want)
+            local had = (read(path) or ""):find(line, 1, true) ~= nil
+            if want and not had then write(path, line .. "\n") end
+            return had
+        end
+        local old = (read("/startup/zz-ccsh.lua") or "") .. (read("/startup/zz-craftix.lua") or "")
+        wasLogin = old:find(loginLine, 1, true) ~= nil or hasAny(old, staleLogins)
+        if fs.exists("/startup/zz-craftix.lua") then fs.delete("/startup/zz-craftix.lua") end
+        put("/startup/zx-init.lua", initLine, true)
+        hadAuto = put("/startup/zy-autostart.lua", autoLine, true)
+        put("/startup/zz-ccsh.lua", loginLine, login or wasLogin)
+    else
+        local text = read(target) or ""
+        wasLogin = text:find(loginLine .. "\n", 1, true) ~= nil or hasAny(text, staleLogins, "\n")
+        hadAuto = text:find(autoLine .. "\n", 1, true) ~= nil
+        local body = without(without(text, { initLine, loginLine, turtleAutoLine, computerAutoLine }), staleLogins)
+        local tail = initLine .. "\n" .. autoLine .. "\n" .. ((login or wasLogin) and (loginLine .. "\n") or "")
+        local new = body .. ((body == "" or body:sub(-1) == "\n" or tail == "") and "" or "\n") .. tail
+        if new ~= text then write(target, new) end
+    end
+    if turtle and not hadAuto then print("The autostart is in startup (it runs what cc-turtles.autostart names).") end
+    if login and not wasLogin then print("ccsh starts at boot.") end
 end
-if turtle and not hadAuto then print("The autostart is in startup (it runs what cc-turtles.autostart names).") end
-if login and not wasLogin then print("ccsh starts at boot.") end
 if settings.get("craftix.login") ~= nil then         -- (the setting from when it was Craftix)
     if settings.get("ccsh.login") == nil then settings.set("ccsh.login", settings.get("craftix.login")) end
     settings.unset("craftix.login")
@@ -217,8 +224,9 @@ end
 
 if noReboot then
     -- this shell gets it now; others after a reboot
-    load(block, "=startup", "t", { shell = shell, help = help, fs = fs, settings = settings })()
-    print("Not rebooting: on the path in this shell now, everywhere after a reboot.")
+    if not romMode then load(block, "=startup", "t", { shell = shell, help = help, fs = fs, settings = settings })() end
+    print(romMode and "Not rebooting: the settings take effect at the next boot."
+        or "Not rebooting: on the path in this shell now, everywhere after a reboot.")
     if login then print("Type ccsh to start it now.") end
     return
 end

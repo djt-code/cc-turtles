@@ -12,7 +12,7 @@
 --       field is blanks then non-blanks)
 --   -s  ignore that many characters more, after the fields
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("uniq", "uniq [-c|-d|-u] [-f fields] [-s chars] [input [output]]")
 local opts, ops = cu.getopt({ ... }, "cdf:s:u")
 if #ops > 2 then cu.usageError("too many operands") end

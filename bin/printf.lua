@@ -14,7 +14,7 @@
 -- is used again; missing ones count as "" or 0.  A bad number is reported,
 -- counts as what could be read of it, and printf exits 1.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("printf", "printf format [argument...]")
 local args = { ... }
 if args[1] == "--" then table.remove(args, 1) end

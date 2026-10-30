@@ -11,7 +11,7 @@
 -- any other key goes back.  It ends when the other side closes.  A screen
 -- without colour shows the colours as greys.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("telnet", "telnet host [port]")
 local net = require("net")
 local T = require("telnet")

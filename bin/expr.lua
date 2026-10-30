@@ -19,7 +19,7 @@
 -- 2 for a bad expression (syntax, a non-integer in arithmetic, dividing by
 -- zero, arithmetic beyond 2^53).  The stock shell's * is not a wildcard, so it needs no quoting.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("expr", "expr operand...")
 local args = { ... }
 if args[1] == "--" and #args > 1 then table.remove(args, 1) end

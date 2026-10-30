@@ -54,10 +54,11 @@
 -- is one, so `home` still works afterwards; otherwise here is (0,0,0)
 -- facing +z.
 
+package.path = (ccnix and ccnix.lib or "") .. package.path    -- (ccnix's turtlelib, the updates' first)
 local T = require("turtlelib")
 -- the pager is in lib/, beside turtle/; without it the output just scrolls
 if shell and shell.getRunningProgram then
-    package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path
+    package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path
 end
 local okPager, pager = pcall(require, "pager")
 if not (okPager and type(pager) == "table" and pager.page) then pager = nil end

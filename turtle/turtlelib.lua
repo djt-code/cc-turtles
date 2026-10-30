@@ -73,12 +73,20 @@ T.mode = "flat"            -- "flat" or "terrain": which stepper to use going ho
 -- Path for a data file kept next to the running program.  The programs
 -- moved from the repo's top folder into turtle/ on 2026-10-28; a file
 -- left up there (a job half done) is moved down the first time it's asked
--- for, so `--resume` and `reset` still find it.
+-- for, so `--resume` and `reset` still find it.  A program in ccnix's ROM
+-- (/rom/ccnix/turtle) keeps its files in /ccnix/turtle, where its updates
+-- go too (the ROM is read-only); one from an install before ccnix
+-- (/cc-turtles/turtle) is moved there the same way.
 function T.dataPath(name)
     local prog = shell and shell.getRunningProgram and shell.getRunningProgram() or ""
     local dir = fs.getDir(prog)
+    if dir:sub(1, 4) == "rom/" then
+        dir = dir:sub(5)
+        if not fs.exists(dir) then fs.makeDir(dir) end
+    end
     local path = fs.combine(dir, name)
     local old = fs.combine(fs.getDir(dir), name)
+    if dir == "ccnix/turtle" and not fs.exists(old) then old = fs.combine("cc-turtles/turtle", name) end
     if dir:match("[^/]*$") == "turtle" and not fs.exists(path) and fs.exists(old) then fs.move(old, path) end
     return path
 end

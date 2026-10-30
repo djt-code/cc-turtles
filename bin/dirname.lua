@@ -6,7 +6,7 @@
 -- A name with no slash gives ".", one directly under the root (or only
 -- slashes) gives "/".  The string is not looked up on disk.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("dirname", "dirname string")
 local _, ops = cu.getopt({ ... }, "")
 if #ops ~= 1 then cu.usageError(#ops < 1 and "missing operand" or "extra operand") end

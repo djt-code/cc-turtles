@@ -12,7 +12,8 @@ The repo is in four folders:
 - `lib/`: the modules the `bin/` programs require (`cu`, `regex`, `pager`).
 
 `deploy/install` puts `bin/` and `turtle/` (or `pc/`) on the path; see
-[Install](#install).
+[Install](#install). On a server with the ccnix mod, they're in every
+computer's ROM instead: see [ccnix](#ccnix-in-every-computers-rom).
 
 | Program | What it does |
 |---|---|
@@ -21,6 +22,7 @@ The repo is in four folders:
 | `turtle/mine.lua` | Digs a tunnel of any width and height, as long as asked or as long as its supplies last, following every ore vein it touches. It builds a new home from chests every so often, carries its supplies forward, and brings the valuables back to the start at the end. |
 | `turtle/turtlelib.lua` | Shared library: dead-reckoned position, mid-task refuelling, obstacle map + BFS routing, terrain/flat stepping, six-direction look/dig/place/move, inventory helpers, tool hot-swap, chest dumping/restocking/tidying. |
 | `turtle/home.lua` | Sends the turtle back to its start after a Ctrl+T or reboot (same as `mow reset` / `farm reset`; for `mine`, use `mine reset`). |
+| `bin/ccnix.lua` | ccnix, these programs in every computer's ROM (the ccnix mod): `ccnix` says what's in use, `ccnix update` pulls updates over the ROM's into `/ccnix` (only the files that differ), `ccnix reset` goes back to the ROM. See [ccnix](#ccnix-in-every-computers-rom). |
 | `bin/git.lua` | Minimal git client: `clone`, `pull`, `status` and `log` for one branch over HTTP, via the Forgejo/Gitea or GitHub REST API. |
 | `bin/cat.lua`, `bin/more.lua` | `cat` writes files out whole (POSIX `cat`); `more` shows them a screenful at a time in the pager: `more claude.log`. |
 | `lib/pager.lua` | Library: a `less`-style viewer for `more`, `git log` and `claude`. Space/PgDn/`f` and `b`/PgUp page (11 lines on a turtle), the mouse wheel 3 lines, `j`/`k`/arrows/Enter go a line, `d`/`u` half a page, `g`/`G`/Home/End top and bottom, `h`/`l`/arrows 8 columns sideways (lines aren't wrapped), `0`/`$` left edge and far right, `q` back to the shell. The bottom line shows where you are. Text that fits is just printed. A program that colours its output can hand it lines as `{ text, fg }` (`fg` one blit digit per character, as `term.blit` takes them), and on a colour screen they're shown in those colours. |
@@ -180,10 +182,46 @@ next to itself in `turtle/`, not in the current directory.
 
 **Upgrading from before the folders** (2026-10-28, when everything was in
 the repo's top folder): after `git pull`, run `cc-turtles/deploy/install`
-again. It swaps the old path line (and an old ccsh line) for the new
-ones. A job's files left in the top folder (`.turtlepos`, `mine.job`,
+again. It swaps the old path line (and the shell's, from when it was
+called Craftix) for the new ones. A job's files left in the top folder (`.turtlepos`, `mine.job`,
 `mine.seg`, `farm.map`, `claude.key`) are moved into `turtle/` the first
 time the program looks for them, so `mine --resume` and `reset` carry on.
+
+### ccnix: in every computer's ROM
+
+On a server running the ccnix mod ([mod/](mod/), a submodule), every
+computer has all of this in its ROM already, at `/rom/ccnix`: nothing to
+install, and no disk used. At each boot `deploy/boot.lua` (run from
+`/rom/autorun`) does what `install`'s startup lines do: `bin/` and
+`turtle/` or `pc/` on the path, `help/` on the help path, `ls`, and the
+network while `net.boot` is on. With `init.boot`, `ccsh.login` or
+`cc-turtles.autostart` set, it runs those at the end of startup, after the
+computer's own startup files. Programs find their libraries through
+`_G.ccnix`.
+
+Updates come without the server's admin. `ccnix update` pulls the latest
+from the repo into `/ccnix`, keeping only the files that differ from the
+ROM's: a few files, not the whole repo.
+- **From the next boot**, each program, library and help page comes from
+  `/ccnix` if it's there, else from the ROM. `ccnix` says what's in use,
+  and `ccnix reset` goes back to the ROM.
+- **When the server's copy changes** (the mod, or the server's own
+  checkout), updates made against the old one are left out until
+  `ccnix update` makes them again. They could pair a program with another
+  version's library.
+- **When the ROM is newer than the branch,** an update keeps nothing.
+- **Files deleted upstream** are still in the ROM until the server's copy
+  catches up.
+
+The server's admin updates the ROM itself with git: the mod's README says
+how.
+
+`setup` on such a server clones nothing:
+- it sets what the apps named want;
+- it moves an install from before ccnix (`/cc-turtles`) over: its startup
+  lines and files go, and a turtle's job files move to `/ccnix/turtle`
+  the next time the program looks for them;
+- it runs `ccnix update`.
 
 ## Settings and autostart
 

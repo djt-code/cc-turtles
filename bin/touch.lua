@@ -11,7 +11,7 @@
 -- files are still created (with the time now), existing ones left alone.
 -- Directories are left alone.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("touch", "touch [-acm] [-r ref_file | -t time | -d date_time] file...")
 local opts, files = cu.getopt({ ... }, "acmr:t:d:")
 if #files == 0 then cu.usageError("missing file operand") end

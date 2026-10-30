@@ -11,7 +11,7 @@
 -- Exit status 0 if any reply came, 1 if none, 2 for trouble (the network
 -- isn't up, an unknown host).
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("ping", "ping [-c count] [-i seconds] [-t ttl] [-W seconds] host")
 local net = require("net")
 local opts, operands = cu.getopt({ ... }, "c:i:t:W:")

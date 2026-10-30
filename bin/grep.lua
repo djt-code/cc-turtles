@@ -15,7 +15,7 @@
 -- Exit status: 0 a line was selected, 1 none, 2 an error (0 with -q if a
 -- line was selected anyway).
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("grep",
     "grep [-E|-F] [-c|-l|-q] [-insvx] [-e patterns] [-f file] [patterns] [file...]")
 local regex = require("regex")

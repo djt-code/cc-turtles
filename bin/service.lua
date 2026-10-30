@@ -15,7 +15,7 @@
 -- last of it.  add, remove, enable and disable work without init; the
 -- rest need it running (`help init`).
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("service",
     "service [status [name] | start|stop|restart|enable|disable|remove name | add name command...]")
 local args = { ... }

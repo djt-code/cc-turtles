@@ -14,7 +14,7 @@
 -- Not supported: -e, -i, -n number, -p command, -t tagstring, and more's
 -- own commands (/ search, :n, v and so on); the pager's keys stand in.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("more", "more [-cs] [-u] [file...]")
 local pager = require("pager")
 local opts, files = cu.getopt({ ... }, "csu")

@@ -6,7 +6,7 @@
 -- time in ticks, so the wait is rounded up to the next 0.05 s.  Ctrl+T
 -- stops it early.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("sleep", "sleep time")
 local _, ops = cu.getopt({ ... }, "")
 if #ops ~= 1 then cu.usageError(#ops < 1 and "missing operand" or "extra operand") end

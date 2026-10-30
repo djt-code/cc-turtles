@@ -20,7 +20,7 @@
 -- back) changes case.  The shell strips double quotes, so tr "a b" "_ _"
 -- passes the spaces through.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("tr", "tr [-c|-C] [-ds] string1 [string2]")
 local opts, ops = cu.getopt({ ... }, "cCds")
 local comp = opts.c or opts.C

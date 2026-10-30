@@ -22,7 +22,7 @@
 -- The network must be up (`ip up`).  Exit status 1 if the connection
 -- couldn't be made or broke.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("nc",
     "nc [-v] [-w seconds] host port | nc -l [-v] [-p port | port] | nc -u [-v] [-p port] [-w seconds] host port | nc -u -l [-v] port")
 local net = require("net")

@@ -11,7 +11,7 @@
 -- init (`help init`); ccsh's own kill also takes %job.
 -- Exit status 1 if any process couldn't be signalled.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("kill", "kill [-s signal | -signal] pid... | kill -l")
 local args = { ... }
 local NAMES = { HUP = 1, INT = 2, KILL = 9, TERM = 15 }

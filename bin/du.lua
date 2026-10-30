@@ -11,7 +11,7 @@
 --   -x  stay on the operand's drive (don't count /rom or disks under it)
 -- -H and -L (follow symbolic links) are accepted; CraftOS has no links.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("du", "du [-a|-s] [-kx] [-H|-L] [file...]")
 local opts, files = cu.getopt({ ... }, "askxHL")
 if opts.a and opts.s then cu.usageError("-a and -s can't be used together") end

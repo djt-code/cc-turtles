@@ -10,7 +10,7 @@
 -- skipped, and head exits 1 at the end.  "head -5" is taken as
 -- "head -n 5", as most systems do.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("head", "head [-c number | -n number] [file...]")
 local args = { ... }
 if args[1] and args[1]:match("^%-%d+$") then

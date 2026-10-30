@@ -26,7 +26,7 @@
 -- deploy/setup telnetd does all that.  `service status telnetd` shows who
 -- has connected.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local repo = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram()))
 local net = require("net")
 local T = require("telnet")
@@ -84,7 +84,8 @@ local function startSession(s)
     if not attach then
         ptys = ptys + 1
         s.term = proc.newTerm(s.w, s.h, true)
-        local cmd = settings.get("ccsh.login") and fs.exists(repo .. "/bin/ccsh.lua") and repo .. "/bin/ccsh" or nil
+        local ccsh = ccnix and ccnix.find("bin/ccsh.lua") or (fs.exists(repo .. "/bin/ccsh.lua") and repo .. "/bin/ccsh.lua")
+        local cmd = settings.get("ccsh.login") and ccsh and ccsh:gsub("%.lua$", "") or nil
         s.pid = proc.spawn({ cmd = cmd, term = s.term, tty = "pts/" .. ptys })
     end
     send(s, T.MODES_ON)                         -- (the first frame clears the screen)

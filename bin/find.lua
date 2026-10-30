@@ -29,7 +29,7 @@
 --   find . -name "*.lua" -size +4
 --   find /disk -type f -exec rm {} ;
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("find", "find [-H|-L] [path...] [expression]")
 local args = { ... }
 local i = 1

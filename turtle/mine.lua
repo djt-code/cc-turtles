@@ -160,6 +160,7 @@
 -- defined here comes from the shell's environment and _G.
 local _ENV = setmetatable({}, { __index = _ENV })
 
+package.path = (ccnix and ccnix.lib or "") .. package.path    -- (ccnix's turtlelib, the updates' first)
 T = require("turtlelib")
 
 JOB_FILE = T.dataPath("mine.job")

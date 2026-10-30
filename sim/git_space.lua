@@ -8,7 +8,10 @@
 -- need no room for two copies, as deletions go first (the git from before
 -- fetched everything first, so moving the whole repo into bin/ and turtle/
 -- filled the disk and left both copies).  --only takes just the paths
--- named, and a pull with new options changes what's kept.
+-- named, and a pull with new options changes what's kept.  --lower makes
+-- an overlay on ccnix's ROM: only what differs from the ROM is fetched,
+-- what the ROM catches up on goes, and a ROM newer than the branch leaves
+-- nothing to keep.
 local PROJ = ...
 package.path = PROJ .. "/sim/lib/?.lua;" .. package.path
 local M = require("mock")
@@ -19,8 +22,9 @@ local function check(label, cond, got)
     realPrint(string.format("   %s %s%s", cond and "ok   " or "ERROR:", label, got and ("  (" .. tostring(got) .. ")") or ""))
 end
 
--- the remote: commits of { [path] = text }; a blob's sha is its path and text
-local COMMITS, HEAD
+-- the remote: commits of { [path] = text }; a blob's sha is its path and
+-- text; DATES (if set) the commits' times, as GitHub gives them
+local COMMITS, HEAD, DATES
 local function sha(path, text) return (path .. ":" .. #text .. ":" .. text:sub(1, 8)):gsub("[^%w]", "_") end
 local API = "https://api.github.com/repos/me/cc-turtles"
 local RAW = "https://raw.githubusercontent.com/me/cc-turtles/"
@@ -30,7 +34,8 @@ http = {
         local url = type(req) == "table" and req.url or req
         local body
         if url == API then body = json.encode({ default_branch = "main" })
-        elseif url == API .. "/branches/main" then body = json.encode({ commit = { sha = HEAD } })
+        elseif url == API .. "/branches/main" then
+            body = json.encode({ commit = { sha = HEAD, commit = { committer = { date = DATES and DATES[HEAD] } } } })
         elseif url:sub(1, #API + 11) == API .. "/git/trees/" then
             local c = url:sub(#API + 12):match("^[^?]+")
             local tree = {}
@@ -221,3 +226,58 @@ turtle = {}
 ok = git("pull", "/cc-turtles", "--all")
 check("pull --all brings everything back, sim/ too", ok and has("sim/lib/mock.lua") and has("pc/diskclone.lua")
     and has("bin/cat.lua"))
+
+realPrint("== --lower: an overlay on ccnix's ROM keeps only what differs")
+-- the ROM: the repo at a commit, with its .manifest (blob shas, the time)
+local function rom(commit, date, tree)
+    for k in pairs(files) do if k:match("^rom/") then files[k] = nil end end
+    local m = { commit = commit, date = date, files = {} }
+    for path, text in pairs(tree) do
+        files["rom/ccnix/" .. path] = text
+        m.files[path] = sha(path, text)
+    end
+    files["rom/ccnix/.manifest"] = json.encode(m)
+end
+local function over() return json.decode(files["ccnix/.gitlite"] or "null") end
+local function inOver(p) return files["ccnix/" .. p] ~= nil end
+local REPO2 = {}
+for k, v in pairs(REPO) do REPO2[k] = v end
+REPO2["bin/cat.lua"] = string.rep("C", 1100)
+REPO2["lib/new.lua"] = string.rep("n", 700)
+COMMITS, HEAD, files, CAP, turtle = { c1 = REPO, c2 = REPO2 }, "c1", {}, 200000, nil
+DATES = { c1 = "2026-10-01T00:00:00Z", c2 = "2026-10-20T12:00:00+02:00" }
+rom("c1", 1790812800, REPO)
+local only = { "--only", "bin/", "--only", "lib/", "--only", "pc/" }
+ok = git("clone", "https://github.com/me/cc-turtles", "/ccnix", "--lower", "/rom/ccnix", table.unpack(only))
+check("over a ROM at the branch's commit: nothing fetched", ok and #fetched == 0 and next(over().files) == nil,
+    #fetched .. " fetched")
+check("the overlay remembers the ROM and its commit", over().lower == "/rom/ccnix" and over().lowerCommit == "c1")
+HEAD = "c2"
+ok = git("pull", "/ccnix")
+check("a new commit: only the changed and new files come", ok and #fetched == 2 and inOver("bin/cat.lua")
+    and inOver("lib/new.lua") and not inOver("bin/git.lua") and not inOver("lib/cu.lua"),
+    table.concat(fetched, " "))
+check("and they're tracked; the rest is the ROM's", over().files["bin/cat.lua"] ~= nil and over().files["bin/git.lua"] == nil
+    and said("files are /rom/ccnix's"))
+rom("c2", 1792490400, REPO2)
+ok = git("pull", "/ccnix")
+check("the server's ROM catches up: the overlay's copies go, nothing fetched",
+    ok and #fetched == 0 and not inOver("bin/cat.lua") and not inOver("lib/new.lua") and next(over().files) == nil
+    and over().lowerCommit == "c2")
+rom("c1", 1790812800, REPO)
+ok = git("pull", "/ccnix")
+check("an older ROM under it: what differs comes back", ok and inOver("bin/cat.lua") and inOver("lib/new.lua"))
+rom("c3", 1792886400, REPO)
+ok = git("pull", "/ccnix")
+check("a ROM newer than the branch (dates with an offset): nothing kept", ok and said("is newer than main")
+    and not inOver("bin/cat.lua") and next(over().files) == nil and over().lowerCommit == "c3", out[#out])
+ok = git("pull", "/ccnix")
+check("and it stays that way", ok and #fetched == 0 and not inOver("bin/cat.lua"))
+files["ccnix/.gitlite"] = nil
+for k in pairs(files) do if k:match("^ccnix/") then files[k] = nil end end
+rom("c1", 1790812800, REPO)
+files["rom/ccnix/.manifest"] = nil
+ok = git("clone", "https://github.com/me/cc-turtles", "/ccnix", "--lower", "/rom/ccnix", table.unpack(only))
+check("no manifest under it: a whole checkout of what's asked for", ok and inOver("bin/cat.lua") and inOver("bin/git.lua")
+    and inOver("lib/new.lua") and not inOver("README.md"))
+DATES = nil

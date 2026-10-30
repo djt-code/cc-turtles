@@ -21,7 +21,7 @@
 -- Remember the stock shell splits on spaces: quote "" for an empty string.
 
 local bracket = fs.getName(shell.getRunningProgram()):sub(1, 1) == "["
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init(bracket and "[" or "test",
     bracket and "[ expression ]" or "test [expression]")
 local args = { ... }

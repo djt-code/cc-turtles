@@ -9,7 +9,7 @@
 -- -a lists every match: the alias's program, then each one on the path.
 -- A name with no program is reported, and which exits 1.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("which", "which [-a] name...")
 local opts, names = cu.getopt({ ... }, "a")
 if #names == 0 then cu.usageError("missing operand") end

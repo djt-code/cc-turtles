@@ -45,6 +45,14 @@
 -- the new git, clears them.)  git runs from memory, so a full disk is no
 -- bar to starting.  An old bootstrap copy of git at /git.lua is removed,
 -- since the repo has its own in bin/.
+--
+-- On a server with ccnix in ROM (the ccnix mod: every program is in
+-- /rom/ccnix already) there's nothing to clone: setup moves an install
+-- from before ccnix over (/cc-turtles: its startup lines and files go; a
+-- turtle's job files move to /ccnix the first time they're used),
+-- brings this computer's updates up to date (ccnix update), and sets what
+-- the apps named want (deploy/install).  The apps' files are all there
+-- either way.
 
 local REPO = "https://github.com/djt-code/cc-turtles"
 local RAW = "https://raw.githubusercontent.com/djt-code/cc-turtles/main/"
@@ -146,6 +154,76 @@ end
 local function die(msg)
     printError(msg)
     error("", 0)
+end
+
+-- ccnix in ROM: the settings, an old install moved over, the updates
+if fs.exists("/rom/ccnix/.manifest") then
+    local function find(path)
+        return ccnix and ccnix.find and ccnix.find(path) or "/rom/ccnix/" .. path
+    end
+    print("ccnix is in this server's ROM: nothing to clone.")
+    if fs.exists("/cc-turtles/.gitlite") then
+        -- its startup lines: install's (and ip's, the old Craftix's) go;
+        -- one that runs a program of its own, fileserver mount say, runs it
+        -- by name now (ccnix puts it on the path), but not ip up (ccnix's
+        -- boot starts the network)
+        local files = { "/startup.lua" }
+        if fs.isDir("/startup") then
+            for _, name in ipairs(fs.list("/startup")) do files[#files + 1] = "/startup/" .. name end
+        end
+        for _, f in ipairs(files) do
+            if fs.exists(f) and not fs.isDir(f) and f ~= "/startup" then
+                local h = fs.open(f, "r")
+                local text = h.readAll() or ""
+                h.close()
+                local out, changed = {}, false
+                for line in (text .. "\n"):gmatch("(.-)\n") do
+                    if line:find("/cc-turtles", 1, true) then
+                        changed = true
+                        local prog, rest = line:match('^shell%.run%("/cc%-turtles/%w+/([%w%-]+)(.-)"%)$')
+                        if prog and prog ~= "ip" then out[#out + 1] = 'shell.run("' .. prog .. rest .. '")' end
+                    else
+                        out[#out + 1] = line
+                    end
+                end
+                if changed then
+                    local new = table.concat(out, "\n"):gsub("\n+$", "")
+                    if new == "" then fs.delete(f)
+                    else local h2 = fs.open(f, "w"); h2.write(new .. "\n"); h2.close() end
+                end
+            end
+        end
+        -- its files, as its .gitlite lists them (what else is there stays)
+        local h = fs.open("/cc-turtles/.gitlite", "r")
+        local state = (textutils.unserialiseJSON or textutils.unserializeJSON)(h.readAll()) or {}
+        h.close()
+        for path in pairs(state.files or {}) do
+            local p = "/cc-turtles/" .. path
+            if fs.exists(p) then fs.delete(p) end
+            local dir = fs.getDir(p)
+            while dir ~= "cc-turtles" and dir ~= "" and fs.isDir(dir) and #fs.list(dir) == 0 do
+                fs.delete(dir)
+                dir = fs.getDir(dir)
+            end
+        end
+        fs.delete("/cc-turtles/.gitlite")
+        if #fs.list("/cc-turtles") == 0 then fs.delete("/cc-turtles") end
+        print("Moved off /cc-turtles (an install from before ccnix): its startup lines and files are gone.")
+    end
+    for _, a in ipairs(apps) do
+        if a == "telnetd" then
+            settings.set("service.telnetd.cmd", "telnetd")
+            settings.set("service.telnetd.enabled", true)
+            settings.save()
+            if not settings.get("telnetd.password") then
+                print("telnetd needs a password: set telnetd.password <password> (then reboot, or service start telnetd)")
+            end
+        end
+    end
+    if http then shell.run(find("bin/ccnix.lua"), "update")
+    else print("HTTP is off here: no updates over the ROM's.") end
+    shell.run(find("deploy/install.lua"), table.unpack(installArgs))
+    return
 end
 
 if not http then die("HTTP is disabled on this server.") end

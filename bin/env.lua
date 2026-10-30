@@ -12,7 +12,7 @@
 -- Exit status: the command's, 127 if it isn't found; 125 for env's own
 -- errors.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("env", "env [-i] [-u name]... [name=value]... [command [arg...]]")
 local args = { ... }
 if not (os.environ and os.setenv) then

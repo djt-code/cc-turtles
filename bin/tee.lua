@@ -9,7 +9,7 @@
 -- keyboard, hold Ctrl+T to end the input.  -i (ignore interrupts) is
 -- accepted; CraftOS has no SIGINT, and Ctrl+T only ever ends the input.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("tee", "tee [-ai] [file...]")
 local opts, files = cu.getopt({ ... }, "ai")
 

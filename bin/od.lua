@@ -17,7 +17,7 @@
 -- to the one before is written as "*" unless -v is given.  The last line
 -- holds the offset just past the data.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("od", "od [-v] [-A base] [-j skip] [-N count] [-t type]... [-bcdosx] [file...]")
 local opts, files, order = cu.getopt({ ... }, "vA:j:N:t:bcdosx")
 

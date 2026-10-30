@@ -20,7 +20,7 @@
 -- routing carries on (it runs alongside whatever the computer does, see
 -- lib/net.lua), until `ip down` or a reboot.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside pc/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside pc/
 local net = require("net")
 local args = { ... }
 

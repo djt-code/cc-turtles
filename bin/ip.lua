@@ -23,7 +23,7 @@
 -- started it: see lib/net.lua.  `help network` walks through setting up
 -- two networks and a router.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("ip", "ip [up|down|boot|link|addr|route|neigh|forward|host] ...")
 local net = require("net")
 local args = { ... }
@@ -99,6 +99,7 @@ elseif cmd == "boot" then
     settings.set("net.boot", on)
     save()
     local line = string.format('shell.run("/%s up")', (shell.getRunningProgram():gsub("%.lua$", "")))
+    if ccnix then out(on and "the network starts at boot" or "the network doesn't start at boot"); return end   -- (ccnix's boot goes by net.boot)
     local target = fs.isDir("/startup") and "/startup/05-net.lua" or "/startup.lua"
     local text, installed = "", false
     for _, p in ipairs({ "/startup.lua", "/startup/00-cc-turtles.lua" }) do

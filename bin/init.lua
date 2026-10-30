@@ -24,7 +24,13 @@
 
 local args = { ... }
 local repo = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram()))
-package.path = repo .. "/lib/?.lua;" .. package.path
+package.path = (ccnix and ccnix.lib or repo .. "/lib/?.lua;") .. package.path
+-- a program of the repo's (path without .lua): ccnix's, or the one beside this
+local function program(path)
+    local found = ccnix and ccnix.find(path .. ".lua")
+    if found then return (found:gsub("%.lua$", "")) end
+    return fs.exists(repo .. "/" .. path .. ".lua") and repo .. "/" .. path or nil
+end
 
 if args[1] == "boot" then
     local on = args[2] ~= "off"
@@ -50,10 +56,10 @@ _G.proc = K.api
 local chain = {}
 local auto = settings.get("cc-turtles.autostart", "")
 if args[1] == "--boot" and auto ~= "" then
-    if turtle and fs.exists(repo .. "/turtle/autostart.lua") then chain[#chain + 1] = repo .. "/turtle/autostart"
-    elseif auto == "router" and fs.exists(repo .. "/pc/router.lua") then chain[#chain + 1] = repo .. "/pc/router" end
+    if turtle and program("turtle/autostart") then chain[#chain + 1] = program("turtle/autostart")
+    elseif auto == "router" and program("pc/router") then chain[#chain + 1] = program("pc/router") end
 end
-if settings.get("ccsh.login") and fs.exists(repo .. "/bin/ccsh.lua") then chain[#chain + 1] = repo .. "/bin/ccsh" end
+if settings.get("ccsh.login") and program("bin/ccsh") then chain[#chain + 1] = program("bin/ccsh") end
 chain[#chain + 1] = false                       -- the CraftOS shell
 
 local w, h = term.getSize()

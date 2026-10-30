@@ -8,7 +8,7 @@
 -- -u (unbuffered) is accepted: output is never buffered here anyway.
 -- To read a long file a screenful at a time, use more.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("cat", "cat [-u] [file...]")
 local _, files = cu.getopt({ ... }, "u")
 

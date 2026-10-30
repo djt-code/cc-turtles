@@ -10,7 +10,7 @@
 -- "cmp: EOF on <shorter>" goes to the error output (status 1).  Either
 -- file can be "-", standard input.  A file that can't be read: status 2.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("cmp", "cmp [-l|-s] file1 file2")
 local opts, ops = cu.getopt({ ... }, "ls", 2)
 if #ops ~= 2 then cu.usageError() end

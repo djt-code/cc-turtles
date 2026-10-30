@@ -19,9 +19,15 @@
 -- The same options on pull change the choice (deploy/setup uses --only to
 -- put just the apps you name on a device).
 --
+-- --lower <dir> makes the checkout an overlay on a read-only copy of the
+-- repo (ccnix's ROM, /rom/ccnix: see bin/ccnix.lua): a file whose blob the
+-- copy's .manifest lists the same isn't fetched, and is deleted here if it
+-- was, so only what differs takes disk.  When the copy's commit is newer
+-- than the branch's, nothing is kept.  The choice is kept for pulls.
+--
 -- Usage:
---   git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--only <path>]... [--all]
---   git pull   [dir] [--skip <dir>]... [--only <path>]... [--all]
+--   git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--only <path>]... [--all] [--lower <dir>]
+--   git pull   [dir] [--skip <dir>]... [--only <path>]... [--all] [--lower <dir>]
 --   git status [dir]
 --   git log    [dir] [-n <count>]
 --
@@ -55,7 +61,7 @@ end
 -- the bootstrap copy of git sits on its own), otherwise a screenful at a
 -- time with textutils.pagedPrint.
 local function page(lines)
-    package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path
+    package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path
     local _, pager = pcall(require, "pager")
     if type(pager) == "table" and pager.page then pager.page(lines)
     else textutils.pagedPrint(table.concat(lines, "\n")) end
@@ -75,6 +81,21 @@ end
 
 local unjson = textutils.unserialiseJSON or textutils.unserializeJSON
 local tojson = textutils.serialiseJSON or textutils.serializeJSON
+
+-- Seconds since 1970 for an ISO 8601 time ("2026-10-29T21:04:05Z",
+-- "...+02:00"), or nil
+local function isoTime(s)
+    local y, mo, d, h, mi, se, rest = tostring(s):match("^(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)%.?%d*(.*)$")
+    if not y then return nil end
+    y, mo, d = tonumber(y), tonumber(mo), tonumber(d)
+    if mo <= 2 then y, mo = y - 1, mo + 12 end            -- (days from 1970, the civil calendar)
+    local days = 365 * y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400)
+        + math.floor((153 * (mo - 3) + 2) / 5) + d - 719469
+    local t = days * 86400 + tonumber(h) * 3600 + tonumber(mi) * 60 + tonumber(se)
+    local sign, oh, om = rest:match("^([+-])(%d%d):?(%d%d)$")
+    if sign then t = t - (sign == "+" and 1 or -1) * (tonumber(oh) * 3600 + tonumber(om) * 60) end
+    return t
+end
 
 local function request(url, headers, binary)
     local h, err, failed = http.get({ url = url, headers = headers, binary = binary })
@@ -146,6 +167,10 @@ local function makeRemote(url, token)
         R.headers["User-Agent"] = "cc-tweaked-git"
         if token then R.headers["Authorization"] = "Bearer " .. token end
         R.branchSha = function(j) return j.commit.sha end
+        R.branchDate = function(j)
+            local c = j.commit.commit or {}
+            return isoTime((c.committer or {}).date or (c.author or {}).date)
+        end
         R.treeUrl = function(sha, page)
             return R.api .. "/git/trees/" .. sha .. "?recursive=1"
         end
@@ -161,6 +186,7 @@ local function makeRemote(url, token)
         R.api  = scheme .. "://" .. host .. "/api/v1/repos/" .. owner .. "/" .. repo
         if token then R.headers["Authorization"] = "token " .. token end
         R.branchSha = function(j) return j.commit.id end
+        R.branchDate = function(j) return isoTime(j.commit.timestamp) end
         R.treeUrl = function(sha, page)
             return R.api .. "/git/trees/" .. sha .. "?recursive=true&per_page=1000&page=" .. page
         end
@@ -176,9 +202,10 @@ local function makeRemote(url, token)
         return requestJSON(R.api, R.headers).default_branch
     end
 
+    -- The branch's commit, and its time (seconds, or nil)
     function R.headCommit(branch)
         local j = requestJSON(R.api .. "/branches/" .. encodeSegment(branch), R.headers)
-        return R.branchSha(j)
+        return R.branchSha(j), R.branchDate(j)
     end
 
     -- Returns { [path] = blobSha } for every file in the tree.
@@ -238,11 +265,32 @@ local function skipped(state, path)
     return false
 end
 
+-- The read-only copy under an overlay checkout: its .manifest, { commit,
+-- date, files = { [path] = blobSha } }, or {} if it has none
+local function lowerManifest(state)
+    if not state.lower then return {} end
+    local p = fs.combine(state.lower, ".manifest")
+    if not fs.exists(p) then return {} end
+    local f = fs.open(p, "r")
+    local m = unjson(f.readAll())
+    f.close()
+    return type(m) == "table" and m or {}
+end
+
 local function checkout(R, dir, state, commit)
-    local remote = {}
+    local lower = lowerManifest(state)
+    local lowerFiles = lower.files or {}
+    local remote, fromLower = {}, 0
     for path, sha in pairs(R.tree(commit)) do
-        if not skipped(state, path) then remote[path] = sha end
+        if skipped(state, path) then
+            -- not wanted
+        elseif lowerFiles[path] == sha then
+            fromLower = fromLower + 1                   -- (the copy below has it)
+        else
+            remote[path] = sha
+        end
     end
+    state.lowerCommit = lower.commit
     local have = state.files or {}
     local fetched, deleted = 0, 0
 
@@ -287,7 +335,22 @@ local function checkout(R, dir, state, commit)
 
     state.commit = commit
     writeState(dir, state)
+    if state.lower then print(string.format("%d files are %s's, as they are there.", fromLower, state.lower)) end
     return fetched, deleted
+end
+
+-- An overlay whose copy below is newer than the branch: nothing to keep
+local function lowerIsNewer(dir, state, date)
+    local lower = lowerManifest(state)
+    if not (lower.date and date and lower.date > date) then return false end
+    for path in pairs(state.files or {}) do
+        local p = fs.combine(dir, path)
+        if fs.exists(p) then fs.delete(p); pruneDirs(dir, p) end
+    end
+    state.files, state.commit, state.lowerCommit = {}, lower.commit, lower.commit
+    writeState(dir, state)
+    print(state.lower .. " is newer than " .. state.branch .. ": nothing to keep here.")
+    return true
 end
 
 --------------------------------------------------------------------------
@@ -309,6 +372,7 @@ local function parseArgs(list)
             opts.only[#opts.only + 1] = ((list[i + 1] or ""):gsub("^/+", ""))
             i = i + 1
         elseif a == "--all" then opts.all = true
+        elseif a == "--lower" then opts.lower = list[i + 1]; i = i + 1
         elseif a == "-n" then opts.count = tonumber(list[i + 1]); i = i + 1
         else pos[#pos + 1] = a end
         i = i + 1
@@ -338,13 +402,15 @@ local function cmdClone(pos, opts)
     end
     local skip = chosenSkip(opts) or defaultSkip()
     local branch = opts.branch or R.defaultBranch()
-    local commit = R.headCommit(branch)
+    local commit, date = R.headCommit(branch)
     print(string.format("Cloning %s (%s @ %s) into %s", R.url, branch, commit:sub(1, 7), dir))
     fs.makeDir(dir)
     if #skip > 0 then print("Leaving out " .. table.concat(skip, "/, ") .. "/ (--all for everything)") end
     if opts.only then print("Taking only " .. table.concat(opts.only, ", ")) end
     local state = { url = R.url, branch = branch, token = opts.token, files = {}, skip = skip,
-                    only = (not opts.all) and opts.only or nil }
+                    only = (not opts.all) and opts.only or nil, lower = opts.lower }
+    if state.lower then print("Over " .. state.lower .. ": only what differs comes") end
+    if lowerIsNewer(dir, state, date) then return end
     local n = checkout(R, dir, state, commit)
     print(string.format("Done: %d files.", n))
 end
@@ -358,7 +424,11 @@ end
 
 local function cmdPull(pos, opts)
     local dir, state, R = openCheckout(pos)
-    local commit = R.headCommit(state.branch)
+    local commit, date = R.headCommit(state.branch)
+    if opts.lower and opts.lower ~= state.lower then
+        state.lower = opts.lower                        -- (an overlay now: go over every file)
+        state.commit = nil
+    end
     if opts.all or opts.skip or opts.only then
         -- a new choice of what to keep: go over every file again
         state.skip = chosenSkip(opts) or state.skip or defaultSkip()
@@ -370,7 +440,8 @@ local function cmdPull(pos, opts)
         print("Leaving out " .. table.concat(state.skip, "/, ") .. "/ from now on")
         state.commit = nil
     end
-    if commit == state.commit then
+    if lowerIsNewer(dir, state, date) then return end
+    if commit == state.commit and state.lowerCommit == lowerManifest(state).commit then
         print("Already up to date (" .. commit:sub(1, 7) .. ").")
         return
     end
@@ -390,6 +461,7 @@ local function cmdStatus(pos)
     print("Files:   " .. n .. " tracked")
     if state.skip and #state.skip > 0 then print("Skips:   " .. table.concat(state.skip, "/ ") .. "/") end
     if state.only then print("Only:    " .. table.concat(state.only, " ")) end
+    if state.lower then print("Over:    " .. state.lower .. " (" .. (state.lowerCommit or "no manifest"):sub(1, 7) .. ")") end
     local ok, head = pcall(R.headCommit, state.branch)
     if ok then
         print(head == state.commit and "Up to date with remote."
@@ -426,8 +498,8 @@ elseif cmd == "log" then cmdLog(pos, opts)
 else
     print("Usage:")
     print("  git clone <url> [dir] [-b branch] [--token t]")
-    print("            [--skip dir]... [--only path]... [--all]")
-    print("  git pull [dir] [--skip dir]... [--only path]... [--all]")
+    print("            [--skip dir]... [--only path]... [--all] [--lower dir]")
+    print("  git pull [dir] [--skip dir]... [--only path]... [--all] [--lower dir]")
     print("  git status [dir]")
     print("  git log [dir] [-n count]")
 end

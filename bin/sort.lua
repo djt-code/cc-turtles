@@ -22,7 +22,7 @@
 --       exit 1.  -C does the same without the report.
 -- Exits 2 if a file can't be read or written.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("sort", "sort [-cCmu] [-o output] [-bdfinr] [-t char] [-k keydef]... [file...]")
 local opts, files, order = cu.getopt({ ... }, "bcCdfik:mno:rt:u")
 local sep = opts.t

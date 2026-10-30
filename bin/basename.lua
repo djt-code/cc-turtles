@@ -7,7 +7,7 @@
 -- left.  A string of only slashes gives "/", an empty string an empty
 -- line.  Only "/" separates: the string is not looked up on disk.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("basename", "basename string [suffix]")
 local _, ops = cu.getopt({ ... }, "")
 if #ops < 1 or #ops > 2 then cu.usageError(#ops < 1 and "missing operand" or "extra operand") end

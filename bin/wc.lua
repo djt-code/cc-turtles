@@ -10,7 +10,7 @@
 -- CraftOS's one-byte character set is the same as -c.  A file that can't
 -- be read is reported and wc exits 1 at the end.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("wc", "wc [-c|-m] [-lw] [file...]")
 local opts, files = cu.getopt({ ... }, "clmw")
 if not (opts.c or opts.l or opts.m or opts.w) then opts.l, opts.w, opts.c = true, true, true end

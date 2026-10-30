@@ -15,7 +15,7 @@
 --        second and write whatever is added to it.  Hold Ctrl+T to stop.
 --        It does nothing when reading standard input.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("tail", "tail [-f | -r] [-c number | -n number] [file...]")
 local args = { ... }
 if args[1] and args[1]:match("^%-%d+$") then

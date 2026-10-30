@@ -13,7 +13,7 @@
 --       delimiter is written whole, unless -s, which drops it.
 -- With no files, or for "-", standard input is read.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("cut", "cut -b list [-n] | -c list | -f list [-d delim] [-s] [file...]")
 local opts, files = cu.getopt({ ... }, "b:c:d:f:ns")
 

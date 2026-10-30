@@ -23,6 +23,7 @@
 --                lawn was mowed.
 --   autocompost  autocompost.
 
+package.path = (ccnix and ccnix.lib or "") .. package.path    -- (ccnix's turtlelib, the updates' first)
 local T = require("turtlelib")
 
 local CHOICES = { mine = true, farm = true, mow = true, autocompost = true }

@@ -12,7 +12,7 @@
 -- screen.  The filesystem name is fs.getDrive's ("hdd", "rom", or the disk
 -- drive's side).  /rom has no capacity, so its size is what its files use.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("df", "df [-k] [-P] [file...]")
 local opts, files = cu.getopt({ ... }, "kP")
 local unit = opts.k and 1024 or 512

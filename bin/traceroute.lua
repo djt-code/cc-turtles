@@ -11,7 +11,7 @@
 -- network) or "!P".  Exit status 0 if it got to the host, 1 if not, 2
 -- for trouble.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("traceroute", "traceroute [-m hops] [-q queries] [-w seconds] host")
 local net = require("net")
 local opts, operands = cu.getopt({ ... }, "m:q:w:")

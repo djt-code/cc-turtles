@@ -25,7 +25,7 @@
 -- (an alias for `list`, which shows hidden files only with the setting
 -- list.show_hidden).  A missing operand is reported and ls exits 2.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("ls", "ls [-aAdFhlpRrSt1] [file...]")
 local opts, operands = cu.getopt({ ... }, "aAdFhlpRrSt1")
 local mark = opts.F or opts.p

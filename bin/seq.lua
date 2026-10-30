@@ -15,7 +15,7 @@
 --              %.2f, %g or %05.1f (one %e, %f or %g, and %% for a %)
 -- Exit status 1 for a bad number, a zero increment or bad options.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("seq", "seq [-w] [-s sep] [-f format] [first [increment]] last")
 
 -- Options come first; a negative number ends them (seq -2 2).

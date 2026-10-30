@@ -3,6 +3,7 @@ cc-turtles: the commands this repo adds. `help <command>` for one.
 Anywhere (bin/):
   basename: the last part of a path name (POSIX basename)
   cat: concatenate files to standard output (POSIX cat)
+  ccnix: this computer's ccnix: where it comes from, and updates
   ccsh: ccsh, a small POSIX-style shell for CraftOS
   cmp: compare two files byte by byte (POSIX cmp)
   cut: write selected parts of each line (POSIX cut)

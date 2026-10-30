@@ -21,7 +21,7 @@
 -- until it's back (a split file needs all its disks).  The layer lives in
 -- lib/jbod.lua.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside pc/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside pc/
 local jbod = require("jbod")
 
 local MOUNT = "jbod"
@@ -73,7 +73,8 @@ elseif cmd == "add" and args[2] then
     if ok then print(args[2] .. (why and (": " .. why) or " is in the pool now."))
     else printError("fileserver: " .. why) end
 elseif cmd == "startup" then
-    local line = string.format('shell.run("%s mount")', "/" .. shell.getRunningProgram():gsub("%.lua$", ""))
+    local line = ccnix and 'shell.run("fileserver mount")'
+        or string.format('shell.run("%s mount")', "/" .. shell.getRunningProgram():gsub("%.lua$", ""))
     local target = fs.isDir("/startup") and "/startup/10-fileserver.lua" or "/startup.lua"
     local text = ""
     if fs.exists(target) then

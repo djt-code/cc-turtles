@@ -8,7 +8,7 @@
 -- followed by a space.  Whole files are always scanned, so -a changes
 -- nothing.  "-" or no files reads standard input.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("strings", "strings [-a] [-t format] [-n number] [file...]")
 local opts, files = cu.getopt({ ... }, "an:t:")
 

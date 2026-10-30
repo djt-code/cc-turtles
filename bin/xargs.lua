@@ -25,7 +25,7 @@
 -- if every run succeeded, 1 if one failed (or the input was bad), 127 if
 -- utility was not found; a run ending with status 255 stops xargs.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("xargs", "xargs [-prtx] [-E eofstr | -0] "
     .. "[-I replstr | -L number | -n number] [-s size] [utility [argument...]]")
 local opts, ops, order = cu.getopt({ ... }, "prtx0E:I:L:n:s:")

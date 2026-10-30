@@ -4,9 +4,11 @@ Clones and pulls a single branch over HTTP using the hosting server's REST API (
 
 A computer's disk is small (1 MB by default), so a clone leaves out what the device doesn't run: sim/ always, pc/ on a turtle and turtle/ on a computer.  --skip <dir> leaves out more, --all nothing, and --only <path> (a file, or a folder ending in /) takes just those, sim/ and the other device's folder too if named (the device rule is for when nothing is); the choice is kept in .gitlite and pull keeps to it (a checkout from before this gets the device's rule on its next pull, and loses those folders).  If the disk fills anyway it stops, keeping what it got, and `git pull` carries on once there's room. The same options on pull change the choice (deploy/setup uses --only to put just the apps you name on a device).
 
+--lower <dir> makes the checkout an overlay on a read-only copy of the repo (ccnix's ROM, /rom/ccnix: see bin/ccnix.lua): a file whose blob the copy's .manifest lists the same isn't fetched, and is deleted here if it was, so only what differs takes disk.  When the copy's commit is newer than the branch's, nothing is kept.  The choice is kept for pulls.
+
 Usage:
-  git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--only <path>]... [--all]
-  git pull   [dir] [--skip <dir>]... [--only <path>]... [--all]
+  git clone <url> [dir] [-b <branch>] [--token <token>] [--skip <dir>]... [--only <path>]... [--all] [--lower <dir>]
+  git pull   [dir] [--skip <dir>]... [--only <path>]... [--all] [--lower <dir>]
   git status [dir]
   git log    [dir] [-n <count>]
 

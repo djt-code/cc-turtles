@@ -11,7 +11,7 @@
 -- every process is always listed.  Without init there are no processes
 -- to list (only the shell this runs in), and ps says so, status 1.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("ps", "ps [-l] [-e] [-A]")
 local opts, operands = cu.getopt({ ... }, "leA")
 if #operands > 0 then cu.usageError("unexpected operand " .. operands[1]) end

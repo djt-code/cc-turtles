@@ -14,7 +14,7 @@
 -- on into common subdirectories.  Exit 0: no differences, 1: some,
 -- 2: trouble.
 
-package.path = "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;" .. package.path  -- lib/ is beside bin/
+package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("diff", "diff [-c|-e|-f|-u|-C n|-U n] [-bqr] file1 file2")
 local args = { ... }
 local opts, ops, order = cu.getopt(args, "bcefqruC:U:", 2)
