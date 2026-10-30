@@ -1414,11 +1414,12 @@ step (moves, turns, digs and transfers all take 8 ticks).
 `false` only when no route exists through the known map.
 
 Beyond columns, the library has six directions: `0..3` as `T.dir` plus
-`"up"` and `"down"`. `T.look(d)`, `T.digDir(d)`, `T.placeDir(d)` and
-`T.moveDir(d)` face `d` first (up and down need no turn); `T.turnsTo(d)`
-says how many turns that takes, `T.eachAround(skip, fn)` goes round the
-turtle fewest turns first, `T.stepToward(p)` picks the step toward a
-position that turns least. Positions are `{ x, y, z }` tables: `T.here()`,
+`"up"` and `"down"`. `T.look(d)`, `T.digDir(d)`, `T.placeDir(d)`,
+`T.attackDir(d)`, `T.suckDir(d)` and `T.moveDir(d)` face `d` first (up and
+down need no turn); `T.turnsTo(d)` says how many turns that takes,
+`T.eachAround(skip, fn)` goes round the turtle fewest turns first,
+`T.stepToward(p)` picks the step toward a position that turns least.
+Positions are `{ x, y, z }` tables: `T.here()`,
 `T.at(p)`, `T.neighbour(d)`, `T.dirTo(p)`, `T.dist(a, b)`, `T.posKey(p)`.
 Chest sides are CC's `"front"`, `"top"` and `"bottom"`: `T.dropSide`,
 `T.suckSide`, `T.inspectSide`, `T.containerOn(side)`, `T.sideDir(side)`.

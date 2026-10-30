@@ -552,7 +552,7 @@ end
 --------------------------------------------------------------------------
 DELTA, OPP = T.DELTA, T.OPP
 neighbour, key, here, dist = T.neighbour, T.posKey, T.here, T.dist
-look, placeDir, moveDir = T.look, T.placeDir, T.moveDir
+look, placeDir, moveDir, attackDir, suckDir = T.look, T.placeDir, T.moveDir, T.attackDir, T.suckDir
 
 -- The torches it has placed, by the block each is in and the blocks it
 -- may rest on (the one behind it and the one under it); digging any of
@@ -1215,20 +1215,6 @@ end
 
 -- The side ("front", "top" or "bottom") that is direction d.
 function sideOf(d) return d == "up" and "top" or d == "down" and "bottom" or "front" end
-
-function attackDir(d)
-    if d == "up" then return turtle.attackUp() end
-    if d == "down" then return turtle.attackDown() end
-    T.face(d)
-    return turtle.attack()
-end
-
-function suckDir(d)
-    if d == "up" then return turtle.suckUp() end
-    if d == "down" then return turtle.suckDown() end
-    T.face(d)
-    return turtle.suck()
-end
 
 -- Clear what isn't a block out of the space in direction d: a minecart
 -- there (mineshafts have them) is hit until it breaks, and the minecart

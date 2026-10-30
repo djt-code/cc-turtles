@@ -599,6 +599,20 @@ function T.placeDir(d)
     return turtle.place()
 end
 
+function T.attackDir(d)
+    if d == "up" then return turtle.attackUp() end
+    if d == "down" then return turtle.attackDown() end
+    T.face(d)
+    return turtle.attack()
+end
+
+function T.suckDir(d)
+    if d == "up" then return turtle.suckUp() end
+    if d == "down" then return turtle.suckDown() end
+    T.face(d)
+    return turtle.suck()
+end
+
 -- Move one block in direction d (T.up/T.down/T.forward: digging what
 -- T.diggable allows, attacking what's in the way).
 function T.moveDir(d)
