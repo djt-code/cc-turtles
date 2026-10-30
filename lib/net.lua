@@ -558,7 +558,7 @@ function N.new(opts)
 
     -- Send from snd.nxt what the peer's window allows; then, everything
     -- out and our side closing, the FIN.  (c.out: bytes from snd.una on.)
-    local function output(c)
+    local function push(c)
         if c.state == "SYN_SENT" or c.state == "SYN_RCVD" or c.state == "CLOSED" then return end
         while true do
             local off = minus(c.sndNxt, c.sndUna)
@@ -629,7 +629,7 @@ function N.new(opts)
                 c.rcvNxt, c.sndUna, c.sndWnd = add(d.seq, 1), d.ack, d.wnd or MSS
                 c.state, c.tries, c.rto = "ESTABLISHED", 0, TCP_RTO
                 emit(c, { seq = c.sndNxt })
-                output(c)
+                push(c)
                 event(c)
             end
             return
@@ -680,7 +680,7 @@ function N.new(opts)
             if len > 0 then emit(c, { seq = c.sndNxt }) end
             if #take > 0 or c.peerFin then event(c) end
         end
-        output(c)
+        push(c)
         settle(c)
     end
 
@@ -702,7 +702,7 @@ function N.new(opts)
                     emit(c, { seq = add(c.sndUna, -1) })     -- a window probe: their ACK says the window
                 else
                     c.sndNxt = c.sndUna                 -- go back N
-                    output(c)
+                    push(c)
                 end
             elseif not waiting and now - math.max(c.lastHeard, c.lastSent) >= TCP_KEEPIDLE then
                 c.probes = c.probes + 1
@@ -751,7 +751,7 @@ function N.new(opts)
         if c.state == "CLOSED" then return false, c.err or "closed" end
         if c.closing then return false, "closed" end
         c.out = c.out .. s
-        output(c)
+        push(c)
         return true
     end
 
@@ -769,7 +769,7 @@ function N.new(opts)
         if c.state == "SYN_SENT" then return finish(c, nil) end
         if c.state == "CLOSED" or c.closing then return end
         c.closing = true
-        output(c)
+        push(c)
         settle(c)
     end
 
