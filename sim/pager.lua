@@ -124,7 +124,8 @@ rows = pager.wrap({ { "red words then", "eeeeeeeeeeeeee" }, "plain" }, 9)
 check("a coloured line's rows keep their colours; a plain line stays a string",
     type(rows[1]) == "table" and rows[1][1] == "red words" and rows[1][2] == "eeeeeeeee"
         and rows[2][1] == "then" and rows[2][2] == "eeee" and rows[3] == "plain",
-    textutils and textutils.serialise and textutils.serialise(rows) or tostring(rows[1]))
+    string.format("%s/%s | %s/%s | %s", tostring(rows[1][1]), tostring(rows[1][2]),
+        tostring(rows[2] and rows[2][1]), tostring(rows[2] and rows[2][2]), tostring(rows[3])))
 check("colourLine and blitOf: one colour for the whole line",
     pager.colourLine("abc", 16384)[2] == "eee" and pager.blitOf(1) == "0" and pager.blitOf(32768) == "f")
 local coloured = {}
