@@ -1423,12 +1423,6 @@ function craftSteps(side, recipe, picks, steps)
     return made
 end
 
-function firstEmpty()
-    for s = 1, 16 do
-        if turtle.getItemCount(s) == 0 then return s end
-    end
-end
-
 function pickaxeOn()
     return T.equipped("left") == pickaxe or T.equipped("right") == pickaxe
 end
@@ -1504,7 +1498,7 @@ function craftSupplies()
     if not pickaxeOn() then
         stop("The pickaxe didn't go back on after crafting: it's in home " .. home.k .. "'s chest.")
     end
-    for _, name in ipairs(scanners) do T.takeInto(home.val, name, 1, firstEmpty() or 16) end
+    for _, name in ipairs(scanners) do T.takeInto(home.val, name, 1, T.emptySlot() or 16) end
     restockKit()                           -- filler, torches and fuel back on board
     local now = atHand()
     local chests, torches = 0, 0
