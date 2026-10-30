@@ -1417,9 +1417,10 @@ end
 warnedTable = false
 function craftSupplies()
     if home.val == "front" then T.face(home.face) end
-    local plan, have = craftPlan(atHand())
+    local n = atHand()
+    local plan, have = craftPlan(n)
     if plan.chests + plan.torches == 0 then return end
-    local tableIn = T.countItem(CRAFTING_TABLE) > 0 or (chestCounts(home.val)[CRAFTING_TABLE] or 0) > 0
+    local tableIn = (n[CRAFTING_TABLE] or 0) > 0
     local side = (T.equipped("left") == CRAFTING_TABLE and "left") or (T.equipped("right") == CRAFTING_TABLE and "right")
     if not side and not pickaxeOn() then return end   -- (a pickaxe in the inventory isn't swapped)
     if not tableIn and not side then
@@ -1486,23 +1487,15 @@ function craftSupplies()
     end
     for _, name in ipairs(scanners) do T.takeInto(home.val, name, 1, T.emptySlot() or 16) end
     restockKit()                           -- filler, torches and fuel back on board
-    local now = atHand()
-    local chests, torches = 0, 0
-    for name, c in pairs(now) do
-        if CHEST_ITEMS[name] then chests = chests + c elseif TORCHES[name] then torches = torches + c end
-    end
-    print(string.format("Crafted %d chests and %d torches.", chests - have.chests, torches - have.torches))
+    local _, now = craftPlan(atHand())
+    print(string.format("Crafted %d chests and %d torches.", now.chests - have.chests, now.torches - have.torches))
 end
 
 -- Running low: fewer chests than two more homes take, or torches than
 -- two segments do (none needed with --no-lights).
 function suppliesLow()
-    local n = atHand()
-    local chests, torches = 0, 0
-    for name, c in pairs(n) do
-        if CHEST_ITEMS[name] then chests = chests + c elseif TORCHES[name] then torches = torches + c end
-    end
-    return chests < 4 or torches < 2 * torchesPerSegment()
+    local _, have = craftPlan(atHand())
+    return have.chests < 4 or have.torches < 2 * torchesPerSegment()
 end
 
 -- The segment is done: build the next home at its end and move the
@@ -1511,12 +1504,8 @@ function advance()
     local next = homeAt(home.k + 1)
     local exists = next.k <= lastHome  -- going over the tunnel again (resumed from an earlier home)
     if not exists and suppliesLow() then craftSupplies() end
-    local have = T.countItem("minecraft:chest") + T.countItem("minecraft:barrel")
-    for name, n in pairs(chestCounts(home.val)) do
-        if CHEST_ITEMS[name] then have = have + n end
-    end
-    if have < 2 and not exists then
-        local plan = craftPlan(atHand())
+    local plan, have = craftPlan(atHand())
+    if have.chests < 2 and not exists then
         stop("Out of chests to build the next home (needs 2)."
             .. (plan.chests > 0 and " There's wood for more: put a crafting table in the start's top chest." or ""))
     end
