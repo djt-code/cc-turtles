@@ -18,29 +18,15 @@
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
 local cu = require("cu").init("seq", "seq [-w] [-s sep] [-f format] [first [increment]] last")
 
--- Options come first; a negative number ends them (seq -2 2).
-local args = { ... }
-local opts, ops, i = {}, {}, 1
-while args[i] do
-    local a = args[i]
-    if a == "--" then i = i + 1; break end
-    if a:sub(1, 1) ~= "-" or a == "-" or a:match("^%-[%d%.]") then break end
-    local c, rest = a:sub(2, 2), a:sub(3)
-    if c == "w" and rest == "" then
-        opts.w = true
-    elseif c == "s" or c == "f" then
-        if rest == "" then
-            i = i + 1
-            rest = args[i]
-            if not rest then cu.usageError("option requires an argument -- " .. c, 1) end
-        end
-        opts[c] = rest
-    else
-        cu.usageError("invalid option -- " .. c, 1)
-    end
-    i = i + 1
+-- Options come first; a negative number ends them (seq -2 2) unless it's
+-- -s's or -f's argument (seq -s -1 5).  cu.getopt would take it for an
+-- option, so a "--" goes in before it.
+local args, i = { ... }, 1
+while args[i] and args[i]:match("^%-[^%d%.]") and args[i] ~= "--" do
+    i = i + ((args[i] == "-s" or args[i] == "-f") and 2 or 1)
 end
-for k = i, #args do ops[#ops + 1] = args[k] end
+if args[i] and args[i]:match("^%-[%d%.]") then table.insert(args, i, "--") end
+local opts, ops = cu.getopt(args, "ws:f:", 1)
 if #ops == 0 then cu.usageError("missing operand", 1) end
 if #ops > 3 then cu.usageError("extra operand '" .. ops[4] .. "'", 1) end
 if opts.w and opts.f then cu.usageError("-f and -w can't go together", 1) end
