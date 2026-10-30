@@ -7,8 +7,9 @@
 -- as themselves: files first, then each directory under a "name:" header
 -- when there's more than one operand.  Names starting with "." are hidden
 -- unless -a or -A, and so, with the fileserver's pool mounted, are its
--- member disks' own mounts (/disk, /disk2...: their files are in /jbod).  To the screen, entries go in columns (directories in
--- green on a colour screen); into a pipe or a file, one per line.
+-- member disks' own mounts (/disk, /disk2...: their files are in /jbod).
+-- To the screen, entries go in columns (directories in green on a colour
+-- screen); into a pipe or a file, one per line.
 --   -a  all entries, the hidden ones and "." and ".." too
 --   -A  almost all: the hidden ones, not "." and ".."
 --   -l  long format: type and permissions, size, modification time, name,
