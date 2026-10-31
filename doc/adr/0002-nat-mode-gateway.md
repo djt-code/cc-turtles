@@ -22,6 +22,10 @@ Forces:
 - **The user wants the simplest thing that works**, and real-protocol
   compatibility: CC hosts keep speaking lib/net's IPv4/TCP/UDP to the gateway
   whatever is behind it.
+- **The gateway is transport only** (the user, 2026-10-30): layers 3 and 4,
+  no application-layer gateway. Anything above TCP and UDP (DNS, telnet,
+  HTTP) is done by ccnix's ROM on the computers; the server doesn't parse or
+  answer application protocols for them.
 - **The gateway's seam is already there.** `Gateway` speaks real IPv4 bytes to
   one interface, `Gateway.Tun` (`write(byte[])` out, `fromTun(byte[])` in).
   `TunHelper` is one implementation; the tests' `CcWorld.kernel()` is another,
@@ -50,10 +54,13 @@ compared below. No reviewer fan-out: the decision is one subsystem.
    and NAT, a network in the server process with no privileges, no helper and
    no host setup.
 2. **NAT is a userspace kernel behind `Gateway.Tun`** (`ccnix.gateway.core.Nat`),
-   in Java. It terminates CC's TCP connections and UDP flows and re-makes them
-   as ordinary Java sockets (`Socket`, `DatagramChannel`) from the server, as
-   slirp and passt do. It also answers ping at the gateway's address and
-   forwards between CC networks (what the kernel does in TUN mode).
+   in Java, and **transport only**. It terminates CC's TCP connections and UDP
+   flows and re-makes them as ordinary Java sockets (`Socket`,
+   `DatagramChannel`) from the server, as slirp and passt do, carrying the
+   bytes and datagrams as they are: it never looks inside them. It also
+   answers ping at the gateway's address and forwards between CC networks
+   (what the kernel does in TUN mode). DNS from CC is a UDP flow to whatever
+   resolver the computer asks (ccnix's netdb), like any other.
 3. **What NAT mode can't do, it says:** no ICMP to the outside (Java has no
    ICMP or per-socket TTL), so ping and traceroute stop at the gateway; one
    public address, the server's; nothing from outside gets in except through
@@ -85,15 +92,11 @@ compared below. No reviewer fan-out: the decision is one subsystem.
    `ccnix_cc_networks`, which replaces `ccnix_tun_networks` and is also what
    `ccnix-tun-setup` is given). Ops' routes must be inside it in either mode;
    in TUN mode the kernel's routes are still checked as now.
-9. **A DNS forwarder at the gateway's address** (NAT mode): queries to
-   `<gateway>:53` are answered from the server's own resolver (A and PTR), so
-   `ip dns 10.0.0.1` works on a host whose provider blocks outbound DNS. In TUN
-   mode the server's kernel has the address; a CC host asks a real resolver.
-10. The jar's default mode is **NAT**: a fresh install works anywhere, safely,
-    with nothing to set up. The playbook defaults to TUN, as the dev VM is now.
+9. The jar's default mode is **NAT**: a fresh install works anywhere, safely,
+   with nothing to set up. The playbook defaults to TUN, as the dev VM is now.
 
-Items 1–4, 7 and 8 are decided unless objected to; 5, 6, 9 and 10 have
-choices, below and in the chat.
+Items 1–4, 7 and 8 are decided unless objected to; 5, 6 and 9 have choices,
+below and in the chat.
 
 ## Options Considered
 
@@ -167,7 +170,9 @@ through the real gateway to real loopback sockets (Phase 0 builds that
 harness before the endpoint exists). It declines to touch lib/net, the frame
 format, `Gateway` or `Ipv4`: CC hosts can't tell the modes apart except by
 what the outside can do. It declines a better TCP (gVisor) because the only
-peer is lib/net. Security is designed in rather than configurable-to-safe:
+peer is lib/net, and it declines every application-layer helper (a DNS
+forwarder at the gateway was considered and dropped): those belong to the
+ROM, where they can be updated with `ccnix update` instead of a mod release. Security is designed in rather than configurable-to-safe:
 the deny list, limits and opt-in forwards are defaults, because the people
 most likely to run NAT mode (hosted servers) are the least likely to read the
 config.
@@ -176,12 +181,13 @@ config.
 
 - **Easier:** the gateway on any host, in a container, in singleplayer; no
   helper, no root, no setup script for most users; CurseForge distribution of
-  a mod that just works; DNS from CC via the gateway even where outbound DNS is
-  blocked.
+  a mod that just works.
 - **Harder:** a second TCP implementation to keep in step with lib/net's
   (shared test scenarios keep them honest); two modes to document, with
   different answers to "can I ping it?" and "can I reach it from outside?";
-  a policy surface to maintain.
+  a policy surface to maintain; a host that blocks outbound UDP 53 leaves CC
+  computers with `net.hosts` alone (the gateway won't stand in as a
+  resolver).
 - **Revisit:** IPv6 outbound (the server's sockets may prefer it: the VM's
   broken IPv6 route says pick IPv4 explicitly); bandwidth limits if limits by
   count aren't enough; whether TUN mode wants forwards too (it can route, so
@@ -200,15 +206,13 @@ Phase 1, the seam (no decision needed)
 Phase 2, NAT (after acceptance)
 5. [ ] `Nat`: ICMP echo at the gateway, hairpin between CC networks, UDP flows to `DatagramChannel`s. ~200 lines; tests: ping the gateway, A to B through the gateway, `nc -u` to the loopback echo.
 6. [ ] `Nat`: the TCP endpoint (SYN only after the outside socket connects, RST if it can't; data both ways in order; FIN each way; keepalive answered; idle timeout). ~400 lines; tests: lib/net's own scenarios (3000 bytes each way, half-close, refused, the far side vanishing) against the loopback server.
-7. [ ] Policy and limits (decision 4). ~100 lines; tests: each denied range and port refused (RST / port unreachable), the limits, an allowed connection.
-8. [ ] DNS forwarder at the gateway (decision 9, if accepted). ~120 lines; test: ccnix's netdb through it.
-
+7. [ ] Policy and limits (decision 4). ~100 lines; tests: each denied range and port refused (RST / port unreachable), the limits, an allowed connection; ccnix's netdb through NAT to a loopback DNS stub (a UDP flow like any other).
 Phase 3, forwards (after acceptance)
-9. [ ] `nat.forwards`: TCP and UDP, the real client's address kept. ~200 lines; tests: a loopback client reaches telnetd-like listener on a CC host.
-10. [ ] `/ccnix forward` commands with `nat.opForwards` and `nat.opForwardPorts` (decision 6). ~120 lines; tests: the checks as `OpRoutesTest` does them.
+8. [ ] `nat.forwards`: TCP and UDP, the real client's address kept. ~200 lines; tests: a loopback client reaches telnetd-like listener on a CC host.
+9. [ ] `/ccnix forward` commands with `nat.opForwards` and `nat.opForwardPorts` (decision 6). ~120 lines; tests: the checks as `OpRoutesTest` does them.
 
 Phase 4, admin, docs, siblings
-11. [ ] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes); in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
-12. [ ] Docs: the mod's README and runbook (the two modes side by side: what works in each), ccnix's `help network` and README (ping beyond the gateway in NAT mode; `ip dns 10.0.0.1`). ccnix itself: no code change expected.
-13. [ ] ccnix-mod 0.3.0; pointers bumped (ccnix-mod's `ccnix/`, then ccnix's `mod/`).
-14. [ ] Verified on the dev VM in both modes, and in a singleplayer world (NAT); mark Accepted.
+10. [ ] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes); in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
+11. [ ] Docs: the mod's README and runbook (the two modes side by side: what works in each), ccnix's `help network` and README (no ping beyond the gateway in NAT mode; DNS through a real resolver as before). ccnix itself: no code change expected.
+12. [ ] ccnix-mod 0.3.0; pointers bumped (ccnix-mod's `ccnix/`, then ccnix's `mod/`).
+13. [ ] Verified on the dev VM in both modes, and in a singleplayer world (NAT); mark Accepted.
