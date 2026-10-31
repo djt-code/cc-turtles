@@ -25,7 +25,13 @@ Forces:
 - **The gateway is transport only** (the user, 2026-10-30): layers 3 and 4,
   no application-layer gateway. Anything above TCP and UDP (DNS, telnet,
   HTTP) is done by ccnix's ROM on the computers; the server doesn't parse or
-  answer application protocols for them.
+  answer application protocols for them. **In TUN mode** the mod is the IP
+  and transport adapter and nothing else: the gateway's address is the
+  server's own on the TUN device, so whatever the host listens on there
+  answers, and the mod adds no service of its own. **In NAT mode** the
+  gateway's own address may relay port 53 to the server's resolver, at the
+  transport layer (bytes and datagrams passed through unread); DNS sent to
+  any other address is never intercepted.
 - **The gateway's seam is already there.** `Gateway` speaks real IPv4 bytes to
   one interface, `Gateway.Tun` (`write(byte[])` out, `fromTun(byte[])` in).
   `TunHelper` is one implementation; the tests' `CcWorld.kernel()` is another,
@@ -59,8 +65,8 @@ compared below. No reviewer fan-out: the decision is one subsystem.
    `DatagramChannel`) from the server, as slirp and passt do, carrying the
    bytes and datagrams as they are: it never looks inside them. It also
    answers ping at the gateway's address and forwards between CC networks
-   (what the kernel does in TUN mode). DNS from CC is a UDP flow to whatever
-   resolver the computer asks (ccnix's netdb), like any other.
+   (what the kernel does in TUN mode). DNS from CC to any resolver it names
+   is a UDP flow like any other, never redirected.
 3. **What NAT mode can't do, it says:** no ICMP to the outside (Java has no
    ICMP or per-socket TTL), so ping and traceroute stop at the gateway; one
    public address, the server's; nothing from outside gets in except through
@@ -94,9 +100,21 @@ compared below. No reviewer fan-out: the decision is one subsystem.
    in TUN mode the kernel's routes are still checked as now.
 9. The jar's default mode is **NAT**: a fresh install works anywhere, safely,
    with nothing to set up. The playbook defaults to TUN, as the dev VM is now.
+10. **A DNS relay at the gateway's address, NAT mode only** (the user,
+    2026-10-30): UDP and TCP to `<gateway>:53` are relayed, unread, to the
+    server's configured resolver (`nat.dnsRelay = "system"`: the first
+    `nameserver` in `/etc/resolv.conf`, such as systemd-resolved's 127.0.0.53
+    or Docker's 127.0.0.11; or an address; `""` turns it off). It's a port
+    relay like a forward, not a DNS server: the mod never parses a query.
+    The relay's target is the admin's, so the outbound deny list doesn't
+    apply to it; CC can't choose it. `ip dns 10.0.0.1` then works on hosts
+    whose provider blocks outbound DNS. With no resolver found (no
+    `resolv.conf`, as on Windows, and no address set) port 53 answers port
+    unreachable and CC computers name a resolver themselves. TUN mode has
+    no relay: what the host serves at the gateway's address is what there is.
 
-Items 1–4, 7 and 8 are decided unless objected to; 5, 6 and 9 have choices,
-below and in the chat.
+Items 1–4, 7, 8 and 10 are decided unless objected to; 5, 6 and 9 have
+choices, below and in the chat.
 
 ## Options Considered
 
@@ -170,9 +188,11 @@ through the real gateway to real loopback sockets (Phase 0 builds that
 harness before the endpoint exists). It declines to touch lib/net, the frame
 format, `Gateway` or `Ipv4`: CC hosts can't tell the modes apart except by
 what the outside can do. It declines a better TCP (gVisor) because the only
-peer is lib/net, and it declines every application-layer helper (a DNS
-forwarder at the gateway was considered and dropped): those belong to the
-ROM, where they can be updated with `ccnix update` instead of a mod release. Security is designed in rather than configurable-to-safe:
+peer is lib/net, and it declines every application-layer helper: those belong to the ROM,
+where they can be updated with `ccnix update` instead of a mod release. The
+one service at the gateway's address in NAT mode, the port-53 relay, is a
+transport relay to a resolver the admin already runs, not a DNS
+implementation; TUN mode has none. Security is designed in rather than configurable-to-safe:
 the deny list, limits and opt-in forwards are defaults, because the people
 most likely to run NAT mode (hosted servers) are the least likely to read the
 config.
@@ -181,13 +201,13 @@ config.
 
 - **Easier:** the gateway on any host, in a container, in singleplayer; no
   helper, no root, no setup script for most users; CurseForge distribution of
-  a mod that just works.
+  a mod that just works; DNS through the host's own resolver (the relay) where
+  a provider blocks outbound DNS.
 - **Harder:** a second TCP implementation to keep in step with lib/net's
   (shared test scenarios keep them honest); two modes to document, with
   different answers to "can I ping it?" and "can I reach it from outside?";
-  a policy surface to maintain; a host that blocks outbound UDP 53 leaves CC
-  computers with `net.hosts` alone (the gateway won't stand in as a
-  resolver).
+  a policy surface to maintain; in TUN mode, DNS at the gateway's address
+  is only there if the host serves it on that address.
 - **Revisit:** IPv6 outbound (the server's sockets may prefer it: the VM's
   broken IPv6 route says pick IPv4 explicitly); bandwidth limits if limits by
   count aren't enough; whether TUN mode wants forwards too (it can route, so
@@ -208,11 +228,12 @@ Phase 2, NAT (after acceptance)
 6. [ ] `Nat`: the TCP endpoint (SYN only after the outside socket connects, RST if it can't; data both ways in order; FIN each way; keepalive answered; idle timeout). ~400 lines; tests: lib/net's own scenarios (3000 bytes each way, half-close, refused, the far side vanishing) against the loopback server.
 7. [ ] Policy and limits (decision 4). ~100 lines; tests: each denied range and port refused (RST / port unreachable), the limits, an allowed connection; ccnix's netdb through NAT to a loopback DNS stub (a UDP flow like any other).
 Phase 3, forwards (after acceptance)
-8. [ ] `nat.forwards`: TCP and UDP, the real client's address kept. ~200 lines; tests: a loopback client reaches telnetd-like listener on a CC host.
-9. [ ] `/ccnix forward` commands with `nat.opForwards` and `nat.opForwardPorts` (decision 6). ~120 lines; tests: the checks as `OpRoutesTest` does them.
+8. [ ] The DNS relay (decision 10): `nat.dnsRelay`, the resolver from `/etc/resolv.conf`, UDP and TCP relayed unread, exempt from the deny list. ~80 lines (it reuses the forward relay); tests: ccnix's netdb with `ip dns <gateway>` through the relay to a loopback DNS stub; a query to another address isn't touched; no resolver found: port unreachable.
+9. [ ] `nat.forwards`: TCP and UDP, the real client's address kept. ~200 lines; tests: a loopback client reaches telnetd-like listener on a CC host.
+10. [ ] `/ccnix forward` commands with `nat.opForwards` and `nat.opForwardPorts` (decision 6). ~120 lines; tests: the checks as `OpRoutesTest` does them.
 
 Phase 4, admin, docs, siblings
-10. [ ] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes); in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
-11. [ ] Docs: the mod's README and runbook (the two modes side by side: what works in each), ccnix's `help network` and README (no ping beyond the gateway in NAT mode; DNS through a real resolver as before). ccnix itself: no code change expected.
-12. [ ] ccnix-mod 0.3.0; pointers bumped (ccnix-mod's `ccnix/`, then ccnix's `mod/`).
-13. [ ] Verified on the dev VM in both modes, and in a singleplayer world (NAT); mark Accepted.
+11. [ ] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes), `ccnix_nat_dns_relay` ("system"); in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
+12. [ ] Docs: the mod's README and runbook (the two modes side by side: what works in each), ccnix's `help network` and README (no ping beyond the gateway in NAT mode; `ip dns <gateway>` in NAT mode, a real resolver in TUN mode unless the host serves DNS on the gateway's address). ccnix itself: no code change expected.
+13. [ ] ccnix-mod 0.3.0; pointers bumped (ccnix-mod's `ccnix/`, then ccnix's `mod/`).
+14. [ ] Verified on the dev VM in both modes, and in a singleplayer world (NAT); mark Accepted.
