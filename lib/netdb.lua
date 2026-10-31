@@ -256,7 +256,8 @@ local function ask(S, server, name, qtype)
                         return
                     elseif ev == "net_icmp" and a ~= "reply" and type(orig) == "table" and orig.proto == "udp"
                         and orig.sport == port and orig.dport == 53 then
-                        why = a == "unreachable" and (tostring(c) .. " unreachable") or "time exceeded"
+                        why = a ~= "unreachable" and "time exceeded"
+                            or c == "prohibited" and "administratively prohibited" or (tostring(c) .. " unreachable")
                         return
                     end
                 end

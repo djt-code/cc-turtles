@@ -10,7 +10,8 @@
 -- record) shows it with the address in brackets; -n: addresses alone, no
 -- lookups for the hops.  host is an address or a name.  It stops at the host (its echo reply), or at "!N" (a router
 -- has no route on), "!H" (no ARP answer: no such host on the last
--- network) or "!P".  Exit status 0 if it got to the host, 1 if not, 2
+-- network), "!X" (administratively prohibited: a filter, such as a Network
+-- Gateway in NAT mode, which carries no ping past it) or "!P".  Exit status 0 if it got to the host, 1 if not, 2
 -- for trouble.
 
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
@@ -41,10 +42,11 @@ local function hopName(ip)
     return shown[ip]
 end
 
-local MARK = { net = "!N", host = "!H", port = "!P" }
+local MARK = { net = "!N", host = "!H", port = "!P", prohibited = "!X" }
+local HINT = "a Network Gateway in NAT mode carries TCP and UDP only, no ping past it"
 local id = math.random(1, 65535)
 io.write(string.format("traceroute to %s (%s), %d hops at most\n", host, target, maxHops))
-local arrived, stopped = false, false
+local arrived, stopped, prohibited = false, false, false
 for ttl = 1, maxHops do
     local line, hop = { string.format("%2d ", ttl) }, nil
     for q = 1, queries do
@@ -59,7 +61,10 @@ for ttl = 1, maxHops do
             if from ~= hop then line[#line + 1] = " " .. hopName(from); hop = from end
             line[#line + 1] = string.format("  %d ms", ms)
             if kind == "reply" then arrived = true
-            elseif kind == "unreachable" then line[#line + 1] = " " .. (MARK[a] or "!"); stopped = true end
+            elseif kind == "unreachable" then
+                line[#line + 1] = " " .. (MARK[a] or "!")
+                stopped, prohibited = true, prohibited or a == "prohibited"
+            end
         else
             line[#line + 1] = "  *"
         end
@@ -67,5 +72,6 @@ for ttl = 1, maxHops do
     io.write(table.concat(line), "\n")
     if arrived or stopped then break end
 end
+if prohibited then io.write("  (" .. HINT .. ")\n") end
 if cu.status == 0 and not arrived then return cu.exit(1) end
 return cu.exit()

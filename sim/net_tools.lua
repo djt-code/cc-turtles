@@ -103,7 +103,13 @@ local function plug(S, iface, cidr, seg)
     segments[seg] = segments[seg] or {}
     table.insert(segments[seg], { S, iface })
 end
-local ME = computer(1, false, function(...) W.os.queueEvent(...) end)
+-- (codeAs: a code to put in place of "net" in the ICMP errors ME gets, as
+-- a NAT-mode gateway's "prohibited")
+local codeAs
+local ME = computer(1, false, function(ev, kind, from, code, ...)
+    if codeAs and ev == "net_icmp" and code == "net" then code = codeAs end
+    W.os.queueEvent(ev, kind, from, code, ...)
+end)
 local R, B = computer(10, true), computer(2)
 plug(ME, "back", "10.0.1.2/24", "lan1")
 plug(R, "left", "10.0.1.1/24", "lan1")
@@ -136,6 +142,15 @@ check("traceroute: the router, then the host (by its name from ip host)",
 r = W:run("traceroute", "-q", "1", "172.16.0.9")
 check("traceroute to a network nobody routes: !N at the router", r.status == 1 and r.out:find("10%.0%.1%.1.*!N"),
     show(r.out))
+codeAs = "prohibited"
+r = W:run("ping", "-c", "2", "172.16.0.9")
+check("ping refused by a filter (a NAT-mode gateway): administratively prohibited, and why, once",
+    r.status == 1 and select(2, r.out:gsub("from 10%.0%.1%.1: seq=%d administratively prohibited", "")) == 2
+        and select(2, r.out:gsub("Network Gateway in NAT mode carries TCP and UDP only", "")) == 1, show(r.out))
+r = W:run("traceroute", "-q", "1", "172.16.0.9")
+check("traceroute: !X there, and why", r.status == 1 and r.out:find("10%.0%.1%.1.*!X")
+    and r.out:find("Network Gateway in NAT mode", 1, true), show(r.out))
+codeAs = nil
 
 -- nc -l: what B sends to port 7 here, printed (until Ctrl+T)
 local pb = B.udpOpen(1234)

@@ -37,7 +37,7 @@ UDP: the same with `nc -u -l 7` and `nc -u 10.0.2.20 7`: the lines go one way, a
 One cable, with VLANs: chain A, R and B on one cable, and give each network its own VLAN. On R: `ip addr add left.10 10.0.1.1/24` and `ip addr add left.20 10.0.2.1/24`; on A `back.10`, on B `back.20`. Each VLAN is its own channel on the wire, so A and B still talk only through R.
 
 The real network: the ccnix mod (in the repo's mod/) adds a Network Gateway block, the server's way onto a CC network. Cable it to R's modem, give R an address on its network (`ip addr add back 10.0.0.2/24`, the gateway being 10.0.0.1) and `ip route add default via 10.0.0.1`. R's networks then reach the real network through the server, given the gateway's route back to them (`/ccnix route add 10.1.0.0/16 via 10.0.0.2` in game, by an op, where the server allows it). The gateway has two modes, the server admin's choice (`/ccnix` says which):
-  NAT    (the mod's default) CC computers reach the outside as the server itself: TCP and UDP work (nc, telnet, DNS); ping and traceroute stop at the gateway with "net unreachable"; private addresses and port 25 are refused; the outside reaches a computer only through a port forward (`/ccnix forward`). `ip dns 10.0.0.1` asks the server's own resolver.
+  NAT    (the mod's default) CC computers reach the outside as the server itself: TCP and UDP work (nc, telnet, DNS); ping and traceroute stop at the gateway with "administratively prohibited" (traceroute: !X); private addresses and port 25 are refused; the outside reaches a computer only through a port forward (`/ccnix forward`). `ip dns 10.0.0.1` asks the server's own resolver.
   TUN    a TUN device on the server routes: real addresses, ping, and real machines reach CC computers as the server's routes and firewall allow.
 
 Names: `ip host b 10.0.2.20` on A lets `ping b` work.  With a way out through the gateway, `ip dns 1.1.1.1 9.9.9.9` (a primary and a secondary; one will do) on each computer lets real names work too: `ping example.com`, `nc example.com http`, `host example.com`.  The hosts are looked at first, then DNS; if the primary doesn't answer, the secondary is asked.
@@ -48,5 +48,5 @@ When it doesn't work:
   ip          what's set, and whether it's up
   ip neigh    the addresses ARP has found
   router      on R: packets in, out, forwarded and dropped, and messages such as "no ARP answer"
-  ping says   "net unreachable": a router has no route; "host unreachable": nobody answered ARP (wrong address, or not up); "time to live exceeded": routers pass it round in a loop
+  ping says   "net unreachable": a router has no route; "administratively prohibited": a filter, or a NAT-mode gateway (no ping past it); "host unreachable": nobody answered ARP (wrong address, or not up); "time to live exceeded": routers pass it round in a loop
   host says   "no DNS servers": `ip dns` sets them; "Temporary failure": no server answered (each one's reason in brackets: can the computer ping it?)

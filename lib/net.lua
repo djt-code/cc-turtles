@@ -61,8 +61,9 @@
 --         adds the checksum, data offset and flag bits (PSH as it likes).
 --   UDP   { sport, dport, data }: only a string payload can cross.
 --   ICMP  { type = "echo" | "reply", id, seq, data } (8 and 0),
---         { type = "unreachable", code = "net" | "host" | "port", orig }
---         (3: 0, 1, 3) and { type = "timeexceeded", code = "ttl", orig }
+--         { type = "unreachable", code = "net" | "host" | "port" |
+--         "prohibited", orig } (3: 0, 1, 3, 13: a filter, or a NAT-mode
+--         Network Gateway refusing ping or a datagram) and { type = "timeexceeded", code = "ttl", orig }
 --         (11: 0); orig holds the original packet's addresses, proto,
 --         ports and ICMP id/seq rather than its first bytes.
 --

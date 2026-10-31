@@ -1208,7 +1208,7 @@ adds a Network Gateway block for CC cables, with an address on its network
 modes, the server admin's choice:
 - **NAT** (the default): the server process carries CC computers' TCP and
   UDP as its own connections, with nothing to set up. Ping and traceroute
-  stop at the gateway ("net unreachable"); private addresses and port 25
+  stop at the gateway ("administratively prohibited"); private addresses and port 25
   are refused; the outside gets in only through port forwards
   (`/ccnix forward`); `ip dns 10.0.0.1` asks the server's resolver.
 - **TUN**: a TUN device on the server (Linux) carries their packets as
