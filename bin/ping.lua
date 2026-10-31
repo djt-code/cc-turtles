@@ -8,7 +8,7 @@
 -- seconds for its reply, and says what came back: a reply (its TTL, and
 -- the round trip in milliseconds), "destination unreachable" from a
 -- router or this computer (no route: net; no ARP answer: host), "administratively
--- prohibited" (a filter: a Network Gateway in NAT mode carries no ping past it),
+-- prohibited" (a filter: a Network Gateway in NAT mode carries no ICMP past it, though it answers ping itself),
 -- or time exceeded (the TTL ran out on the way: a routing loop, or -t too small).
 -- Exit status 0 if any reply came, 1 if none, 2 for trouble (the network
 -- isn't up, a name that can't be looked up).
@@ -33,7 +33,7 @@ local dst = net.parseIP(ai[1].addr)
 local id = math.random(1, 65535)
 local sent, got, total, told = 0, 0, 0, false
 -- said once, after the first "administratively prohibited"
-local HINT = "a Network Gateway in NAT mode carries TCP and UDP only, no ping past it"
+local HINT = "a Network Gateway in NAT mode carries TCP and UDP only, no ICMP past it; it answers ping itself"
 io.write(string.format("PING %s (%s)\n", host, net.ipString(dst)))
 for seq = 1, count do
     local t0 = os.epoch("utc")

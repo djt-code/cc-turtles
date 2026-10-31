@@ -146,7 +146,7 @@ codeAs = "prohibited"
 r = W:run("ping", "-c", "2", "172.16.0.9")
 check("ping refused by a filter (a NAT-mode gateway): administratively prohibited, and why, once",
     r.status == 1 and select(2, r.out:gsub("from 10%.0%.1%.1: seq=%d administratively prohibited", "")) == 2
-        and select(2, r.out:gsub("Network Gateway in NAT mode carries TCP and UDP only", "")) == 1, show(r.out))
+        and select(2, r.out:gsub("Network Gateway in NAT mode carries TCP and UDP only, no ICMP past it; it answers ping itself", "")) == 1, show(r.out))
 r = W:run("traceroute", "-q", "1", "172.16.0.9")
 check("traceroute: !X there, and why", r.status == 1 and r.out:find("10%.0%.1%.1.*!X")
     and r.out:find("Network Gateway in NAT mode", 1, true), show(r.out))

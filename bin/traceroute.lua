@@ -11,7 +11,7 @@
 -- lookups for the hops.  host is an address or a name.  It stops at the host (its echo reply), or at "!N" (a router
 -- has no route on), "!H" (no ARP answer: no such host on the last
 -- network), "!X" (administratively prohibited: a filter, such as a Network
--- Gateway in NAT mode, which carries no ping past it) or "!P".  Exit status 0 if it got to the host, 1 if not, 2
+-- Gateway in NAT mode, which carries no ICMP past it) or "!P".  Exit status 0 if it got to the host, 1 if not, 2
 -- for trouble.
 
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
@@ -43,7 +43,7 @@ local function hopName(ip)
 end
 
 local MARK = { net = "!N", host = "!H", port = "!P", prohibited = "!X" }
-local HINT = "a Network Gateway in NAT mode carries TCP and UDP only, no ping past it"
+local HINT = "a Network Gateway in NAT mode carries TCP and UDP only, no ICMP past it; it answers ping itself"
 local id = math.random(1, 65535)
 io.write(string.format("traceroute to %s (%s), %d hops at most\n", host, target, maxHops))
 local arrived, stopped, prohibited = false, false, false
