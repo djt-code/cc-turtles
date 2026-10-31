@@ -1,8 +1,18 @@
 # ADR-0002: A NAT mode for the gateway, in userland, beside TUN
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-30)
 **Date:** 2026-10-30
 **Deciders:** Dan Theisen
+
+**Decided 2026-10-30:** the jar defaults to NAT; the mode is changed in the
+config and Ansible only; a forwarded connection comes from the client's real
+address; ops forward only ports in a range the admin sets (none by default),
+and the commands tell them the range; no forwards in TUN mode (the admin's
+firewall does that); the protection defaults as proposed, every value the
+admin's to change, and they apply only to CC computers' connections through
+a Network Gateway. The gateway is transport only, with one exception: on
+Windows, where there's no resolver to relay to, the gateway answers DNS at
+its own address from the Windows resolver.
 
 ## Context
 
@@ -31,7 +41,9 @@ Forces:
   answers, and the mod adds no service of its own. **In NAT mode** the
   gateway's own address may relay port 53 to the server's resolver, at the
   transport layer (bytes and datagrams passed through unread); DNS sent to
-  any other address is never intercepted.
+  any other address is never intercepted. The one exception to the rule:
+  on Windows, which has no resolver address to relay to, the gateway
+  answers A and PTR queries at its own address from the Windows resolver.
 - **The gateway's seam is already there.** `Gateway` speaks real IPv4 bytes to
   one interface, `Gateway.Tun` (`write(byte[])` out, `fromTun(byte[])` in).
   `TunHelper` is one implementation; the tests' `CcWorld.kernel()` is another,
@@ -68,16 +80,21 @@ compared below. No reviewer fan-out: the decision is one subsystem.
    (what the kernel does in TUN mode). DNS from CC to any resolver it names
    is a UDP flow like any other, never redirected.
 3. **What NAT mode can't do, it says:** no ICMP to the outside (Java has no
-   ICMP or per-socket TTL), so ping and traceroute stop at the gateway; one
-   public address, the server's; nothing from outside gets in except through
-   port forwards.
+   ICMP or per-socket TTL): an echo for an outside address gets "net
+   unreachable" from the gateway, so ping says so and traceroute ends at the
+   gateway with !N; one public address, the server's; nothing from outside
+   gets in except through port forwards.
 4. **Outbound policy, on by default in NAT mode:** destinations denied unless
    allowed: 0.0.0.0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12,
    192.168/16, 224/4, 240/4, and port 25 (`nat.deny`, `nat.allow`, CIDR with
    optional ports, as CC:T's `http.rules` think about it); at most 16 open
-   connections and flows per CC address and 256 in all; idle TCP closed after
-   10 minutes, UDP after 60 seconds. Only CC sources in `gateway.networks` (and
-   the gateway's own network) are carried.
+   connections and flows per CC address (`nat.maxPerComputer`) and 256 in all
+   (`nat.maxTotal`); idle TCP closed after 10 minutes (`nat.tcpIdle`), UDP
+   after 60 seconds (`nat.udpIdle`). Every value is the admin's (config,
+   Ansible). They apply only to CC computers' connections through a Network
+   Gateway, never to the server's own or its players'; the config says so.
+   Only CC sources in `gateway.networks` (and the gateway's own network) are
+   carried.
 5. **Port forwards (NAT mode):** `nat.forwards = ["25570/tcp -> 10.1.1.10:23"]`.
    The server listens on the port; a connection that comes in is made on the
    CC side to the target, from the real client's address (the CC host's
@@ -87,9 +104,12 @@ compared below. No reviewer fan-out: the decision is one subsystem.
    add <port>[/tcp|/udp] <address>:<port>` and `/ccnix forward del
    <port>[/tcp|/udp]` (level 3) change them, saved to the config, only with
    `nat.opForwards` (default **false**) and only on ports in
-   `nat.opForwardPorts` (default empty: none, until the admin names the ports
-   the host allocated). Targets must be in `gateway.networks`. In TUN mode the
-   commands say the network routes to CC directly.
+   `nat.opForwardPorts` (a range such as `"25570-25579"`; default empty:
+   none, until the admin names the ports the host allocated). The commands
+   tell ops the range: `/ccnix forward` lists it, and a refused `add` says
+   which ports are allowed. Targets must be in `gateway.networks`. **No
+   forwards in TUN mode**, the admin's or ops': the commands say so, and an
+   admin who wants them configures the host's firewall.
 7. **The mode is the admin's:** config (`gateway.mode`), set by Ansible
    (`ccnix_gateway_mode`); `/ccnix` shows it. In NAT mode the play doesn't set
    up the TUN device (and takes an existing one down with a new
@@ -109,9 +129,13 @@ compared below. No reviewer fan-out: the decision is one subsystem.
     The relay's target is the admin's, so the outbound deny list doesn't
     apply to it; CC can't choose it. `ip dns 10.0.0.1` then works on hosts
     whose provider blocks outbound DNS. With no resolver found (no
-    `resolv.conf`, as on Windows, and no address set) port 53 answers port
-    unreachable and CC computers name a resolver themselves. TUN mode has
-    no relay: what the host serves at the gateway's address is what there is.
+    `resolv.conf` and no address set) port 53 answers port unreachable and
+    CC computers name a resolver themselves. **On Windows** (the user,
+    2026-10-30; the only exception to transport-only) there's no resolver
+    address to relay to, so the gateway answers A and PTR queries at its
+    own address from the Windows resolver (Java's `InetAddress`, which asks
+    it), and anything else with NOTIMP. TUN mode has no relay: what the
+    host serves at the gateway's address is what there is.
 
 Items 1–4, 7, 8 and 10 are decided unless objected to; 5, 6 and 9 have
 choices, below and in the chat.
@@ -155,7 +179,9 @@ shape. The cost (computing checksums we then check) is nothing at CC's rates.
 | Honesty | true | lies about reachability | true |
 | Feasible | yes | yes | not from Java; and `ping_group_range` is usually closed in containers |
 
-**A**, documented in `help network`: in NAT mode use `nc host port` to test
+**A**, made explicit: the gateway answers an outside echo with "net
+unreachable" rather than silence, so ping and traceroute say where they
+stop. Documented in `help network`: in NAT mode `nc host port` tests
 reachability. (`ping 10.0.0.1` still answers: the gateway is real.)
 
 ### D4. Inbound
@@ -228,12 +254,12 @@ Phase 2, NAT (after acceptance)
 6. [ ] `Nat`: the TCP endpoint (SYN only after the outside socket connects, RST if it can't; data both ways in order; FIN each way; keepalive answered; idle timeout). ~400 lines; tests: lib/net's own scenarios (3000 bytes each way, half-close, refused, the far side vanishing) against the loopback server.
 7. [ ] Policy and limits (decision 4). ~100 lines; tests: each denied range and port refused (RST / port unreachable), the limits, an allowed connection; ccnix's netdb through NAT to a loopback DNS stub (a UDP flow like any other).
 Phase 3, forwards (after acceptance)
-8. [ ] The DNS relay (decision 10): `nat.dnsRelay`, the resolver from `/etc/resolv.conf`, UDP and TCP relayed unread, exempt from the deny list. ~80 lines (it reuses the forward relay); tests: ccnix's netdb with `ip dns <gateway>` through the relay to a loopback DNS stub; a query to another address isn't touched; no resolver found: port unreachable.
+8. [ ] The DNS relay (decision 10): `nat.dnsRelay`, the resolver from `/etc/resolv.conf`, UDP and TCP relayed unread, exempt from the deny list; on Windows, A and PTR answered from the Windows resolver. ~150 lines; tests: ccnix's netdb with `ip dns <gateway>` through the relay to a loopback DNS stub; a query to another address isn't touched; no resolver found: port unreachable; the Windows answerer with a stub resolver.
 9. [ ] `nat.forwards`: TCP and UDP, the real client's address kept. ~200 lines; tests: a loopback client reaches telnetd-like listener on a CC host.
 10. [ ] `/ccnix forward` commands with `nat.opForwards` and `nat.opForwardPorts` (decision 6). ~120 lines; tests: the checks as `OpRoutesTest` does them.
 
 Phase 4, admin, docs, siblings
-11. [ ] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes), `ccnix_nat_dns_relay` ("system"); in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
+11. [ ] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes), `ccnix_nat_dns_relay` ("system"), the limits and deny/allow lists; in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
 12. [ ] Docs: the mod's README and runbook (the two modes side by side: what works in each), ccnix's `help network` and README (no ping beyond the gateway in NAT mode; `ip dns <gateway>` in NAT mode, a real resolver in TUN mode unless the host serves DNS on the gateway's address). ccnix itself: no code change expected.
 13. [ ] ccnix-mod 0.3.0; pointers bumped (ccnix-mod's `ccnix/`, then ccnix's `mod/`).
 14. [ ] Verified on the dev VM in both modes, and in a singleplayer world (NAT); mark Accepted.
