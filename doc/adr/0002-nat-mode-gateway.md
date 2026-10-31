@@ -1,6 +1,6 @@
 # ADR-0002: A NAT mode for the gateway, in userland, beside TUN
 
-**Status:** Accepted (2026-10-30)
+**Status:** Accepted (2026-10-30); built in ccnix-mod 0.3.0, item 14 (the VM in both modes, a singleplayer world) still to verify
 **Date:** 2026-10-30
 **Deciders:** Dan Theisen
 
@@ -242,24 +242,24 @@ config.
 ## Action Items
 
 Phase 0, safety net (no decision needed)
-1. [ ] `CcWorld` grows an "internet" on loopback: a real echo TCP server, a UDP echo, a DNS stub; tests allow loopback in policy explicitly. ~120 lines. Repeatable twice before anything else.
-2. [ ] A test that today's `LibNetTest` passes byte-for-byte with `Tun` behind an interface the mode picks (the refactor's oracle).
+1. [x] `CcWorld` grows an "internet" on loopback: a real echo TCP server, a UDP echo, a DNS stub; tests allow loopback in policy explicitly. ~120 lines. Repeatable twice before anything else.
+2. [x] A test that today's `LibNetTest` passes byte-for-byte with `Tun` behind an interface the mode picks (the refactor's oracle).
 
 Phase 1, the seam (no decision needed)
-3. [ ] `Service` chooses the `Gateway.Tun` implementation from `gateway.mode`; TUN behaviour unchanged; `/ccnix` shows the mode. ~40 lines; tests: all 45 unchanged.
-4. [ ] `gateway.networks` in the config (default `10.1.0.0/16`); `OpRoutes` checks it in both modes, plus the kernel in TUN mode. ~30 lines; `OpRoutesTest` extended.
+3. [x] `Service` chooses the `Gateway.Tun` implementation from `gateway.mode`; TUN behaviour unchanged; `/ccnix` shows the mode. ~40 lines; tests: all 45 unchanged.
+4. [x] `gateway.networks` in the config (default `10.1.0.0/16`); `OpRoutes` checks it in both modes, plus the kernel in TUN mode. ~30 lines; `OpRoutesTest` extended.
 
 Phase 2, NAT (after acceptance)
-5. [ ] `Nat`: ICMP echo at the gateway, hairpin between CC networks, UDP flows to `DatagramChannel`s. ~200 lines; tests: ping the gateway, A to B through the gateway, `nc -u` to the loopback echo.
-6. [ ] `Nat`: the TCP endpoint (SYN only after the outside socket connects, RST if it can't; data both ways in order; FIN each way; keepalive answered; idle timeout). ~400 lines; tests: lib/net's own scenarios (3000 bytes each way, half-close, refused, the far side vanishing) against the loopback server.
-7. [ ] Policy and limits (decision 4). ~100 lines; tests: each denied range and port refused (RST / port unreachable), the limits, an allowed connection; ccnix's netdb through NAT to a loopback DNS stub (a UDP flow like any other).
+5. [x] `Nat`: ICMP echo at the gateway, hairpin between CC networks, UDP flows to `DatagramChannel`s. ~200 lines; tests: ping the gateway, A to B through the gateway, `nc -u` to the loopback echo.
+6. [x] `Nat`: the TCP endpoint (SYN only after the outside socket connects, RST if it can't; data both ways in order; FIN each way; keepalive answered; idle timeout). ~400 lines; tests: lib/net's own scenarios (3000 bytes each way, half-close, refused, the far side vanishing) against the loopback server.
+7. [x] Policy and limits (decision 4). ~100 lines; tests: each denied range and port refused (RST / port unreachable), the limits, an allowed connection; ccnix's netdb through NAT to a loopback DNS stub (a UDP flow like any other).
 Phase 3, forwards (after acceptance)
-8. [ ] The DNS relay (decision 10): `nat.dnsRelay`, the resolver from `/etc/resolv.conf`, UDP and TCP relayed unread, exempt from the deny list; on Windows, A and PTR answered from the Windows resolver. ~150 lines; tests: ccnix's netdb with `ip dns <gateway>` through the relay to a loopback DNS stub; a query to another address isn't touched; no resolver found: port unreachable; the Windows answerer with a stub resolver.
-9. [ ] `nat.forwards`: TCP and UDP, the real client's address kept. ~200 lines; tests: a loopback client reaches telnetd-like listener on a CC host.
-10. [ ] `/ccnix forward` commands with `nat.opForwards` and `nat.opForwardPorts` (decision 6). ~120 lines; tests: the checks as `OpRoutesTest` does them.
+8. [x] The DNS relay (decision 10): `nat.dnsRelay`, the resolver from `/etc/resolv.conf`, UDP and TCP relayed unread, exempt from the deny list; on Windows, A and PTR answered from the Windows resolver. ~150 lines; tests: ccnix's netdb with `ip dns <gateway>` through the relay to a loopback DNS stub; a query to another address isn't touched; no resolver found: port unreachable; the Windows answerer with a stub resolver.
+9. [x] `nat.forwards`: TCP and UDP, the real client's address kept. ~200 lines; tests: a loopback client reaches telnetd-like listener on a CC host.
+10. [x] `/ccnix forward` commands with `nat.opForwards` and `nat.opForwardPorts` (decision 6). ~120 lines; tests: the checks as `OpRoutesTest` does them.
 
 Phase 4, admin, docs, siblings
-11. [ ] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes), `ccnix_nat_dns_relay` ("system"), the limits and deny/allow lists; in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
-12. [ ] Docs: the mod's README and runbook (the two modes side by side: what works in each), ccnix's `help network` and README (no ping beyond the gateway in NAT mode; `ip dns <gateway>` in NAT mode, a real resolver in TUN mode unless the host serves DNS on the gateway's address). ccnix itself: no code change expected.
-13. [ ] ccnix-mod 0.3.0; pointers bumped (ccnix-mod's `ccnix/`, then ccnix's `mod/`).
+11. [x] Ansible: `ccnix_gateway_mode` (default `tun`), `ccnix_cc_networks` (replaces `ccnix_tun_networks`), `ccnix_nat_op_forwards` (false), `ccnix_nat_op_forward_ports` ([]), `ccnix_nat_forwards` and `ccnix_ansible_forwards` (as routes), `ccnix_nat_dns_relay` ("system"), the limits and deny/allow lists; in NAT mode the TUN unit is disabled and `ccnix-tun-setup --remove` run.
+12. [x] Docs: the mod's README and runbook (the two modes side by side: what works in each), ccnix's `help network` and README (no ping beyond the gateway in NAT mode; `ip dns <gateway>` in NAT mode, a real resolver in TUN mode unless the host serves DNS on the gateway's address). ccnix itself: no code change expected.
+13. [x] ccnix-mod 0.3.0; pointers bumped (ccnix-mod's `ccnix/`, then ccnix's `mod/`).
 14. [ ] Verified on the dev VM in both modes, and in a singleplayer world (NAT); mark Accepted.
