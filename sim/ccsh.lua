@@ -291,6 +291,28 @@ check("no tabs (no multishell), or no such job: said, status 1",
     r.err[1] == "ccsh: fg: genv: no such job, and no tabs to run it in (multishell needs an advanced computer)"
     and r.err[2] == "ccsh: fg: %1: no such job" and r.status == 1, show(r.errText))
 
+-- 17. history: /.ccsh_history, the last $HISTSIZE lines
+W:file(".ccsh_history", "old one\nold two\n")
+r = W:run("ccsh", { stdin = "echo a\necho a\n  \necho $HISTSIZE $HISTFILE\n" })
+check("history: the file's lines come back at the prompt; typed lines are added (no repeats, no blank ones)",
+    W.history and table.concat(W.history, "|") == "old one|old two|echo a|echo $HISTSIZE $HISTFILE"
+        and W:read(".ccsh_history") == "old one\nold two\necho a\necho $HISTSIZE $HISTFILE\n"
+        and r.out:find("1000 /.ccsh_history\n", 1, true) ~= nil,
+    show(W:read(".ccsh_history")) .. " " .. show(r.out))
+W:file(".profile", "HISTSIZE=3\n")
+r = W:run("ccsh", { stdin = "echo b\n" })
+check("HISTSIZE (here from /.profile) cuts the file when ccsh starts and leaves, and what read() is given",
+    W:read(".ccsh_history") == "echo a\necho $HISTSIZE $HISTFILE\necho b\n"
+        and table.concat(W.history, "|") == "echo a|echo $HISTSIZE $HISTFILE|echo b",
+    show(W:read(".ccsh_history")) .. " / " .. table.concat(W.history, "|"))
+local kept = W:read(".ccsh_history")
+W:file(".profile", "unset HISTFILE\n")
+r = W:run("ccsh", { stdin = "echo c\n" })
+check("HISTFILE unset: no file kept", W:read(".ccsh_history") == kept, show(W:read(".ccsh_history")))
+r = sh("echo d")
+check("not for -c or a script", W:read(".ccsh_history") == kept)
+W.files[".profile"], W.files[".ccsh_history"], W.history = nil, nil, nil
+
 -- 16. compound commands: if, while, until, for, case, { }, ( ), functions
 for _, u in ipairs({ "test", "expr", "seq", "sort" }) do W:install(u) end
 W:file("ccnix/bin/cdto.lua", [[shell.setDir(shell.resolve(... or ""))]])

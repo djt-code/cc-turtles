@@ -698,10 +698,11 @@ end
 
 -- read(): the next line typed (opts.stdin); none left, the user holds Ctrl+T.
 function W_.readFn(W)
-    return function(replace)
+    return function(replace, history)
         if replace ~= nil and type(replace) ~= "string" then
             error("bad argument #1 (string expected, got " .. type(replace) .. ")", 3)
         end
+        if history then W.history = { table.unpack(history) } end
         if #W.typed == 0 then error("Terminated", 0) end
         return table.remove(W.typed, 1)
     end

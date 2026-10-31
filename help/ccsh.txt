@@ -58,7 +58,7 @@ ccsh runs inside the stock CraftOS shell and has it find and run the programs (t
 
 Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 
-At the prompt, ccsh first runs the commands in /.profile (PS1, export...), as `. /.profile` would.  Leave with exit, or by holding Ctrl+T at the prompt; with jobs left, the first try only warns, and the jobs end with the shell.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.  A script or -c waits for its background jobs before it ends: they can't outlive it.
+At the prompt, ccsh first runs the commands in /.profile (PS1, export...), as `. /.profile` would.  The up and down keys go through the lines typed before, kept in $HISTFILE (/.ccsh_history; unset or empty, none) across sessions and tabs, the last $HISTSIZE of them (1000; 0 keeps none).  Both are shell variables, set before /.profile runs so it can change them.  Leave with exit, or by holding Ctrl+T at the prompt; with jobs left, the first try only warns, and the jobs end with the shell.  Ctrl+T while a command runs stops it, and the rest of the line, with status 130.  A script or -c waits for its background jobs before it ends: they can't outlive it.
 
 A script can start with #!/ccnix/bin/ccsh (the stock shell honours the #! line; under the ROM alone it's #!/rom/ccnix/bin/ccsh), or run as `ccsh script`.
 

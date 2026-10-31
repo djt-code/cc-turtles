@@ -83,7 +83,11 @@
 -- Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 --
 -- At the prompt, ccsh first runs the commands in /.profile (PS1,
--- export...), as `. /.profile` would.  Leave with exit, or by holding
+-- export...), as `. /.profile` would.  The up and down keys go through
+-- the lines typed before, kept in $HISTFILE (/.ccsh_history; unset or
+-- empty, none) across sessions and tabs, the last $HISTSIZE of them
+-- (1000; 0 keeps none).  Both are shell variables, set before /.profile
+-- runs so it can change them.  Leave with exit, or by holding
 -- Ctrl+T at the prompt; with jobs left, the first try only warns, and the
 -- jobs end with the shell.  Ctrl+T while a command runs stops it, and the
 -- rest of the line, with status 130.  A script or -c waits for its
@@ -1801,13 +1805,60 @@ local function promptText()
     return (ps1:gsub("\\(.)", function(c) return esc[c] or ("\\" .. c) end))
 end
 
+-- History: the lines typed at the prompt, the last $HISTSIZE of them
+-- (1000 when it's unset or not a number), kept in $HISTFILE too (none
+-- when it's unset or empty).  A line is added to the file as it's typed,
+-- and the file is cut to its last $HISTSIZE lines when ccsh starts and
+-- leaves, so shells in other tabs add to it too.
+local function histSize()
+    local n = tonumber(P.vars.HISTSIZE)
+    return n and math.max(0, math.floor(n)) or 1000
+end
+
+local function histFile()
+    local name = P.vars.HISTFILE
+    return name and name ~= "" and shell.resolve(name) or nil
+end
+
+-- The file cut to its last $HISTSIZE lines; those lines.
+local function histTrim()
+    local path, max = histFile(), histSize()
+    local lines = {}
+    if not path then return lines end
+    for l in (readFile("/" .. path) or ""):gmatch("[^\n]+") do lines[#lines + 1] = l end
+    if #lines > max then
+        lines = { table.unpack(lines, #lines - max + 1) }
+        local f = fs.open(path, "wb")
+        if f then
+            f.write(#lines > 0 and table.concat(lines, "\n") .. "\n" or "")
+            f.close()
+        end
+    end
+    return lines
+end
+
+-- line, typed at the prompt, added to the history and its file.
+local function remember(hist, line)
+    if not line:match("%S") or hist[#hist] == line then return end
+    local max = histSize()
+    if max == 0 then return end
+    hist[#hist + 1] = line
+    while #hist > max do table.remove(hist, 1) end
+    local path = histFile()
+    local f = path and not fs.isDir(path) and fs.open(path, "ab")
+    if f then
+        f.write(line .. "\n")
+        f.close()
+    end
+end
+
 -- A line typed at the prompt, parsed: { line, list } or { line, err };
 -- nil for Ctrl+T.  It's read as a job, so background jobs carry on
 -- meanwhile.
 local function readLine(hist)
     local j = runTop(function()
         local line = prompt(promptText(), hist)
-        if line and line:match("%S") and hist[#hist] ~= line then hist[#hist + 1] = line end
+        if line then remember(hist, line) end
         while line do
             local ok, r = pcall(parse, line)
             if ok then return { line = line, list = r } end
@@ -1821,14 +1872,18 @@ local function readLine(hist)
 end
 
 local PROFILE = "/.profile"
+local HISTFILE = "/.ccsh_history"
 
 local function interactive()
     jobControl = true
-    local hist, warned = {}, false
+    local warned = false
     print("ccsh: exit, or hold Ctrl+T, to leave")
+    if P.vars.HISTFILE == nil then P.vars.HISTFILE = HISTFILE end
+    if P.vars.HISTSIZE == nil then P.vars.HISTSIZE = "1000" end
     if fs.exists(PROFILE) and not fs.isDir(PROFILE) then
         runTop(function() runSource(readFile(PROFILE)) end)
     end
+    local hist = histTrim()
     while true do
         if P.exiting then
             if liveJobs() == 0 or warned then break end
@@ -1854,6 +1909,7 @@ local function interactive()
             if got.line:match("%S") and not P.exiting then warned = false end
         end
     end
+    histTrim()
     endJobs()
 end
 
