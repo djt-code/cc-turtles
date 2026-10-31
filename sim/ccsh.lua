@@ -316,6 +316,15 @@ W.files[".profile"], W.files[".ccsh_history"], W.history = nil, nil, nil
 -- 16. compound commands: if, while, until, for, case, { }, ( ), functions
 for _, u in ipairs({ "test", "expr", "seq", "sort" }) do W:install(u) end
 W:file("ccnix/bin/cdto.lua", [[shell.setDir(shell.resolve(... or ""))]])
+W:file("a.txt", "x")
+r = sh([==[[ -f a.txt ]; echo $?; [ -d a.txt ]; echo $?; [ "" ]; echo $?; [ ]; echo $?; [ ] ]; echo $?
+X=3; if [ "$X" -gt 2 ]; then echo big; fi; [ -f a.txt; echo $?]==])
+check("[ ... ]: test, through the shell's own [; a missing ] is status 2",
+    r.out == "0\n1\n1\n1\n0\nbig\n2\n" and r.err[1] == "[: missing ]",
+    show(r.out) .. " " .. show(r.errText))
+r = sh([==[[ a b c d e ]]==])
+check("[ with test's errors", r.status == 2, show(r.errText))
+W.files["a.txt"] = nil
 r = sh([[if false; then echo a; elif true; then echo b; else echo c; fi; if false; then echo x; fi; echo "s=$?"
 X=3; if test "$X" -gt 2; then echo big; else echo small; fi]])
 check("if, elif, else; an if with nothing true is status 0; test as the condition", r.out == "b\ns=0\nbig\n", show(r.out))

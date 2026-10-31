@@ -78,7 +78,8 @@
 --                         process's (see ps).
 --   builtins              also exit [n], :, true, false, read [-r] name...,
 --                         shift [n], unset name..., . file,
---                         export [-n] name[=value]... and export -p
+--                         export [-n] name[=value]... and export -p,
+--                         [ expression ] (test, with a last ])
 --
 -- Not yet: here-documents, $(( arithmetic )) (expr does sums), ~.
 --
@@ -1664,6 +1665,13 @@ local function runCommand(cmd, inText, out)
 
     local fn = P.funcs[argv[1]]
     if fn and not SPECIAL[argv[1]] then return done(callFunction(fn, argv, fd)) end
+
+    -- [ expression ]: test, its last word "]".  A ROM path can't hold "[",
+    -- so this is the shell's, not a [.lua.
+    if argv[1] == "[" then
+        if argv[#argv] ~= "]" then report(fd[2], "[: missing ]"); return done(2) end
+        argv = { "test", table.unpack(argv, 2, #argv - 1) }
+    end
 
     local input = fd[0] == TTY and real.input or fd[0].handle or reader(type(fd[0].data) == "string" and fd[0].data or "")
     local builtin = builtins[argv[1]]

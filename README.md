@@ -393,8 +393,8 @@ What CraftOS can't do:
 - Bytes are characters (C locale only): `-m` is `-c`, ranges and sorting
   go by byte value, and `-i` folds ASCII letters only.
 - Lua numbers are doubles: `printf` and `expr` are exact up to 2^53.
-- `[` is the file `bin/[.lua`, which runs `test.lua` next to it, so the two
-  have to stay together.
+- `[` is a ccsh builtin that runs `test` (a ROM path can't hold `[`, so
+  there is no `[.lua`); the stock shell has `test` only.
 
 `cat` is the POSIX one now: it writes the files out whole, with no paging,
 the same on the screen as anywhere else. `more` is the pager (what `cat`
@@ -432,7 +432,7 @@ A POSIX-style shell for CraftOS. Type `ccsh` to start it, and `exit`
 | Substitution | `$(cmd)`, `` `cmd` `` (a subshell) |
 | Compound commands | `if a; then b; elif c; then d; else e; fi`, `while`/`until a; do b; done`, `for x in words; do b; done` (without `in`: `"$@"`), `case w in a\|b*) x;; *) y;; esac`, `{ a; b; }`, `( a; b )` (a subshell: its variables, functions, `exit` and `cd` are its own), `break [n]`, `continue [n]`. Each can be piped and redirected whole: `for f in *.lua; do wc -l $f; done \| sort -n`, `while read l; do ...; done < file` |
 | Functions | `name() { body; }` (or `function name { body; }`): `$1`... are its arguments, `return [n]`, `local x=1` until it returns |
-| Builtins | `exit [n]`, `:`, `true`, `false`, `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill`, `break`, `continue`, `return`, `local` |
+| Builtins | `exit [n]`, `:`, `true`, `false`, `[ expression ]` (`test`), `read [-r] name...`, `shift [n]`, `unset`, `export`, `. file`, `jobs`, `fg`, `bg`, `wait`, `kill`, `break`, `continue`, `return`, `local` |
 | Scripts | `ccsh file [args]`, `ccsh -c 'commands' [name [args]]`, or a file starting `#!/ccnix/bin/ccsh` run by name |
 
 A line ending in `\`, `|`, `&&` or `||`, or inside quotes, carries on at a

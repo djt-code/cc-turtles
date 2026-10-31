@@ -1,7 +1,7 @@
 -- test.lua -- evaluate a condition and exit 0 (true) or 1 (false) (POSIX test)
 --
 --   test [expression]
---   [ [expression] ]          ([.lua runs this file; the last argument must be ])
+--   [ [expression] ]          (in ccsh, a builtin that runs this with the last ] dropped)
 --
 -- Nothing is printed: the answer is the exit status, 0 true, 1 false, 2 for
 -- an error.  Files are relative to the shell's directory.
@@ -20,18 +20,11 @@
 -- expressions go through a parser where ! binds tightest, then -a, then -o.
 -- Remember the stock shell splits on spaces: quote "" for an empty string.
 
-local bracket = fs.getName(shell.getRunningProgram()):sub(1, 1) == "["
 package.path = (ccnix and ccnix.lib or "/" .. fs.getDir(fs.getDir(shell.getRunningProgram())) .. "/lib/?.lua;") .. package.path  -- ccnix's lib/, or the one beside bin/
-local cu = require("cu").init(bracket and "[" or "test",
-    bracket and "[ expression ]" or "test [expression]")
+local cu = require("cu").init("test", "test [expression]")
 local args = { ... }
 
 local function bad(msg) cu.err(msg); cu.exit(2) end
-
-if bracket then
-    if args[#args] ~= "]" then bad("missing ]") end
-    args[#args] = nil
-end
 
 -- fs calls that answer false for a path CraftOS rejects (above the root);
 -- "" names no file, though shell.resolve would make it the current folder

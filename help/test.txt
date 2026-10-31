@@ -1,7 +1,7 @@
 test: evaluate a condition and exit 0 (true) or 1 (false) (POSIX test)
 
   test [expression]
-  [ [expression] ]          ([.lua runs this file; the last argument must be ])
+  [ [expression] ]          (in ccsh, a builtin that runs this with the last ] dropped)
 
 Nothing is printed: the answer is the exit status, 0 true, 1 false, 2 for an error.  Files are relative to the shell's directory.
   -e f  f exists           -f f  a file          -d f

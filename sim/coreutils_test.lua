@@ -1,7 +1,7 @@
 -- sim/coreutils_test.lua
 --
--- test, [ and expr in a shellworld: every primary, the POSIX rules by
--- argument count, -a/-o/!/( ), the "[" form through the stock shell, and
+-- test and expr in a shellworld: every primary, the POSIX rules by
+-- argument count, -a/-o/!/( ), test through the stock shell, and
 -- expr's operators, results and exit statuses.
 local PROJ = ...
 package.path = PROJ .. "/lib/?.lua;" .. PROJ .. "/sim/lib/?.lua;" .. package.path
@@ -137,25 +137,14 @@ s, r = T("a", "b", "c", "d", "e")
 check("junk: status 2", s == 2 and r.err[1] == "test: b: unexpected argument", r and r.errText)
 
 --------------------------------------------------------------------------
--- 5. [ through the shell
+-- 5. test through the shell ([ is ccsh's: sim/ccsh.lua)
 --------------------------------------------------------------------------
-r = W:sh("[ -f a.txt ]")
-check("[ -f a.txt ] through the stock shell", r.ok and r.status == 0, r.errText)
-r = W:sh("[ -d a.txt ]")
-check("[ -d a.txt ] is false", r.status == 1 and #r.err == 0, r.errText)
-r = W:sh('[ "" ]')
-check('[ "" ] is false', r.status == 1)
-r = W:sh("[ ]")
-check("[ ] is false", r.status == 1)
-r = W:sh("[ -f a.txt")
-check("[ without ]: status 2", r.status == 2 and r.err[1] == "[: missing ]", r.errText)
 r = W:sh("test ]")
 check("test ] is a one-argument test: true", r.status == 0)
 r = W:sh("test ! ]")
 check("test ! ] is false", r.status == 1)
 r = W:sh('test "hello world" = "hello world"')
 check("quoted strings through the shell", r.status == 0)
-check("[ is resolvable as a program name", W.shell.resolveProgram("[") == "ccnix/bin/[.lua")
 
 --------------------------------------------------------------------------
 -- 6. expr
