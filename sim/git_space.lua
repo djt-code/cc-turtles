@@ -264,6 +264,8 @@ ok = git("pull", "/ccnix")
 check("the server's ROM catches up: the overlay's copies go, nothing fetched",
     ok and #fetched == 0 and not inOver("bin/cat.lua") and not inOver("lib/new.lua") and next(over().files) == nil
     and over().lowerCommit == "c2")
+check("and it says they were dropped for the ROM's, not deleted", said("0 files updated, 0 deleted")
+    and said("2 dropped from here: /rom/ccnix has them as they are now"), out[#out])
 rom("c1", 1790812800, REPO)
 ok = git("pull", "/ccnix")
 check("an older ROM under it: what differs comes back", ok and inOver("bin/cat.lua") and inOver("lib/new.lua"))

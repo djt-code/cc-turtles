@@ -281,7 +281,8 @@ local function checkout(R, dir, state, commit)
     local lower = lowerManifest(state)
     local lowerFiles = lower.files or {}
     local remote, fromLower = {}, 0
-    for path, sha in pairs(R.tree(commit)) do
+    local tree = R.tree(commit)
+    for path, sha in pairs(tree) do
         if skipped(state, path) then
             -- not wanted
         elseif lowerFiles[path] == sha then
@@ -292,9 +293,10 @@ local function checkout(R, dir, state, commit)
     end
     state.lowerCommit = lower.commit
     local have = state.files or {}
-    local fetched, deleted = 0, 0
+    local fetched, deleted, dropped = 0, 0, 0
 
-    -- deletions first, so files that moved don't need room twice
+    -- deletions first, so files that moved don't need room twice (one the
+    -- copy below now has as it is is dropped, not deleted: it's still there)
     local got = {}
     for path, sha in pairs(have) do
         if remote[path] then
@@ -302,7 +304,7 @@ local function checkout(R, dir, state, commit)
         else
             local p = fs.combine(dir, path)
             if fs.exists(p) then fs.delete(p); pruneDirs(dir, p) end
-            deleted = deleted + 1
+            if tree[path] and lowerFiles[path] == tree[path] then dropped = dropped + 1 else deleted = deleted + 1 end
         end
     end
     state.files = got
@@ -336,7 +338,7 @@ local function checkout(R, dir, state, commit)
     state.commit = commit
     writeState(dir, state)
     if state.lower then print(string.format("%d files are %s's, as they are there.", fromLower, state.lower)) end
-    return fetched, deleted
+    return fetched, deleted, dropped
 end
 
 -- An overlay whose copy below is newer than the branch: nothing to keep
@@ -447,8 +449,11 @@ local function cmdPull(pos, opts)
     end
     print(string.format("Updating %s..%s on %s",
         (state.commit or ""):sub(1, 7), commit:sub(1, 7), state.branch))
-    local fetched, deleted = checkout(R, dir, state, commit)
+    local fetched, deleted, dropped = checkout(R, dir, state, commit)
     print(string.format("Done: %d files updated, %d deleted.", fetched, deleted))
+    if dropped > 0 then
+        print(string.format("%d dropped from here: %s has them as they are now.", dropped, state.lower))
+    end
 end
 
 local function cmdStatus(pos)
